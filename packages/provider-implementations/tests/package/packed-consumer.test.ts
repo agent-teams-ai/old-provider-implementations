@@ -115,7 +115,7 @@ try {
   execFileSync(process.execPath, ['lifecycle.ts', resolve(root, 'tests/fixtures/codex-app-server.ts')], { cwd: sandbox, stdio: 'pipe', timeout: 10000 })
   const manifest = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
   assert.deepEqual(manifest.engines, { node: '>=24.21.0 <25 || >=26.11.1 <27' })
-  assert.deepEqual(manifest.dependencies, { '@anthropic-ai/claude-agent-sdk': '0.3.305', zod: '4.6.7', '@anthropic-ai/sdk': '0.122.0', '@modelcontextprotocol/sdk': '1.30.0', '@agent-teams/provider-session-contracts': '0.0.0' })
+  assert.deepEqual(manifest.dependencies, { '@anthropic-ai/claude-agent-sdk': '0.3.305', zod: '4.6.7', '@anthropic-ai/sdk': '0.122.0', '@modelcontextprotocol/sdk': '1.32.0', '@agent-teams/provider-session-contracts': '0.0.0' })
   assert.equal(manifest.peerDependencies, undefined)
   const lock = await readFile(join(sandbox, 'pnpm-lock.yaml'), 'utf8')
   assert.ok(!lock.includes('link:'))

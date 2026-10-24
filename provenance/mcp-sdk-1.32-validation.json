@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "scope": "Controlled compatibility of the standalone MCP SDK dependency update; no live-provider or consumer-server security qualification.",
+  "predecessorRevision": "7aa779d60cdcefaaaf9cb2526d4434ce1e1aee47",
+  "predecessorValidation": {
+    "path": "provenance/local-validation.json",
+    "sha256": "554c71a9aafb582dd509a55e52fe035e8dc6d538da9ea5d2f9efae664370fb55",
+    "status": "Historical evidence retained unchanged; prior CI does not qualify this dependency update."
+  },
+  "dependency": {
+    "name": "@modelcontextprotocol/sdk",
+    "previous": "1.30.0",
+    "selected": "1.32.0",
+    "registryLatestStableObserved": "1.32.2",
+    "selectionReason": "Minimum version covering the named patched advisory ranges, aligned with the current desktop consumer selection.",
+    "registryMetadataUrl": "https://registry.npmjs.org/@modelcontextprotocol/sdk/1.32.0",
+    "registryIntegrity": "sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA=="
+  },
+  "advisories": [
+    {
+      "url": "https://github.com/advisories/GHSA-6qxp-vccf-f47h",
+      "patchedSdkFrom": "1.31.0"
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-22jm-h49p-29qw",
+      "patchedSdkFrom": "1.32.0"
+    },
+    {
+      "url": "https://github.com/advisories/GHSA-46jr-4wx8-v453",
+      "patchedSdkFrom": "1.32.0",
+      "limitation": "Upstream requires consumer-server input and request-size limits in addition to upgrading. This package does not construct McpServer or taskStore; no downstream server-hardening claim is made."
+    }
+  ],
+  "lock": {
+    "path": "pnpm-lock.yaml",
+    "sha256": "7c55878bdd66149bb0ab095b0acae6c8e4018faa0bd588eea6dd507afbf9416c",
+    "frozenInstall": "PASS",
+    "changeScope": "Only MCP SDK resolution/integrity and its peer-resolution keys; no unrelated dependency upgrades."
+  },
+  "sourceIdentity": {
+    "sourceExtractionManifestSha256": "0eec454a86a96de79c6331eb240d102baa8ce4101ab4eddf855f983dc68d48e2",
+    "unchangedFilesUnderSrc": 115,
+    "providerDistMembersUnchanged": 206,
+    "spiDistMembersUnchanged": 10,
+    "changeScope": "Workspace catalog, regenerated lock and packed-manifest version assertion; production source is unchanged."
+  },
+  "toolchain": {
+    "pnpm": "11.18.0",
+    "typescript": "7.0.2",
+    "node": [
+      "26.11.1",
+      "24.21.0"
+    ]
+  },
+  "results": {
+    "26.11.1": {
+      "normalCheck": "PASS",
+      "build": "PASS",
+      "strictTypes": "PASS",
+      "sourceTests": {
+        "pass": 318,
+        "fail": 0,
+        "skipped": 0
+      },
+      "packedConsumers": {
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    "24.21.0": {
+      "normalCheck": "PASS",
+      "build": "PASS",
+      "strictTypes": "PASS",
+      "sourceTests": {
+        "pass": 318,
+        "fail": 0,
+        "skipped": 0
+      },
+      "packedConsumers": {
+        "pass": 2,
+        "fail": 0
+      }
+    }
+  },
+  "archives": [
+    {
+      "packageName": "@agent-teams/provider-implementations",
+      "filename": "agent-teams-provider-implementations-0.0.0.tgz",
+      "sha256": "dcc0056ec9d16ac7989936fc6e18b1383b227ce6bbd24cfc89e658b08d4c059e",
+      "regularMembers": 209,
+      "distMembers": 206,
+      "distDifferencesFromPredecessor": 0,
+      "archiveMemberDifferencesFromPredecessor": [
+        "package/package.json"
+      ]
+    },
+    {
+      "packageName": "@agent-teams/provider-session-contracts",
+      "filename": "agent-teams-provider-session-contracts-0.0.0.tgz",
+      "sha256": "2cd9c307644812321bd9891a383b0e00d6e9166d11e4a9f102b03c264a1fa6fa",
+      "regularMembers": 12,
+      "distMembers": 10,
+      "distDifferencesFromPredecessor": 0,
+      "archiveMemberDifferencesFromPredecessor": []
+    }
+  ],
+  "pending": [
+    "Exact updated-revision CI and draft-PR delivery remain owner-managed."
+  ],
+  "retention": "Original terminal outputs and registry metadata are retained separately; no local homes, internal cache paths or raw job records are published."
+}
