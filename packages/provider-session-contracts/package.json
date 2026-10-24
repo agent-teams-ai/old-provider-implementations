@@ -1,0 +1,31 @@
+{
+  "name": "@agent-teams/provider-session-contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider-neutral Session SPI types, without engine or SDK dependencies",
+  "engines": {
+    "node": ">=24.21.0 <25 || >=26.11.1 <27"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --pretty false",
+    "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','.cache']) fs.rmSync(path, { recursive: true, force: true })\"",
+    "typecheck": "tsc --project tsconfig.test.json --noEmit --pretty false",
+    "test": "node --test --test-concurrency=1 tests/package/*.test.ts",
+    "check": "pnpm clean && pnpm build && pnpm typecheck && pnpm test",
+    "test:package": "node --test --test-concurrency=1 tests/package/*.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "@types/node": "catalog:"
+  }
+}
