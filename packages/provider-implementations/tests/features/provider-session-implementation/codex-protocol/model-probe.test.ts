@@ -162,3 +162,36 @@ test('native effort/tier mismatch cannot run a default-model probe in place of s
   assert.deepEqual(inherited.launchArgs(), ['app-server', '--listen', 'stdio://'])
   assert.equal(Object.hasOwn(inherited.native.writes.find(row => row.method === 'turn/start')?.params as object, 'effort'), false)
 })
+
+
+test('current-turn native input echoes and empty assistant starts preserve readonly probe success', async t => {
+  for (const method of ['item/started', 'item/completed']) {
+    const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+    await s.native.command({ kind: 'notify', method, params: { threadId: 'TEST-thread', turnId: 'turn-1',
+      item: { id: 'TEST-user', type: 'userMessage', content: [{ type: 'text', text: 'Reply only OK. Do not use tools, access files or run commands.', text_elements: [] }] } } })
+    await s.native.command({ kind: 'notify', method: 'item/started', params: { threadId: 'TEST-thread', turnId: 'turn-1', item: { id: 'TEST-text', type: 'agentMessage', text: '' } } })
+    await s.finish(); assert.equal(await pending, true)
+    assert.deepEqual(s.counts(), { launches: 1, disposals: 1 })
+  }
+})
+
+test('foreign, malformed or changed probe echoes and unknown lifecycle remain refused', async t => {
+  const input = { id: 'TEST-user', type: 'userMessage', content: [{ type: 'text', text: 'Reply only OK. Do not use tools, access files or run commands.', text_elements: [] }] }
+  const ids = { threadId: 'TEST-thread', turnId: 'turn-1' }
+  const cases = [
+    { method: 'item/completed', params: { ...ids, turnId: 'foreign', item: input } },
+    { method: 'item/completed', params: { ...ids, threadId: 'foreign', item: input } },
+    { method: 'item/completed', params: { threadId: 'TEST-thread', item: input } },
+    { method: 'item/completed', params: { ...ids, item: { ...input, id: '' } } },
+    { method: 'item/completed', params: { ...ids, item: { ...input, content: [{type:'text', text:'different input', text_elements:[]}] } } },
+    { method: 'item/completed', params: { ...ids, item: { ...input, content: [...input.content, ...input.content] } } },
+    { method: 'item/started', params: { ...ids, item: { id:'TEST-text', type:'agentMessage', text:'uncompleted text' } } },
+    { method: 'item/started', params: { ...ids, item: { id:'TEST-text', type:'agentMessage' } } },
+    { method: 'TEST/unknown', params: { ...ids, item: input } },
+  ]
+  for (const frame of cases) {
+    const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+    await s.native.command({ kind: 'notify', ...frame })
+    await s.finish(); assert.equal(await pending, false, JSON.stringify(frame))
+  }
+})

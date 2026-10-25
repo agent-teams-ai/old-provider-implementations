@@ -1,5 +1,6 @@
 import { codexModelOptionArgs } from './model-options.ts'
 import { CodexProtocolError } from './rpc-types.ts'
+import { record, string } from './wire-frames.ts'
 import type { CodexAppServerTransport } from './rpc-types.ts'
 import { CodexAppServerClient } from './app-server.ts'
 import { bounded } from '../provider-session-io/io.ts'
@@ -7,20 +8,36 @@ import { captureCodexModelProbe } from './model-probe-config.ts'
 import type { CodexModelProbeConfig, CodexModelProbeConnection } from './model-probe-config.ts'
 import type { CodexAppServerEvent, CodexTurnRef } from './session-types.ts'
 
-type Fact = { threadId?: string; turnId?: string; type: string; text?: string }
+const probePrompt = 'Reply only OK. Do not use tools, access files or run commands.'
+// Native input echoes and empty assistant starts are lifecycle, never inference evidence.
+function probeLifecycle(event: CodexAppServerEvent): boolean {
+  if (event.event.type !== 'unsupported_raw_event') {return false}
+  const { rawType, payload } = event.event
+  if (rawType !== 'item/started' && rawType !== 'item/completed') {return false}
+  const params = record(payload), item = record(params?.item)
+  if (!params || !item || string(item.id) === null ||
+    !event.threadId || !event.turnId || params.threadId !== event.threadId || params.turnId !== event.turnId) {return false}
+  if (item.type === 'agentMessage') {return rawType === 'item/started' && item.text === ''}
+  if (item.type !== 'userMessage' || !Array.isArray(item.content) || item.content.length !== 1) {return false}
+  const content = record(item.content[0])
+  return content?.type === 'text' && content.text === probePrompt &&
+    Array.isArray(content.text_elements) && content.text_elements.length === 0
+}
+type Fact = { threadId?: string; turnId?: string; type: string; text?: string; lifecycle: boolean }
 const allowed = new Set(['thread_started', 'turn_started', 'assistant_text', 'usage_updated', 'turn_completed', 'turn_failed', 'turn_interrupted'])
 function observations() {
   const facts: Fact[] = []; let bytes = 0; let invalid = false
   return {
     onEvent(event: CodexAppServerEvent): void {
       bytes += Buffer.byteLength(JSON.stringify(event))
-      if (!allowed.has(event.event.type)) {invalid = true}
+      const lifecycle = probeLifecycle(event)
+      if (!allowed.has(event.event.type) && !lifecycle) {invalid = true}
       if (facts.length >= 256 || bytes > 512 * 1024) {invalid = true; return}
       facts.push({ ...(event.threadId !== undefined && event.threadId.length > 0 ? { threadId: event.threadId } : {}), ...(event.turnId !== undefined && event.turnId.length > 0 ? { turnId: event.turnId } : {}),
-        type: event.event.type, ...(event.event.type === 'assistant_text' ? { text: event.event.text } : {}) })
+        type: event.event.type, lifecycle, ...(event.event.type === 'assistant_text' ? { text: event.event.text } : {}) })
     },
     reject(): void { invalid = true },
-    valid(ref: CodexTurnRef): boolean { return !invalid && facts.some(fact => fact.threadId === ref.threadId && fact.turnId === ref.turnId && fact.type === 'assistant_text' && fact.text !== undefined && fact.text.trim().length > 0) },
+    valid(ref: CodexTurnRef): boolean { return !invalid && facts.every(fact => !fact.lifecycle || (fact.threadId === ref.threadId && fact.turnId === ref.turnId)) && facts.some(fact => fact.threadId === ref.threadId && fact.turnId === ref.turnId && fact.type === 'assistant_text' && fact.text !== undefined && fact.text.trim().length > 0) },
   }
 }
 function readPort(value: unknown): value is CodexAppServerTransport['read'] { return typeof value === 'function' }
@@ -47,7 +64,7 @@ async function infer(client: CodexAppServerClient, captured: CodexModelProbeConf
     (captured.reasoningEffort === undefined || proof.reasoningEffort === captured.reasoningEffort) &&
     (captured.fastMode !== true || proof.serviceTier === 'fast')) {
     if (!current()) {throw new Error('codex.probe.cancelled')}
-    const turn = thread.submitTurn({ ...(captured.reasoningEffort === undefined ? {} : { effort: captured.reasoningEffort }), input: [{ type: 'text', text: 'Reply only OK. Do not use tools, access files or run commands.', text_elements: [] }] }, signal)
+    const turn = thread.submitTurn({ ...(captured.reasoningEffort === undefined ? {} : { effort: captured.reasoningEffort }), input: [{ type: 'text', text: probePrompt, text_elements: [] }] }, signal)
     const ref = await turn.accepted, terminal = await turn.completed
     if (terminal.outcome === 'unknown') {throw new Error('codex.probe.unknown')}
     if (!current()) {throw new Error('codex.probe.cancelled')}
