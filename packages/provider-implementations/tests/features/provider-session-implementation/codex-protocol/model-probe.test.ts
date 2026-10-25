@@ -185,7 +185,6 @@ test('foreign, malformed or changed probe echoes and unknown lifecycle remain re
     { method: 'item/completed', params: { ...ids, item: { ...input, id: '' } } },
     { method: 'item/completed', params: { ...ids, item: { ...input, content: [{type:'text', text:'different input', text_elements:[]}] } } },
     { method: 'item/completed', params: { ...ids, item: { ...input, content: [...input.content, ...input.content] } } },
-    { method: 'item/started', params: { ...ids, item: { id:'TEST-text', type:'agentMessage', text:'uncompleted text' } } },
     { method: 'item/started', params: { ...ids, item: { id:'TEST-text', type:'agentMessage' } } },
     { method: 'TEST/unknown', params: { ...ids, item: input } },
   ]
@@ -194,4 +193,68 @@ test('foreign, malformed or changed probe echoes and unknown lifecycle remain re
     await s.native.command({ kind: 'notify', ...frame })
     await s.finish(); assert.equal(await pending, false, JSON.stringify(frame))
   }
+})
+
+// The original native 0.162.0 witness had completed OK, but also these non-output notifications.
+const rates = { limitId: 'codex', limitName: null, normalModelSlug: null, primary: null, secondary: null,
+  credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null }
+const metadataFrames = [
+  { method: 'remoteControl/status/changed', params: { status: 'disabled', serverName: 'TEST-server', installationId: 'TEST-installation', environmentId: null } },
+  { method: 'warning', params: { threadId: 'TEST-thread', message: 'TEST native diagnostic' } },
+  { method: 'warning', params: { threadId: null, message: 'TEST global diagnostic' } },
+  { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: 'active', activeFlags: [] } } },
+  { method: 'account/rateLimits/updated', params: { rateLimits: rates } },
+  { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: 'idle' } } },
+]
+test('witnessed readonly metadata and nonempty assistant starts do not erase completed inference', async t => {
+  const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+  for (const frame of metadataFrames) await s.native.command({ kind: 'notify', ...frame })
+  await s.native.command({ kind: 'notify', method: 'item/started', params: { threadId: 'TEST-thread', turnId: 'turn-1', item: { id: 'TEST-text', type: 'agentMessage', text: 'OK', phase: null, memoryCitation: null, delivery: null, questions: null } } })
+  await s.finish(); assert.equal(await pending, true); assert.deepEqual(s.counts(), { launches: 1, disposals: 1 })
+})
+test('ordinary nonnull quota windows and known native status variants remain metadata only', async t => {
+  const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+  await s.native.command({ kind: 'notify', method: 'account/rateLimits/updated', params: { rateLimits: { ...rates,
+    primary: { usedPercent: 35, windowDurationMins: 300, resetsAt: 1792960000 }, secondary: { usedPercent: 50, windowDurationMins: 10080, resetsAt: 1793000000 },
+    credits: { hasCredits: true, unlimited: false, balance: '10' }, individualLimit: { limit: '100', used: '35', remainingPercent: 65, resetsAt: 1792960000 },
+    spendControlReached: false, rateLimitReachedType: 'rate_limit_reached' } } })
+  for (const status of [{ type: 'notLoaded' }, { type: 'systemError' }, { type: 'active', activeFlags: ['waitingOnApproval', 'waitingOnUserInput'] }])
+    await s.native.command({ kind: 'notify', method: 'thread/status/changed', params: { threadId: 'TEST-thread', status } })
+  await s.finish(); assert.equal(await pending, true)
+})
+test('started text and diagnostics without completed nonempty text never prove inference', async t => {
+  for (const completed of [false, true]) {
+    const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+    for (const frame of metadataFrames) await s.native.command({ kind: 'notify', ...frame })
+    await s.native.command({ kind: 'notify', method: 'item/started', params: { threadId: 'TEST-thread', turnId: 'turn-1', item: { id: 'TEST-text', type: 'agentMessage', text: 'OK' } } })
+    if (completed) await s.native.command({ kind: 'notify', method: 'item/completed', params: { threadId: 'TEST-thread', turnId: 'turn-1', item: { id: 'TEST-text', type: 'agentMessage', text: '' } } })
+    await s.finish(''); assert.equal(await pending, false)
+  }
+})
+test('malformed or foreign metadata, unknown notifications and metadata-looking requests remain refused', async t => {
+  const frames = [
+    { method: 'warning', params: { threadId: 'foreign', message: 'TEST' } },
+    { method: 'warning', params: { threadId: 'TEST-thread', turnId: 'foreign', message: 'TEST' } },
+    { method: 'warning', params: { threadId: 'TEST-thread', message: 42 } },
+    { method: 'warning', params: { threadId: 'TEST-thread', message: 'TEST', id: 'request' } },
+    { method: 'thread/status/changed', params: { threadId: 'foreign', status: { type: 'idle' } } },
+    { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: 'active', activeFlags: ['unknown'] } } },
+    { method: 'remoteControl/status/changed', params: { ...metadataFrames[0]!.params, threadId: 'foreign' } },
+    { method: 'remoteControl/status/changed', params: { status: 'unknown', serverName: 'TEST', installationId: 'TEST', environmentId: null } },
+    { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, primary: { usedPercent: 'bad' } } } },
+    { method: 'account/rateLimits/updated', params: { rateLimits: {} } },
+    { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, turnId: 'foreign' } } },
+    { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: ['idle'] } } },
+    { method: 'remoteControl/status/changed', params: { status: ['disabled'], serverName: 'TEST', installationId: 'TEST', environmentId: null } },
+    { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, rateLimitReachedType: ['rate_limit_reached'] } } },
+    { method: 'TEST/unknown', params: {} },
+  ]
+  for (const frame of frames) {
+    const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
+    await s.native.command({ kind: 'notify', ...frame }); await s.finish(); assert.equal(await pending, false, frame.method)
+  }
+  const request = await setup(t), pending = probeCodexModel(request.config); await request.started()
+  await request.native.command({ kind: 'approval', requestId: 'TEST-request', method: 'warning', params: { threadId: 'TEST-thread', message: 'TEST' } })
+  await request.native.waitFor(row => row.event === 'wire' && (row.message as Record<string, unknown> | undefined)?.id === 'TEST-request')
+  await request.finish(); assert.equal(await pending, false)
 })

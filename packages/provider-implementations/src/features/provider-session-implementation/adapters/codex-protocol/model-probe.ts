@@ -1,6 +1,7 @@
 import { codexModelOptionArgs } from './model-options.ts'
 import { CodexProtocolError } from './rpc-types.ts'
 import { record, string } from './wire-frames.ts'
+import { decodeRateLimits } from './rate-limits.ts'
 import type { CodexAppServerTransport } from './rpc-types.ts'
 import { CodexAppServerClient } from './app-server.ts'
 import { bounded } from '../provider-session-io/io.ts'
@@ -9,7 +10,7 @@ import type { CodexModelProbeConfig, CodexModelProbeConnection } from './model-p
 import type { CodexAppServerEvent, CodexTurnRef } from './session-types.ts'
 
 const probePrompt = 'Reply only OK. Do not use tools, access files or run commands.'
-// Native input echoes and empty assistant starts are lifecycle, never inference evidence.
+// Native input echoes and assistant starts are lifecycle, never inference evidence.
 function probeLifecycle(event: CodexAppServerEvent): boolean {
   if (event.event.type !== 'unsupported_raw_event') {return false}
   const { rawType, payload } = event.event
@@ -17,27 +18,65 @@ function probeLifecycle(event: CodexAppServerEvent): boolean {
   const params = record(payload), item = record(params?.item)
   if (!params || !item || string(item.id) === null ||
     !event.threadId || !event.turnId || params.threadId !== event.threadId || params.turnId !== event.turnId) {return false}
-  if (item.type === 'agentMessage') {return rawType === 'item/started' && item.text === ''}
+  if (item.type === 'agentMessage') {return rawType === 'item/started' && typeof item.text === 'string'}
   if (item.type !== 'userMessage' || !Array.isArray(item.content) || item.content.length !== 1) {return false}
   const content = record(item.content[0])
   return content?.type === 'text' && content.text === probePrompt &&
     Array.isArray(content.text_elements) && content.text_elements.length === 0
 }
-type Fact = { threadId?: string; turnId?: string; type: string; text?: string; lifecycle: boolean }
+// Codex 0.162.0 typed notifications; metadata never supplies inference or tool authority.
+const only = (row: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(row).every(key => keys.includes(key))
+const text = (value: unknown): boolean => typeof value === 'string' && value.length > 0 && value.length <= 1024
+const nullableText = (value: unknown): boolean => value === null || value === undefined || text(value)
+type MetadataScope = 'thread' | 'global'
+function probeMetadata(event: CodexAppServerEvent): MetadataScope | undefined {
+  if (event.event.type !== 'unsupported_raw_event' || event.turnId !== undefined) {return undefined}
+  const { rawType, payload } = event.event, params = record(payload)
+  if (!params) {return undefined}
+  if (rawType === 'warning' && only(params, ['threadId', 'message']) && typeof params.message === 'string' && params.message.length > 0) {
+    if (params.threadId === null && event.threadId === undefined) {return 'global'}
+    if (string(params.threadId) !== null && params.threadId === event.threadId) {return 'thread'}
+  }
+  if (rawType === 'thread/status/changed' && only(params, ['threadId', 'status']) && string(params.threadId) !== null && params.threadId === event.threadId) {
+    const status = record(params.status)
+    if (status && only(status, ['type']) && typeof status.type === 'string' && ['notLoaded', 'idle', 'systemError'].includes(status.type)) {return 'thread'}
+    if (status?.type === 'active' && only(status, ['type', 'activeFlags']) && Array.isArray(status.activeFlags) &&
+      status.activeFlags.every(flag => flag === 'waitingOnApproval' || flag === 'waitingOnUserInput')) {return 'thread'}
+  }
+  if (event.threadId !== undefined) {return undefined}
+  if (rawType === 'remoteControl/status/changed' && only(params, ['status', 'serverName', 'installationId', 'environmentId']) &&
+    typeof params.status === 'string' && ['disabled', 'connecting', 'connected', 'errored'].includes(params.status) && text(params.serverName) && text(params.installationId) &&
+    (params.environmentId === null || text(params.environmentId))) {return 'global'}
+  if (rawType === 'account/rateLimits/updated' && only(params, ['rateLimits'])) {
+    const rates = record(params.rateLimits)
+    if (!rates || !only(rates, ['limitId', 'limitName', 'normalModelSlug', 'primary', 'secondary', 'credits', 'individualLimit', 'spendControlReached', 'planType', 'rateLimitReachedType']) ||
+      !['limitId', 'primary', 'secondary'].every(key => Object.hasOwn(rates, key)) || !nullableText(rates.normalModelSlug) ||
+      !(rates.spendControlReached === null || rates.spendControlReached === undefined || typeof rates.spendControlReached === 'boolean') ||
+      !(rates.rateLimitReachedType === null || rates.rateLimitReachedType === undefined || (typeof rates.rateLimitReachedType === 'string' && ['rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached'].includes(rates.rateLimitReachedType)))) {return undefined}
+    if (rates.individualLimit !== null && rates.individualLimit !== undefined) {
+      const limit = record(rates.individualLimit)
+      if (!limit || !only(limit, ['limit', 'used', 'remainingPercent', 'resetsAt']) || !text(limit.limit) || !text(limit.used) ||
+        typeof limit.remainingPercent !== 'number' || !Number.isFinite(limit.remainingPercent) || !Number.isSafeInteger(limit.resetsAt) || Number(limit.resetsAt) < 0) {return undefined}
+    }
+    try {decodeRateLimits(params); return 'global'} catch {return undefined}
+  }
+  return undefined
+}
+type Fact = { threadId?: string; turnId?: string; type: string; text?: string; lifecycle: boolean; metadata: MetadataScope | undefined }
 const allowed = new Set(['thread_started', 'turn_started', 'assistant_text', 'usage_updated', 'turn_completed', 'turn_failed', 'turn_interrupted'])
 function observations() {
   const facts: Fact[] = []; let bytes = 0; let invalid = false
   return {
     onEvent(event: CodexAppServerEvent): void {
       bytes += Buffer.byteLength(JSON.stringify(event))
-      const lifecycle = probeLifecycle(event)
-      if (!allowed.has(event.event.type) && !lifecycle) {invalid = true}
+      const lifecycle = probeLifecycle(event), metadata = probeMetadata(event)
+      if (!allowed.has(event.event.type) && !lifecycle && metadata === undefined) {invalid = true}
       if (facts.length >= 256 || bytes > 512 * 1024) {invalid = true; return}
       facts.push({ ...(event.threadId !== undefined && event.threadId.length > 0 ? { threadId: event.threadId } : {}), ...(event.turnId !== undefined && event.turnId.length > 0 ? { turnId: event.turnId } : {}),
-        type: event.event.type, lifecycle, ...(event.event.type === 'assistant_text' ? { text: event.event.text } : {}) })
+        type: event.event.type, lifecycle, metadata, ...(event.event.type === 'assistant_text' ? { text: event.event.text } : {}) })
     },
     reject(): void { invalid = true },
-    valid(ref: CodexTurnRef): boolean { return !invalid && facts.every(fact => !fact.lifecycle || (fact.threadId === ref.threadId && fact.turnId === ref.turnId)) && facts.some(fact => fact.threadId === ref.threadId && fact.turnId === ref.turnId && fact.type === 'assistant_text' && fact.text !== undefined && fact.text.trim().length > 0) },
+    valid(ref: CodexTurnRef): boolean { return !invalid && facts.every(fact => (!fact.lifecycle || (fact.threadId === ref.threadId && fact.turnId === ref.turnId)) && (fact.metadata !== 'thread' || fact.threadId === ref.threadId)) && facts.some(fact => fact.threadId === ref.threadId && fact.turnId === ref.turnId && fact.type === 'assistant_text' && fact.text !== undefined && fact.text.trim().length > 0) },
   }
 }
 function readPort(value: unknown): value is CodexAppServerTransport['read'] { return typeof value === 'function' }
