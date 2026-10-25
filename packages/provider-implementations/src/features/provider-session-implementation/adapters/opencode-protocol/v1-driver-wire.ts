@@ -1,16 +1,12 @@
 import { OpenCodeClientFactory } from './OpenCodeClientFactory.ts'
 import type { OpenCodeClient } from './client-types.ts'
-import { createOpenCodeRequest } from './http-request.ts'
+import { createOpenCodeRequest, isOpenCodeConnectionReset } from './http-request.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import type { OpenCodeV1DriverConfig } from './v1-driver-config.ts'
 
 export function v1NotSubmitted(code: string): Error {
   const error = new ExecutionTransportFailure(code, 'not_submitted'); unsubmitted.add(error); return error
-}
-function connectionReset(error: unknown): boolean {
-  const cause = error instanceof TypeError ? error.cause : undefined
-  return cause !== null && typeof cause === 'object' && 'code' in cause && cause.code === 'ECONNRESET'
 }
 async function validateNativeRequest(request: Request, config: OpenCodeV1DriverConfig): Promise<void> {
   const url = new URL(request.url), session = '/session/' + config.nativeSessionId
@@ -49,7 +45,7 @@ export function createV1DriverWire(config: OpenCodeV1DriverConfig, lifetime: Abo
           try { return await (config.fetchImpl ?? fetch)(request, { signal: requestSignal, redirect: 'error' }) }
           catch (error) {
             // Only a pre-response read reset is safe to repeat; the original use budget never restarts.
-            if (readResetRetried || request.method !== 'GET' || !connectionReset(error) || requestSignal.aborted || remaining() <= 0) { throw error }
+            if (readResetRetried || request.method !== 'GET' || !isOpenCodeConnectionReset(error) || requestSignal.aborted || remaining() <= 0) { throw error }
             readResetRetried = true
             requestSignal.throwIfAborted()
             return (config.fetchImpl ?? fetch)(request, { signal: requestSignal, redirect: 'error' })

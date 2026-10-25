@@ -5,6 +5,11 @@ import { DEFAULT_REQUEST_TIMEOUT_MS } from './request-limits.ts'
 export type OpenCodeRequest = <T>(path: string, init?: RequestInit, timeoutMs?: number,
   maxItems?: number, responseKind?: 'metadata' | 'transcript') => Promise<T>
 
+export function isOpenCodeConnectionReset(error: unknown): boolean {
+  const cause = error instanceof TypeError ? error.cause : undefined
+  return cause !== null && typeof cause === 'object' && 'code' in cause && cause.code === 'ECONNRESET'
+}
+
 function resolveRequestTimeoutMs(
   endpointTimeoutMs: number,
   context: OpenCodeClientRequestContext,
@@ -34,6 +39,7 @@ export function createOpenCodeRequest(baseUrl: string, context: OpenCodeClientRe
     ): Promise<T> => {
       const contextAborted = () => context.signal?.aborted === true
       const timeoutMs = resolveRequestTimeoutMs(endpointTimeoutMs, context)
+      const deadline = Date.now() + timeoutMs
       const timeoutError = new Error(
         `OpenCode request timed out after ${timeoutMs}ms for ${path}`,
       )
@@ -54,12 +60,22 @@ export function createOpenCodeRequest(baseUrl: string, context: OpenCodeClientRe
       }, timeoutMs)
 
       try {
-        const response = await fetchImpl(baseUrl + path, {
+        const requestInit: RequestInit = {
           ...init,
           redirect: 'error',
           signal: controller.signal,
           headers: (() => { const headers = new Headers(init?.headers); if (!headers.has('content-type')) { headers.set('content-type', 'application/json') }; return headers })(),
-        })
+        }
+        const attempt = () => fetchImpl(baseUrl + path, requestInit)
+        let response: Response
+        try { response = await attempt() }
+        catch (error) {
+          // Only a rejected pre-response GET is repeatable; keep the original timer and controller.
+          if ((init?.method ?? 'GET') !== 'GET' || !isOpenCodeConnectionReset(error)
+            || controller.signal.aborted || contextAborted() || Date.now() >= deadline
+            || context.remainingMs && !(context.remainingMs() > 0)) { throw error }
+          response = await attempt()
+        }
         // Keep the timer and caller abort listener until the body is consumed.
         try {
           controller.signal.throwIfAborted()

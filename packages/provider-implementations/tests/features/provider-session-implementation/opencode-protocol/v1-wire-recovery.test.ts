@@ -136,3 +136,15 @@ for (const kind of ['timeout', 'body-reset', 'bad-media', 'invalid-json'] as con
     finally { await opened.close() }
   })
 }
+
+test('public V1 common client cannot add recovery after the one shared wire-use GET retry is spent', async () => {
+  let gets = 0
+  const f = fixture(incoming => { if (incoming.method === 'GET' && ++gets !== 2) throw reset() })
+  const opened = await f.open()
+  try {
+    assert.deepEqual(await opened.driver.submit(input), { ok: false, code: 'dependency-unavailable', delivery: 'known-not-sent' })
+    assert.equal(gets, 3, 'one session GET reset+retry, then history reset with no second recovery')
+    assert.deepEqual(f.calls.map(call => call.path), ['/session/' + nativeSessionId, '/session/' + nativeSessionId, '/session/' + nativeSessionId + '/message'])
+    assert.equal(f.submitted.length, 0)
+  } finally { await opened.close() }
+})
