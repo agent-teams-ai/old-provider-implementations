@@ -32,7 +32,7 @@ test('two sessions share a host while interrupt and permission effects stay scop
       res.end(JSON.stringify([{ id: 'request_B', sessionID: 'session_B' }]))
       return
     }
-    if (url.pathname === '/permission/request_B') {
+    if (url.pathname === '/permission/request_B/reply') {
       effects.push('permission_B')
       res.end('true')
       return

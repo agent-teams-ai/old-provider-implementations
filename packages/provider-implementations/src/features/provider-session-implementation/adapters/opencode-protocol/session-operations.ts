@@ -78,15 +78,7 @@ export function createSessionOperations(request: OpenCodeRequest, context: OpenC
       answerPermission: async body => {
         const reply = body.decision === 'allow' ? 'once' : body.decision
         const payload = {
-          requestID: body.requestId,
-          requestId: body.requestId,
-          sessionID: body.sessionId ?? undefined,
-          sessionId: body.sessionId ?? undefined,
           reply,
-          response: body.decision,
-          decision: body.decision,
-          allow: body.decision === 'allow' || body.decision === 'always',
-          always: body.decision === 'always',
           // With a message, OpenCode turns a reject into feedback for the model instead of
           // blocking the session, so the turn continues and can still answer in text.
           ...(body.message !== undefined && body.message.trim().length > 0 ? { message: body.message.trim() } : {}),
@@ -94,7 +86,7 @@ export function createSessionOperations(request: OpenCodeRequest, context: OpenC
         const encodedRequestId = encodeURIComponent(body.requestId)
         // A failed mutation has an uncertain outcome. Never probe another POST route.
         return request<unknown>(
-          `/permission/${encodedRequestId}`,
+          `/permission/${encodedRequestId}/reply`,
           { method: 'POST', body: JSON.stringify(payload) },
           PERMISSION_REQUEST_TIMEOUT_MS,
         )

@@ -16,7 +16,7 @@ async function validateNativeRequest(request: Request, config: OpenCodeV1DriverC
   const url = new URL(request.url), session = '/session/' + config.nativeSessionId
   if (url.origin !== config.endpoint || url.username.length > 0 || url.password.length > 0 || url.hash.length > 0
     || !(request.method === 'GET' && [session, session + '/message', '/session/status', '/permission', '/question'].includes(url.pathname)
-    || request.method === 'POST' && ([session + '/prompt_async', session + '/abort'].includes(url.pathname) || /^\/permission\/[A-Za-z0-9_-]{1,256}$/.test(url.pathname)))) { throw new Error('unsupported_native_route') }
+    || request.method === 'POST' && ([session + '/prompt_async', session + '/abort'].includes(url.pathname) || /^\/permission\/[A-Za-z0-9_-]{1,256}\/reply$/.test(url.pathname)))) { throw new Error('unsupported_native_route') }
   for (const key of url.searchParams.keys()) {
     if (url.pathname !== session + '/message' || !['limit', 'before'].includes(key) || url.searchParams.getAll(key).length !== 1) { throw new Error('unsupported_native_query') }
   }

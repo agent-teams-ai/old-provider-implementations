@@ -64,9 +64,8 @@ export async function v1Peer() {
         aborted.push(url.pathname.split('/')[2]!); if (!abortAckOnly) {complete(true)}
         const finish = () => res.end('true'); if (holdAbort) {heldAbort = finish;} else {finish();} return
       }
-      if (url.pathname.startsWith('/permission/')) {
-        const decision = JSON.parse(body) as { sessionID: string; reply: string }
-        assert.equal(decision.sessionID, nativeSessionId); assert.equal(decision.reply, 'once')
+      if (url.pathname === '/permission/request_TEST/reply') {
+        assert.deepEqual(JSON.parse(body), { reply: 'once' })
         granted.push(url.pathname); complete(); res.end('true'); return
       }
       res.writeHead(404); res.end('{}')
