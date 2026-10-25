@@ -8,6 +8,10 @@ import type { OpenCodeV1DriverConfig } from './v1-driver-config.ts'
 export function v1NotSubmitted(code: string): Error {
   const error = new ExecutionTransportFailure(code, 'not_submitted'); unsubmitted.add(error); return error
 }
+function connectionReset(error: unknown): boolean {
+  const cause = error instanceof TypeError ? error.cause : undefined
+  return cause !== null && typeof cause === 'object' && 'code' in cause && cause.code === 'ECONNRESET'
+}
 async function validateNativeRequest(request: Request, config: OpenCodeV1DriverConfig): Promise<void> {
   const url = new URL(request.url), session = '/session/' + config.nativeSessionId
   if (url.origin !== config.endpoint || url.username.length > 0 || url.password.length > 0 || url.hash.length > 0
@@ -30,30 +34,40 @@ export function createV1DriverWire(config: OpenCodeV1DriverConfig, lifetime: Abo
   const use = async <T>(run: (client: OpenCodeClient, questions: () => Promise<unknown>) => Promise<T>, scoped?: AbortSignal): Promise<T> => {
     const abort = new AbortController(), signal = AbortSignal.any([abort.signal, lifetime, ...(scoped ? [scoped] : [])])
     const deadline = Date.now() + config.limits.timeoutMs
-    let bytes = 0
+    let bytes = 0, readResetRetried = false
     const remaining = () => deadline - Date.now()
     const wrappedFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       let invoked = false, reader: ReadableStreamDefaultReader<Uint8Array> | undefined
       try {
         signal.throwIfAborted()
-        const request = new Request(input, init)
+        const request = new Request(input, init), requestSignal = AbortSignal.any([signal, request.signal])
         await validateNativeRequest(request, config)
-        signal.throwIfAborted()
+        requestSignal.throwIfAborted()
         if (remaining() <= 0) {throw new Error('deadline')}
         invoked = true
-        const response = await boundV2Request(track((config.fetchImpl ?? fetch)(request, { signal, redirect: 'error' }).then(async received => {
-          if (signal.aborted) { await received.body?.cancel(); throw new Error('deadline') }; return received
-        })), remaining(), signal)
+        const fetchResponse = async (): Promise<Response> => {
+          try { return await (config.fetchImpl ?? fetch)(request, { signal: requestSignal, redirect: 'error' }) }
+          catch (error) {
+            // Only a pre-response read reset is safe to repeat; the original use budget never restarts.
+            if (readResetRetried || request.method !== 'GET' || !connectionReset(error) || requestSignal.aborted || remaining() <= 0) { throw error }
+            readResetRetried = true
+            requestSignal.throwIfAborted()
+            return (config.fetchImpl ?? fetch)(request, { signal: requestSignal, redirect: 'error' })
+          }
+        }
+        const response = await boundV2Request(track(fetchResponse().then(async received => {
+          if (requestSignal.aborted) { await received.body?.cancel(); throw new Error('deadline') }; return received
+        })), remaining(), requestSignal)
         verifyNativeResponse(response, config.endpoint)
         reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let bodyBytes = 0
         if (reader) {for (;;) {
-          const part = await boundV2Request(track(reader.read()), remaining(), signal)
+          const part = await boundV2Request(track(reader.read()), remaining(), requestSignal)
           if (part.done) { break }
           bytes += part.value.byteLength; bodyBytes += part.value.byteLength
           if (bytes > 32 * 1024 * 1024 || bodyBytes > 8 * 1024 * 1024) { throw new Error('native_read_byte_budget') }
           chunks.push(part.value)
         }}
-        signal.throwIfAborted()
+        requestSignal.throwIfAborted()
         if (remaining() <= 0) {throw new Error('deadline')}
         return new Response(response.status === 204 ? null : Buffer.concat(chunks), { status: response.status, headers: response.headers })
       } catch {
