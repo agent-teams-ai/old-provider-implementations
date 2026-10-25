@@ -2,7 +2,9 @@ import type { CodexAppServerEvent, CodexTurnOutcome } from './session-types.ts'
 
 export type CodexCaptureValue = null | boolean | number | string | readonly CodexCaptureValue[] | { readonly [key: string]: CodexCaptureValue }
 type Identity = { readonly sessionRef: string; readonly windowRef: string; readonly inputId: string; readonly operationRef: string; readonly threadId: string }
-export type CodexInputWindowItem = Readonly<{ itemId: string; phase: 'started' | 'completed'; status: string; changes: CodexCaptureValue }>
+export type CodexInputWindowItem = Readonly<{ itemId: string; phase: 'started' | 'completed'; status: string; changes: CodexCaptureValue;
+  /** Private native command anchor only, never authored file-change evidence. */
+  nativeCommand?: Readonly<{ command: string; cwd: string | null; exitCode: number | null; isError: boolean }> }>
 type GapReason = 'capture-failed' | 'timeout' | 'aborted' | 'transport' | 'limit' | 'conflict'
 export type CodexInputWindowRequest = Readonly<Identity & { signal: AbortSignal } & (
   | { phase: 'before' }
@@ -63,16 +65,19 @@ export class CodexInputWindowCapture {
   record(event: CodexAppServerEvent): void {
     if (!this.prepared || this.ended || this.invalid || this.abort.aborted || event.threadId !== this.identity.threadId || typeof event.turnId !== 'string' || event.turnId.length === 0) {return}
     const raw = event.event
-    if ((raw.type !== 'tool_call_started' && raw.type !== 'tool_call_completed') || raw.rawItemType !== 'fileChange') {return}
+    if ((raw.type !== 'tool_call_started' && raw.type !== 'tool_call_completed') || !['fileChange', 'commandExecution'].includes(raw.rawItemType)) {return}
     if (this.nativeTurn !== undefined && this.nativeTurn !== event.turnId) {this.gap('conflict'); return}
     this.nativeTurn = event.turnId
     try {
-      const serialized = serializeChanges(raw.arguments.changes)
+      const command = raw.rawItemType === 'commandExecution' ? nativeCommand(raw) : undefined
+      if (raw.rawItemType === 'commandExecution' && !command) {this.gap('conflict'); return}
+      const serialized = serializeChanges({ changes: command ? null : raw.arguments.changes, ...(command ? { nativeCommand: command } : {}) })
       if (typeof serialized !== 'string' || this.items.length >= this.maxItems || this.bytes + Buffer.byteLength(serialized) > this.maxBytes) {this.gap('limit'); return}
-      const changes: unknown = JSON.parse(serialized)
-      if (!Array.isArray(changes)) {this.gap('conflict'); return}
+      const copied = JSON.parse(serialized) as { changes: unknown; nativeCommand?: NonNullable<CodexInputWindowItem['nativeCommand']> }
+      if (!command && !Array.isArray(copied.changes)) {this.gap('conflict'); return}
       const item = Object.freeze({ itemId: raw.itemId, phase: raw.type === 'tool_call_started' ? 'started' as const : 'completed' as const,
-        status: raw.status, changes: freezeCapture(changes) })
+        status: raw.status, changes: freezeCapture(copied.changes),
+        ...(copied.nativeCommand ? { nativeCommand: Object.freeze(copied.nativeCommand) } : {}) })
       this.bytes += Buffer.byteLength(serialized); this.items.push(item)
     } catch {this.gap('limit')}
   }
@@ -111,4 +116,15 @@ export class CodexInputWindowCapture {
     finally {clearTimeout(timer); signal.removeEventListener('abort', aborted)}
     return timeout.signal.aborted ? 'timeout' : 'aborted'
   }
+}
+
+/** Keep exact native outcome fields; never parse shell syntax or retain process IDs/output. */
+function nativeCommand(raw: Extract<CodexAppServerEvent['event'], { type: 'tool_call_started' | 'tool_call_completed' }>): CodexInputWindowItem['nativeCommand'] {
+  const command = raw.arguments.command, cwd = raw.arguments.cwd
+  if (typeof command !== 'string' || !command || command.length > 65536 || (cwd !== undefined && typeof cwd !== 'string')) {return}
+  const result = raw.type === 'tool_call_completed' && raw.rawResult !== null && typeof raw.rawResult === 'object' ? raw.rawResult as Record<string, unknown> : undefined
+  const exit = result?.exitCode
+  if (exit !== undefined && exit !== null && (!Number.isSafeInteger(exit) || typeof exit !== 'number')) {return}
+  return { command, cwd: typeof cwd === 'string' ? cwd : null, exitCode: typeof exit === 'number' ? exit : null,
+    isError: raw.type === 'tool_call_completed' && raw.isError }
 }

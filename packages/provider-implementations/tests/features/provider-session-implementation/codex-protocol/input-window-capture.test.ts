@@ -178,3 +178,26 @@ test('configuration never rereads an initially absent capture getter through obj
   assert.equal(reads, 1)
   assert.equal(Object.hasOwn(selected, 'capture'), false)
 })
+
+
+test('private capture retains recovered commandExecution exit7 independently of successful input', async () => {
+  const { CodexInputWindowCapture } = await import('../../../../src/features/provider-session-implementation/adapters/codex-protocol/input-window-capture.ts')
+  const { mapThreadItemToToolStarted, mapThreadItemToToolCompleted } = await import('../../../../src/features/provider-session-implementation/adapters/codex-protocol/notification-items.ts')
+  const requests: CodexInputWindowRequest[] = []
+  const identity = { sessionRef: 'TEST-session', windowRef: 'TEST-window', inputId: 'TEST-input', operationRef: 'TEST-operation', threadId: 'TEST-thread' }
+  const capture = new CodexInputWindowCapture({ identity, port: { observe: request => { requests.push(request) } }, abort: new AbortController().signal, timeoutMs: 1000, maxItems: 8, maxBytes: 4096 })
+  await capture.before()
+  const raw = { type: 'commandExecution', id: 'TEST-native-shell', command: 'printf partial > dirty.txt; exit 7', cwd: '/TEST/workspace', status: 'inProgress', exitCode: null as number | null }
+  const started = mapThreadItemToToolStarted(raw); assert(started)
+  capture.record({ threadId: identity.threadId, turnId: 'TEST-turn', event: started })
+  raw.status = 'failed'; raw.exitCode = 7
+  const completed = mapThreadItemToToolCompleted(raw); assert(completed)
+  capture.record({ threadId: identity.threadId, turnId: 'TEST-turn', event: completed })
+  raw.exitCode = 0; raw.command = 'TEST caller replaced raw input'
+  await capture.after({ threadId: identity.threadId, turnId: 'TEST-turn', outcome: 'completed' })
+  const final = requests.find(request => request.phase === 'after'); assert(final?.phase === 'after')
+  assert.equal(final.outcome, 'completed'); assert.equal(final.items.length, 2)
+  const finalItem = final.items[1] as unknown as { nativeCommand: { command: string; cwd: string; exitCode: number; isError: boolean } }
+  assert.deepEqual(finalItem.nativeCommand, { command: 'printf partial > dirty.txt; exit 7', cwd: '/TEST/workspace', exitCode: 7, isError: true })
+  assert(Object.isFrozen(finalItem.nativeCommand))
+})

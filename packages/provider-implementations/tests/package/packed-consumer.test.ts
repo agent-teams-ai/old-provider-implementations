@@ -111,7 +111,7 @@ try {
   assert.equal((checkpoint.value as Record<string, unknown>).nativeThreadId, 'thread-1');
 } finally { await driver?.close(); canonical.child.kill('SIGTERM'); }
 `)
-  runConsumer(['exec', 'tsc', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2024', '--noEmit', '--strict', '--types', 'node', 'types.ts', 'lifecycle.ts'], sandbox)
+  runConsumer(['exec', 'tsc', '--ignoreConfig', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2024', '--noEmit', '--strict', '--types', 'node', 'types.ts', 'lifecycle.ts'], sandbox)
   execFileSync(process.execPath, ['lifecycle.ts', resolve(root, 'tests/fixtures/codex-app-server.ts')], { cwd: sandbox, stdio: 'pipe', timeout: 10000 })
   const manifest = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
   assert.deepEqual(manifest.engines, { node: '>=24.21.0 <25 || >=26.11.1 <27' })
