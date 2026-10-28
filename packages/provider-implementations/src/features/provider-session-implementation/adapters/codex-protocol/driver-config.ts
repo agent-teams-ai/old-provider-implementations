@@ -29,6 +29,8 @@ export type CodexDriverConfig = {
   readonly requiredMcpTools?: RequiredMcpTools
   /** Private exact policy; verifier rechecks the original native source before status can initialize MCP. */
   readonly mcpPolicy?: CodexMcpPolicy
+  /** Caller-owned HTTP server under trustedBinding; only its URL may rotate across compatible restores. */
+  readonly runtimeMcpServer?: string
   readonly verifyMcpCatalog?: (signal: AbortSignal) => Promise<boolean>
   readonly rpcLimits?: Partial<CodexRpcLimits>
   readonly limits: Limits
@@ -69,18 +71,35 @@ function validDriverConfiguration(value: unknown, request: OpenConfig): boolean 
     && typeof config.probe === 'function' && typeof config.confirmStopped === 'function'
     && thread !== null && turn !== null && !Object.hasOwn(thread, 'threadId') && !['input', 'threadId'].some(key => Object.hasOwn(turn, key))
 }
+function validRuntimeMcpServer(name: unknown, policy: CodexMcpPolicy | undefined, required: RequiredMcpTools | undefined): name is string {
+  if (typeof name !== 'string' || !name.length || name.length > 256 || /[\0\r\n]/u.test(name) || !policy || !Object.hasOwn(policy.selected, name)
+    || !required || !Object.hasOwn(required, name) || !required[name]!.length) { return false }
+  const server = policy.selected[name]!
+  return 'url' in server && /^https?:\/\//u.test(server.url)
+}
 export function captureDriverConfig(config: CodexDriverConfig, request: OpenConfig): CodexDriverConfig {
   if (!validDriverConfiguration(config, request)) {throw new Error('codex.driver.invalid-config')}
+  const { capture: suppliedCapture, runtimeMcpServer, ...base } = config
   if (config.mcpPolicy !== undefined && (typeof config.verifyMcpCatalog !== 'function' || !managedCodexMcpParameters(config.threadParams, config.turnParams ?? {}, config.initialize.capabilities))) { throw new Error('codex.driver.invalid-config') }
   const mcpPolicy = config.mcpPolicy === undefined ? undefined : captureCodexMcpPolicy(config.mcpPolicy)
   if (mcpPolicy && Object.keys(config.requiredMcpTools ?? {}).some(server => !Object.hasOwn(mcpPolicy.selected, server))) { throw new Error('codex.driver.invalid-config') }
-  const { capture: suppliedCapture, ...base } = config
+  const requiredMcpTools = config.requiredMcpTools === undefined ? undefined : captureRequiredMcpTools(config.requiredMcpTools)
+  if (runtimeMcpServer !== undefined && !validRuntimeMcpServer(runtimeMcpServer, mcpPolicy, requiredMcpTools)) { throw new Error('codex.driver.invalid-config') }
   const capture = snapshotInputWindowPort(suppliedCapture)
   return { ...base, ...(capture ? { capture } : {}), binding: { ...config.binding }, limits: { ...config.limits }, initialize: structuredClone(config.initialize),
-    ...(config.requiredMcpTools !== undefined ? { requiredMcpTools: captureRequiredMcpTools(config.requiredMcpTools) } : {}),
+    ...(requiredMcpTools !== undefined ? { requiredMcpTools } : {}),
     ...(mcpPolicy !== undefined ? { mcpPolicy, verifyMcpCatalog: config.verifyMcpCatalog!.bind(config) } : {}),
+    ...(runtimeMcpServer !== undefined ? { runtimeMcpServer } : {}),
     ...(config.attachments !== undefined ? { attachments: snapshotAttachmentPort(config.attachments)! } : {}),
     threadParams: structuredClone(config.threadParams), turnParams: structuredClone(config.turnParams ?? {}), rpcLimits: { ...config.rpcLimits } }
+}
+
+/** Compatibility only: the exact current policy still configures and qualifies native MCP. */
+function checkpointMcpPolicy(config: CodexDriverConfig): unknown {
+  const policy = config.mcpPolicy!
+  if (config.runtimeMcpServer === undefined) { return policy }
+  return { ...policy, selected: Object.fromEntries(Object.entries(policy.selected).map(([name, server]) =>
+    [name, name === config.runtimeMcpServer ? { ...server, url: null } : server])) }
 }
 
 export function driverCompatibility(config: CodexDriverConfig): string {
@@ -90,7 +109,8 @@ export function driverCompatibility(config: CodexDriverConfig): string {
     threadParams: config.threadParams, turnParams: config.turnParams,
     ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}),
     ...(config.requiredMcpTools !== undefined ? { requiredMcpTools: config.requiredMcpTools } : {}),
-    ...(config.mcpPolicy !== undefined ? { mcpPolicy: config.mcpPolicy } : {}) })).digest('hex')
+    ...(config.mcpPolicy !== undefined ? { mcpPolicy: checkpointMcpPolicy(config) } : {}),
+    ...(config.runtimeMcpServer !== undefined ? { runtimeMcpServer: config.runtimeMcpServer } : {}) })).digest('hex')
 }
 
 export type CodexDriverCheckpoint = {

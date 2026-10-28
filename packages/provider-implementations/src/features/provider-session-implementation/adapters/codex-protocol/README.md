@@ -118,6 +118,14 @@ and history count/byte bounds before any native IO. History-free version-1
 checkpoints are incompatible. Explicit restore requires that selected checkpoint;
 native resume failure cannot create a fresh thread.
 The Host must reconcile native persistence and recovery eligibility before opening.
+Managed MCP consumers may explicitly mark one caller-owned HTTP server with
+`runtimeMcpServer`. Its required tools and existing `trustedBinding` bind its
+authority; only that server's URL is transient in the private checkpoint digest.
+The catalog, other servers, tools, authentication fields and timeouts remain bound,
+and native configuration/readiness still checks the exact current URL. Omitting
+the marker preserves previous checkpoint bytes. An old unmarked checkpoint does
+not acquire this declaration on restore; it remains incompatible without guessing,
+replaying work or falling back to a fresh thread.
 Local close synchronously seals submissions and interactions and detaches protocol
 IO; cleanup remains unknown unless the caller separately confirms owned native
 work stopped. It never kills a shared host or claims a process stopped from EOF.
