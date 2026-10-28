@@ -1,0 +1,278 @@
+{
+  "sourceRevision": "969afc56ec39d92c33dd5aabd15ef782da94dd87",
+  "observedLocalCheckoutHead": "3bf24764f25dfd7588b9c8b23748fa0891fd85df",
+  "localCheckoutNote": "Local HEAD is dated2026-09-05, inventory source2026-10-20; older HEAD is not the extraction authority. Dirty files untouched.",
+  "status": "candidate V1 and V2 existing-session canonical consumers with bounded native mechanisms; full OpenCode D Host/materialization/credentials parity pending",
+  "entries": [
+    {
+      "sourcePath": "src/services/opencode/OpenCodeClientFactory.ts",
+      "sourceBlob": "aa6477670c5ba23c503577236d14581f699d3dda",
+      "sourceSha256": "4bc249d5de14c7df2eb623c8e6ad71c4a378f4f979d0be39e0e6d95d632d3fc5",
+      "sourcePhysicalLines": 426,
+      "targetPath": "src/features/opencode-protocol/OpenCodeClientFactory.ts",
+      "disposition": "move mechanism with boundary hardening",
+      "localCheckoutComparison": "different or absent in older local checkout",
+      "deleteAuthorization": false,
+      "targetPaths": [
+        "src/features/opencode-protocol/OpenCodeClientFactory.ts",
+        "src/features/opencode-protocol/client-types.ts",
+        "src/features/opencode-protocol/http-request.ts",
+        "src/features/opencode-protocol/request-limits.ts",
+        "src/features/opencode-protocol/query-path.ts",
+        "src/features/opencode-protocol/catalog-operations.ts",
+        "src/features/opencode-protocol/session-operations.ts"
+      ]
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeBoundedHttpResponse.ts",
+      "sourceBlob": "849035cba36ba476a6f42c44c5b276d2878c1744",
+      "sourceSha256": "c42624f50cb3a30537f9b345af3d74bae49ee158fd30b67838244ca0d43d643e",
+      "sourcePhysicalLines": 73,
+      "targetPath": "src/features/opencode-protocol/OpenCodeBoundedHttpResponse.ts",
+      "disposition": "move mechanism with boundary hardening",
+      "localCheckoutComparison": "different or absent in older local checkout",
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeClientRequestContext.ts",
+      "sourceBlob": "7e1b9376914f937c739da620bf7bd0c47763dabc",
+      "sourceSha256": "8bd99540d8f05bd0b62e5cf978431f85eb08a09f448d416b468198e7886a3a0d",
+      "sourcePhysicalLines": 6,
+      "targetPath": "src/features/opencode-protocol/OpenCodeClientRequestContext.ts",
+      "disposition": "move mechanism with boundary hardening",
+      "localCheckoutComparison": "different or absent in older local checkout",
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeSseEventStream.ts",
+      "sourceBlob": "b4560aca3ed0c8b1e4c474c282b6f90f07700964",
+      "sourceSha256": "f999dbd76cd126a1fe97a6dedb0ad9ad05a8715255b68ff7547dee8dd1e9342c",
+      "sourcePhysicalLines": 291,
+      "targetPath": "src/features/opencode-protocol/OpenCodeSseEventStream.ts",
+      "disposition": "move mechanism with boundary hardening",
+      "localCheckoutComparison": "same blob",
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeMessageIds.ts",
+      "sourceBlob": "8b0174bbbf2b365ef36b99b8d33041721d0298d5",
+      "sourceSha256": "ae99b00d8d37e32006185baa36b59f167786f6622b9a0b99e53a3421c4b8fac0",
+      "sourcePhysicalLines": 142,
+      "targetPath": "src/features/opencode-protocol/OpenCodeMessageIds.ts",
+      "disposition": "move mechanism with boundary hardening",
+      "localCheckoutComparison": "same blob",
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/types.ts",
+      "sourceBlob": "728561222f1859d9848c8c4c01c53b47ee56b2ac",
+      "sourceSha256": "1e5510380424266e43a11eeee9e3ed47fe8f03987e36ff6112e2bb788a65f94b",
+      "sourcePhysicalLines": 706,
+      "targetPath": "src/features/opencode-protocol/types.ts",
+      "disposition": "extract referenced protocol DTO closure only",
+      "localCheckoutComparison": "different or absent in older local checkout",
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeSessionStore.ts",
+      "sourceBlob": "91e8d153d755ae3bb354935a048146b2cfab5036",
+      "sourceSha256": "e986f74bcdc131a77d1329b799dc1efc5419bcc1bfdb2fd4ac17dacf601c2153",
+      "sourcePhysicalLines": 1050,
+      "disposition": "extract narrow schema1 binding/cursor mapping over consumer-owned CAS port; team stop/materialization/process policies excluded",
+      "targetPaths": [
+        "src/features/opencode-protocol/session-bindings.ts",
+        "src/features/opencode-protocol/session-binding-codec.ts",
+        "src/features/opencode-protocol/session-binding-types.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeAuthorityStoreRead.ts",
+      "sourceBlob": "a6ef136575a51199a6e588270e1b8a4cac4ecd08",
+      "sourceSha256": "f7c99730d29588ef879b9daf8a21164c895bb98182e402897b2b77289836600b",
+      "sourcePhysicalLines": 268,
+      "disposition": "extract narrow schema1 binding/cursor mapping over consumer-owned CAS port; team stop/materialization/process policies excluded",
+      "targetPaths": [
+        "src/features/opencode-protocol/session-bindings.ts",
+        "src/features/opencode-protocol/session-binding-codec.ts",
+        "src/features/opencode-protocol/session-binding-types.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeV1TerminalProof.ts",
+      "sourceBlob": "79bd87de2cb7c8143c21863a2f65da69a699a2a9",
+      "sourceSha256": "2614ef0293d81f334db29d9bef1b7d4ec73b5b9592698389111e552d6c7def40",
+      "sourcePhysicalLines": 64,
+      "disposition": "move pure exact-user-anchor terminal qualifier with original workspace authority guard",
+      "targetPaths": [
+        "src/features/opencode-protocol/terminal-proof.ts",
+        "src/features/opencode-protocol/canonical-message-types.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/transport/OpenCodeV2ExecutionFetch.ts",
+      "sourceBlob": "3067c969780dd471398f451c4a14d6730df24478",
+      "sourceSha256": "8620ec66e886ec7134af870287ba1ec79e9ad44c4ec6ff09d8b295a4c4bfe1fd",
+      "sourcePhysicalLines": 256,
+      "disposition": "move exact-version finite transport, private uncertainty/absence brands, request lifecycle and body/SSE validation",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-execution-transport.ts",
+        "src/features/opencode-protocol/v2-failures.ts",
+        "src/features/opencode-protocol/v2-json-budget.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/transport/OpenCodeBoundedFetch.ts",
+      "sourceBlob": "116d2acf56cd4f2500b6789a7f23d40c9a010e3e",
+      "sourceSha256": "27d3dbe54a9d9e0c91ad29433fed03d1597313661147054e7cc7e2ad483a2c2c",
+      "sourcePhysicalLines": 155,
+      "disposition": "extract only lexical JSON complexity helper; catalog fetch owner remains donor",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-json-budget.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/execution/OpenCodeV2TurnProjection.ts",
+      "sourceBlob": "68221c9d705a056e08cfd36581ec60bb086d8e03",
+      "sourceSha256": "2d8eeb47f6dc27d4fa4afe3f1056c1560c590624f1e30c2b2ff18b5fe651eb95",
+      "sourcePhysicalLines": 243,
+      "disposition": "extract native input/log/assistant/tool/terminal qualification only; product receipt inference and controller inbox ownership remain Orchestrator",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-turn-projection.ts",
+        "src/features/opencode-protocol/v2-projection-types.ts",
+        "src/features/opencode-protocol/v2-projection-helpers.ts",
+        "src/features/opencode-protocol/v2-assistant-projection.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/execution/OpenCodeV2ExecutionContracts.ts",
+      "sourceBlob": "50de2c10b32c214ad9e6d0d33c3880df843b3363",
+      "sourceSha256": "d5092e6f3bf9e20bc45f7bf1f6d5c617293999377a1ea0a1351a9dc0dd6b9e95",
+      "sourcePhysicalLines": 85,
+      "disposition": "extract only canonical native JSON equality helper; session/admission/product identity contracts not transplanted",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-canonical-json.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/execution/OpenCodeV2TerminalSettlement.ts",
+      "sourceBlob": "4aa74a9b6c3ff87f6fa2e142a634d7b73a06c7b3",
+      "sourceSha256": "077d2a258f80448db2797eed6baf0f0a6506804f43bfebc64137134766f48e0d",
+      "sourcePhysicalLines": 110,
+      "disposition": "extract only bounded readExecutionCut stability/page-completeness mechanism; no admission journal, materialization owner or terminal settlement mutation",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-native-cut.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/transport/OpenCodeV2ExecutionClientFactory.ts",
+      "sourceBlob": "4aec6ce2a3d9cddf1a93f610e5d57ba768c4342e",
+      "sourceSha256": "d3be97e55df823778d9d92ad0972243fb6ff0796c2829e4b367a582e90bbd5a9",
+      "sourcePhysicalLines": 525,
+      "disposition": "extract finite native log/message/session decoding and session-bound control dialects only; official client creation and Host-global configuration/MCP authority remain unextracted",
+      "targetPaths": [
+        "src/features/opencode-protocol/v2-cut-codecs.ts",
+        "src/features/opencode-protocol/v2-projection-types.ts",
+        "src/features/opencode-protocol/v2-control-transport.ts",
+        "src/features/opencode-protocol/v2-session-control.ts",
+        "src/features/opencode-protocol/v2-bounded-await.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeTranscriptProjector.ts",
+      "sourceBlob": "89a778772cd4e0f47f5cee74fbe10d3dfabe6d91",
+      "sourceSha256": "e7ae24549ad6043a887bcca2a883d1762074c6c8812a9d7f400d0114ce76f798",
+      "sourcePhysicalLines": 321,
+      "disposition": "extract native message/tool/content mapping; remove product bootstrap filtering and keep exact native finish separate from step-finish progress",
+      "targetPaths": [
+        "src/features/opencode-protocol/v1-transcript-projector.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodeV1TerminalTranscriptReader.ts",
+      "sourceBlob": "52fd5bc3a279400db6409463ed9858482cd7dc00",
+      "sourceSha256": "5114c7da73f1a9427547c267a681a0523893c235f5ff3c18d96cbed743a5ddb1",
+      "sourcePhysicalLines": 107,
+      "disposition": "extract bounded original-user window pagination, raw identity/parent checks, interaction settlement and repeated-window stability; no legacy SessionBridge/profile owner",
+      "targetPaths": [
+        "src/features/opencode-protocol/v1-native-read.ts",
+        "src/features/opencode-protocol/v1-driver-cut.ts"
+      ],
+      "deleteAuthorization": false
+    },
+    {
+      "sourcePath": "src/services/opencode/OpenCodePermissionNormalizer.ts",
+      "sourceBlob": "87fe2540c87d125ca93f49392e6d012d792efccd",
+      "sourceSha256": "d3fd65455ed4b7bc97bc3203023e2837300eab6334ef3c25cee2e3289481dd0d",
+      "sourcePhysicalLines": 81,
+      "disposition": "move native permission alias normalization only; canonical driver separately requires unambiguous session plus exact running tool/message ownership",
+      "targetPaths": [
+        "src/features/opencode-protocol/v1-permission-normalizer.ts"
+      ],
+      "deleteAuthorization": false
+    }
+  ],
+  "excludedProductWriters": [
+    "OpenCodeLedgerBridgeService.ts",
+    "OpenCodeBridgeCommandHandler.ts",
+    "OpenCodeRuntimeTurnSettledEmitter.ts"
+  ],
+  "remainingMechanisms": [
+    "OpenCode V2 execution transports/authority/lease and containment",
+    "Profile/auth/model route custody",
+    "SessionBridge stop/terminal reconciliation and delivery scheduling",
+    "Provider event and transcript projection parity",
+    "Full SessionStore materialization/create/retire and whole-authority validation; binding adapter only observes existing records and CAS-updates technical cursor"
+  ],
+  "donorTestOracles": [
+    "src/services/opencode/OpenCodeClientFactory.test.ts",
+    "src/services/opencode/OpenCodeSseEventStream.test.ts",
+    "src/services/opencode/OpenCodeMessageIds.test.ts",
+    "src/services/opencode/OpenCodeV1TerminalTranscriptBudget.test.ts",
+    "src/services/opencode/bridge/OpenCodeV2TurnProjection.test.ts",
+    "src/services/opencode/transport/OpenCodeV2ExecutionClientFactory.test.ts",
+    "src/services/opencode/bridge/fixtures/OpenCodeV2R264TerminalCuts.ts"
+  ],
+  "verification": "V1 actual TEST HTTP canonical driver focused12 tests and V2 lifecycle/factory15 tests pass after shared private protocol/lifecycle extraction; focused OpenCode+IO+own tests type closure passes. Full combined gate/root review pending. No native binary/provider/Host qualification or full D parity claimed.",
+  "observedOriginMain": "60d37dbe4d04842f98b93fb60c07224ffd7ccc1a",
+  "selectedCommittedDeltaToObservedOriginMain": "none for all eighteen selected source files; observed current ProfileManager/gateway snapshot delta remains outside selected closure",
+  "consumerComposition": {
+    "classification": "new provider-private bounded volatile session consumer with two concrete native protocol backends; no Host/native materialization/durable admission owner",
+    "canonicalContractSource": "25de9bf2d9a3982d1f62348547a2808c112ad8b5",
+    "canonicalArtifactSha256": "2afd8e31b16c1cb630645f976cbaedf1556272ab6587956eed760cf7b09a1425",
+    "targetPaths": [
+      "src/features/opencode-protocol/v2-driver-config.ts",
+      "src/features/opencode-protocol/v2-driver-factory.ts",
+      "src/features/opencode-protocol/v2-driver-native.ts",
+      "src/features/opencode-protocol/v2-driver-output.ts",
+      "src/features/opencode-protocol/v2-driver-session.ts",
+      "src/features/opencode-protocol/driver-protocol.ts",
+      "src/features/opencode-protocol/driver-session.ts",
+      "src/features/opencode-protocol/v2-driver-backend.ts",
+      "src/features/opencode-protocol/v1-driver-config.ts",
+      "src/features/opencode-protocol/v1-driver-factory.ts",
+      "src/features/opencode-protocol/v1-driver-backend.ts",
+      "src/features/opencode-protocol/v1-driver-wire.ts",
+      "src/features/opencode-protocol/v1-driver-cut.ts",
+      "src/features/opencode-protocol/v1-driver-output.ts"
+    ],
+    "excluded": [
+      "native session creation/materialization",
+      "Host/global MCP/process/lease ownership",
+      "durable operation journal/replay decisions",
+      "structured questions",
+      "usage accounting",
+      "attachments",
+      "token delta streaming"
+    ]
+  }
+}

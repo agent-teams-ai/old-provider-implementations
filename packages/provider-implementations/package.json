@@ -1,0 +1,61 @@
+{
+  "name": "@agent-teams/provider-implementations",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider session implementations of the canonical runtime SPI; custody and policy are consumer-owned",
+  "engines": {
+    "node": ">=24.21.0 <25 || >=26.11.1 <27"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./composition": {
+      "types": "./dist/composition.d.ts",
+      "import": "./dist/composition.js"
+    },
+    "./claude": {
+      "types": "./dist/claude.d.ts",
+      "import": "./dist/claude.js"
+    },
+    "./codex": {
+      "types": "./dist/codex.d.ts",
+      "import": "./dist/codex.js"
+    },
+    "./opencode": {
+      "types": "./dist/opencode.d.ts",
+      "import": "./dist/opencode.js"
+    },
+    "./session-io": {
+      "types": "./dist/session-io.d.ts",
+      "import": "./dist/session-io.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json --pretty false",
+    "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','.cache']) fs.rmSync(path, { recursive: true, force: true })\"",
+    "typecheck": "tsc --project tsconfig.test.json --noEmit --pretty false",
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 tests/features/provider-session-implementation/*/*.test.ts tests/package/*.test.ts",
+    "test:package": "node --test --test-timeout=60000 tests/package/*.test.ts",
+    "qualify:claude-migration": "node scripts/qualify-claude-migration.ts",
+    "check": "pnpm clean && pnpm build && pnpm typecheck && pnpm test",
+    "test:source": "node --test --test-concurrency=1 --test-timeout=60000 tests/features/provider-session-implementation/*/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:provider-implementations",
+    "zod": "catalog:provider-implementations",
+    "@anthropic-ai/sdk": "catalog:provider-implementations",
+    "@modelcontextprotocol/sdk": "catalog:provider-implementations",
+    "@agent-teams/provider-session-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "oxc-parser": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

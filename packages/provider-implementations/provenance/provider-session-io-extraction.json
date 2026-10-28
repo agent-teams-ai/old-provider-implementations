@@ -1,0 +1,9 @@
+{
+  "sourceRevision": "c9740b35a433ba370ed473a8dbfba27f3d902bbd",
+  "sourceRepository": "agent-teams-ai/agent-runtime",
+  "sourcePath": "experiments/interactive-provider-contract/src/claude/primitives.ts",
+  "sourceBlob": "bdb6669c515668402e542272cf17ec2e678696e8",
+  "sourceSha256": "a56a4c146272ac838b3b0fbaabe3edb98b1956d49b5d84b86031f22e34408d20",
+  "disposition": "move EventFeed/deferred/bounded once unchanged; Claude fail helper stays Claude-local; second actual OpenCode driver consumer needs same mechanism",
+  "hostClassification": "feature-local volatile queue/deadline helpers, no process/Host/persistence/runtime or product authority"
+}

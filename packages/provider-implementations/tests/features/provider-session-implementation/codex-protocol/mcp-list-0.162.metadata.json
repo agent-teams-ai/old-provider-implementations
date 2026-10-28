@@ -1,0 +1,74 @@
+[
+  {
+    "name": "TEST_configured_disabled",
+    "enabled": false,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/private/tmp/TEST-codex-mcp-list-84_p8_5e/dummy-mcp.sh",
+      "args": [
+        "configured-disabled"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "TEST_configured_only",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/private/tmp/TEST-codex-mcp-list-84_p8_5e/dummy-mcp.sh",
+      "args": [
+        "configured-only"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "TEST_plugin_only",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/private/tmp/TEST-codex-mcp-list-84_p8_5e/dummy-mcp.sh",
+      "args": [
+        "plugin-only"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "TEST_veto",
+    "enabled": false,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/private/tmp/TEST-codex-mcp-list-84_p8_5e/dummy-mcp.sh",
+      "args": [
+        "configured-veto"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  }
+]

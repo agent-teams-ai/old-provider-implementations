@@ -1,0 +1,15 @@
+packages:
+  - packages/*
+catalogMode: strict
+engineStrict: true
+strictPeerDependencies: true
+catalog:
+  '@types/node': 24.13.3
+  typescript: 7.0.2
+  oxc-parser: 0.147.0
+catalogs:
+  provider-implementations:
+    '@anthropic-ai/claude-agent-sdk': 0.3.305
+    '@anthropic-ai/sdk': 0.122.0
+    '@modelcontextprotocol/sdk': 1.32.0
+    zod: 4.6.7

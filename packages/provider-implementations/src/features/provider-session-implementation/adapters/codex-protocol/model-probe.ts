@@ -1,0 +1,160 @@
+import { codexModelOptionArgs } from './model-options.ts'
+import { CodexProtocolError } from './rpc-types.ts'
+import { record, string } from './wire-frames.ts'
+import { decodeRateLimits } from './rate-limits.ts'
+import type { CodexAppServerTransport } from './rpc-types.ts'
+import { CodexAppServerClient } from './app-server.ts'
+import { bounded } from '../provider-session-io/io.ts'
+import { captureCodexModelProbe } from './model-probe-config.ts'
+import type { CodexModelProbeConfig, CodexModelProbeConnection } from './model-probe-config.ts'
+import type { CodexAppServerEvent, CodexTurnRef } from './session-types.ts'
+
+const probePrompt = 'Reply only OK. Do not use tools, access files or run commands.'
+// Native input echoes and assistant starts are lifecycle, never inference evidence.
+function probeLifecycle(event: CodexAppServerEvent): boolean {
+  if (event.event.type !== 'unsupported_raw_event') {return false}
+  const { rawType, payload } = event.event
+  if (rawType !== 'item/started' && rawType !== 'item/completed') {return false}
+  const params = record(payload), item = record(params?.item)
+  if (!params || !item || string(item.id) === null ||
+    !event.threadId || !event.turnId || params.threadId !== event.threadId || params.turnId !== event.turnId) {return false}
+  if (item.type === 'agentMessage') {return rawType === 'item/started' && typeof item.text === 'string'}
+  if (item.type !== 'userMessage' || !Array.isArray(item.content) || item.content.length !== 1) {return false}
+  const content = record(item.content[0])
+  return content?.type === 'text' && content.text === probePrompt &&
+    Array.isArray(content.text_elements) && content.text_elements.length === 0
+}
+// Codex 0.162.0 typed notifications; metadata never supplies inference or tool authority.
+const only = (row: Record<string, unknown>, keys: readonly string[]): boolean => Object.keys(row).every(key => keys.includes(key))
+const text = (value: unknown): boolean => typeof value === 'string' && value.length > 0 && value.length <= 1024
+const nullableText = (value: unknown): boolean => value === null || value === undefined || text(value)
+type MetadataScope = 'thread' | 'global'
+function probeMetadata(event: CodexAppServerEvent): MetadataScope | undefined {
+  if (event.event.type !== 'unsupported_raw_event' || event.turnId !== undefined) {return undefined}
+  const { rawType, payload } = event.event, params = record(payload)
+  if (!params) {return undefined}
+  if (rawType === 'warning' && only(params, ['threadId', 'message']) && typeof params.message === 'string' && params.message.length > 0) {
+    if (params.threadId === null && event.threadId === undefined) {return 'global'}
+    if (string(params.threadId) !== null && params.threadId === event.threadId) {return 'thread'}
+  }
+  if (rawType === 'thread/status/changed' && only(params, ['threadId', 'status']) && string(params.threadId) !== null && params.threadId === event.threadId) {
+    const status = record(params.status)
+    if (status && only(status, ['type']) && typeof status.type === 'string' && ['notLoaded', 'idle', 'systemError'].includes(status.type)) {return 'thread'}
+    if (status?.type === 'active' && only(status, ['type', 'activeFlags']) && Array.isArray(status.activeFlags) &&
+      status.activeFlags.every(flag => flag === 'waitingOnApproval' || flag === 'waitingOnUserInput')) {return 'thread'}
+  }
+  if (event.threadId !== undefined) {return undefined}
+  if (rawType === 'remoteControl/status/changed' && only(params, ['status', 'serverName', 'installationId', 'environmentId']) &&
+    typeof params.status === 'string' && ['disabled', 'connecting', 'connected', 'errored'].includes(params.status) && text(params.serverName) && text(params.installationId) &&
+    (params.environmentId === null || text(params.environmentId))) {return 'global'}
+  if (rawType === 'account/rateLimits/updated' && only(params, ['rateLimits'])) {
+    const rates = record(params.rateLimits)
+    if (!rates || !only(rates, ['limitId', 'limitName', 'normalModelSlug', 'primary', 'secondary', 'credits', 'individualLimit', 'spendControlReached', 'planType', 'rateLimitReachedType']) ||
+      !['limitId', 'primary', 'secondary'].every(key => Object.hasOwn(rates, key)) || !nullableText(rates.normalModelSlug) ||
+      !(rates.spendControlReached === null || rates.spendControlReached === undefined || typeof rates.spendControlReached === 'boolean') ||
+      !(rates.rateLimitReachedType === null || rates.rateLimitReachedType === undefined || (typeof rates.rateLimitReachedType === 'string' && ['rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached'].includes(rates.rateLimitReachedType)))) {return undefined}
+    if (rates.individualLimit !== null && rates.individualLimit !== undefined) {
+      const limit = record(rates.individualLimit)
+      if (!limit || !only(limit, ['limit', 'used', 'remainingPercent', 'resetsAt']) || !text(limit.limit) || !text(limit.used) ||
+        typeof limit.remainingPercent !== 'number' || !Number.isFinite(limit.remainingPercent) || !Number.isSafeInteger(limit.resetsAt) || Number(limit.resetsAt) < 0) {return undefined}
+    }
+    try {decodeRateLimits(params); return 'global'} catch {return undefined}
+  }
+  return undefined
+}
+type Fact = { threadId?: string; turnId?: string; type: string; text?: string; lifecycle: boolean; metadata: MetadataScope | undefined }
+const allowed = new Set(['thread_started', 'turn_started', 'assistant_text', 'usage_updated', 'turn_completed', 'turn_failed', 'turn_interrupted'])
+function observations() {
+  const facts: Fact[] = []; let bytes = 0; let invalid = false
+  return {
+    onEvent(event: CodexAppServerEvent): void {
+      bytes += Buffer.byteLength(JSON.stringify(event))
+      const lifecycle = probeLifecycle(event), metadata = probeMetadata(event)
+      if (!allowed.has(event.event.type) && !lifecycle && metadata === undefined) {invalid = true}
+      if (facts.length >= 256 || bytes > 512 * 1024) {invalid = true; return}
+      facts.push({ ...(event.threadId !== undefined && event.threadId.length > 0 ? { threadId: event.threadId } : {}), ...(event.turnId !== undefined && event.turnId.length > 0 ? { turnId: event.turnId } : {}),
+        type: event.event.type, lifecycle, metadata, ...(event.event.type === 'assistant_text' ? { text: event.event.text } : {}) })
+    },
+    reject(): void { invalid = true },
+    valid(ref: CodexTurnRef): boolean { return !invalid && facts.every(fact => (!fact.lifecycle || (fact.threadId === ref.threadId && fact.turnId === ref.turnId)) && (fact.metadata !== 'thread' || fact.threadId === ref.threadId)) && facts.some(fact => fact.threadId === ref.threadId && fact.turnId === ref.turnId && fact.type === 'assistant_text' && fact.text !== undefined && fact.text.trim().length > 0) },
+  }
+}
+function readPort(value: unknown): value is CodexAppServerTransport['read'] { return typeof value === 'function' }
+function writePort(value: unknown): value is CodexAppServerTransport['write'] { return typeof value === 'function' }
+function connection(value: CodexModelProbeConnection, retain: (dispose: () => Promise<boolean>) => void): CodexModelProbeConnection {
+  // Snapshot callable ports once, never resolve or adopt a later native process.
+  const dispose = value.dispose
+  if (typeof dispose !== 'function') {throw new Error('codex.probe.invalid-connection')}
+  const capturedDispose = dispose.bind(value)
+  retain(capturedDispose)
+  const transport = value.transport
+  const read: unknown = Reflect.get(transport, 'read'), write: unknown = Reflect.get(transport, 'write')
+  if (!readPort(read) || !writePort(write)) {throw new Error('codex.probe.invalid-connection')}
+  return { transport: { read: read.bind(transport), write: write.bind(transport) }, dispose: capturedDispose }
+}
+
+async function infer(client: CodexAppServerClient, captured: CodexModelProbeConfig, observed: ReturnType<typeof observations>, current: () => boolean, signal: AbortSignal): Promise<boolean> {
+  await client.initialize({ clientInfo: { name: 'codex-model-probe', version: '1' } })
+  if (client.getRuntimeIdentity().codexHome !== captured.environment.CODEX_HOME) {throw new Error('codex.probe.namespace-mismatch')}
+  const thread = await client.startThread({ cwd: captured.cwd, model: captured.model, ...(captured.modelProvider !== undefined && captured.modelProvider.length > 0 ? { modelProvider: captured.modelProvider } : {}), approvalPolicy: 'never', sandbox: 'read-only' })
+  const proof = thread.modelSelection
+  if (proof?.model === captured.model && proof.cwd === captured.cwd &&
+    (captured.modelProvider === undefined || proof.modelProvider === captured.modelProvider) &&
+    (captured.reasoningEffort === undefined || proof.reasoningEffort === captured.reasoningEffort) &&
+    (captured.fastMode !== true || proof.serviceTier === 'fast')) {
+    if (!current()) {throw new Error('codex.probe.cancelled')}
+    const turn = thread.submitTurn({ ...(captured.reasoningEffort === undefined ? {} : { effort: captured.reasoningEffort }), input: [{ type: 'text', text: probePrompt, text_elements: [] }] }, signal)
+    const ref = await turn.accepted, terminal = await turn.completed
+    if (terminal.outcome === 'unknown') {throw new Error('codex.probe.unknown')}
+    if (!current()) {throw new Error('codex.probe.cancelled')}
+    return terminal.outcome === 'completed' && observed.valid(ref)
+  }
+  return false
+}
+
+function signalAborted(signal: AbortSignal | undefined): boolean { return signal?.aborted === true }
+
+function failure(error: unknown, aborted: boolean): string {
+  if (aborted) {return 'codex.probe.cancelled'}
+  if (error instanceof Error && ['codex.probe.unknown', 'codex.probe.cancelled', 'codex.probe.namespace-mismatch'].includes(error.message)) {return error.message}
+  if (error instanceof CodexProtocolError && error.acceptance === 'unknown') {return 'codex.probe.unknown'}
+  return 'codex.probe.unavailable'
+}
+
+/** Exactly one selected, read-only no-tools-output inference. No retries, recovery, product state or agent loop. */
+export async function probeCodexModel(selected: CodexModelProbeConfig, signal?: AbortSignal): Promise<boolean> {
+  const captured = captureCodexModelProbe(selected)
+  const authorized = () => { try { const answer: unknown = captured.canSubmit(); return answer === true } catch { return false } }
+  if (signal?.aborted === true || !authorized()) {throw new Error('codex.probe.cancelled')}
+  const stop = new AbortController()
+  const current = () => !stop.signal.aborted && signal?.aborted !== true && authorized()
+  let client: CodexAppServerClient | undefined, dispose: (() => Promise<boolean>) | undefined
+  let reason: string | undefined, result = false, timer: ReturnType<typeof setTimeout> | undefined
+  const abort = () => { stop.abort(); client?.close() }
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    timer = setTimeout(() => { reason = 'codex.probe.timeout'; abort() }, captured.timeoutMs)
+    const owned = connection(captured.launch(Object.freeze({ command: captured.executablePath, args: Object.freeze([...codexModelOptionArgs(captured), 'app-server', '--listen', 'stdio://']), cwd: captured.cwd, env: captured.environment, signal: stop.signal })), capturedDispose => {dispose = capturedDispose})
+    if (!current()) {throw new Error('codex.probe.cancelled')}
+    const observed = observations()
+    const transport = owned.transport
+    client = new CodexAppServerClient({ transport: { read: readSignal => transport.read(readSignal), write(frame, requestSignal) {
+      if (!current() || requestSignal.aborted) {throw new Error('codex.probe.cancelled')}
+      return transport.write(frame, requestSignal)
+    } }, onEvent: event => {observed.onEvent(event)}, onServerRequest: () => {observed.reject()}, requestApproval: async request => ({ kind: 'decision', decision: request.method === 'execCommandApproval' || request.method === 'applyPatchApproval' ? 'denied' : 'decline' }),
+      limits: { requestTimeoutMs: captured.timeoutMs, maxPendingRequests: 8, maxServerRequests: 8, maxQueuedWrites: 16 }, maxThreads: 1, maxQueuedTurns: 1,
+      maxBufferedNotifications: 64, maxTextBytes: 512 * 1024 })
+    result = await infer(client, captured, observed, current, stop.signal)
+  } catch (error) {
+    reason ??= failure(error, stop.signal.aborted || signalAborted(signal))
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort); stop.abort(); client?.close()
+    if (dispose) {
+      try {if (!await bounded(dispose(), Math.min(captured.timeoutMs, 5000))) {reason = 'codex.probe.cleanup-unconfirmed'}}
+      catch {reason = 'codex.probe.cleanup-unconfirmed'}
+    }
+  }
+  if (reason !== undefined && reason.length > 0) {throw new Error(reason)}
+  return result
+}
