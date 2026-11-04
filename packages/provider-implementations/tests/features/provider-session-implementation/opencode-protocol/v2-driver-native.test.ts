@@ -27,3 +27,19 @@ test('native queue preflight rejects foreign workspace before POST while lost mu
     assert.equal(host.counts().submitted, mode === 'foreign' ? 0 : 1)
   }
 })
+
+test('legacy flat V1-like read never submits, and malformed post-ACK is unknown without replay', async t => {
+  const legacy = await driverPeer(); t.after(legacy.close); legacy.flatSession()
+  const blocked = createDriverNative(nativeConfig(legacy), new AbortController().signal)
+  await assert.rejects(blocked.queue('msg_TESTfirst', 'TEST read'), error => {
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+  })
+  assert.equal(legacy.counts().submitted, 0)
+
+  const wrongAck = await driverPeer(); t.after(wrongAck.close); wrongAck.flatPrompt()
+  const uncertain = createDriverNative(nativeConfig(wrongAck), new AbortController().signal)
+  await assert.rejects(uncertain.queue('msg_TESTfirst', 'TEST once'), error => {
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), false); return true
+  })
+  assert.equal(wrongAck.counts().submitted, 1)
+})
