@@ -1,6 +1,6 @@
 import { createOpenCodeV2ExecutionTransport } from './v2-execution-transport.ts'
 import { createOpenCodeV2SessionControl } from './v2-session-control.ts'
-import { decodeV2Log, decodeV2Session } from './v2-cut-codecs.ts'
+import { decodeV2DataEnvelope, decodeV2Log, decodeV2Session } from './v2-cut-codecs.ts'
 import { readOpenCodeV2NativeCut } from './v2-native-cut.ts'
 import { record } from './v2-projection-helpers.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
@@ -29,8 +29,8 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       const log = decodeV2Log(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
         config.nativeSessionId, config.directory)
       mutation = true
-      const receipt = record(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown)
+      const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
         || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text) {throw new Error('native_handoff_identity_mismatch')}
       return { nativeInputID, text, beforeCursor: log.watermark }
