@@ -3,6 +3,7 @@ import type { OpenCodeV2SessionControlConfig } from './v2-control-transport.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
+import { decodeV2DataEnvelope } from './v2-cut-codecs.ts'
 
 export type OpenCodeV2Permission = Readonly<{
   requestId: string; sessionId: string; action: string; resources: readonly string[]
@@ -42,7 +43,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
     },
     cancelInbox: async (inboxId: string) => { await wire.request(path + `/inbox/${encodeURIComponent(inboxId)}`, { method: 'DELETE' }) },
     pendingPermissions: async (): Promise<readonly OpenCodeV2Permission[]> => {
-      const body: unknown = await (await wire.request(path + '/permission')).json()
+      const body: unknown = decodeV2DataEnvelope(await (await wire.request(path + '/permission')).json() as unknown)
       if (!Array.isArray(body) || body.length > 4096) {throw new Error('invalid_native_permission_list')}
       const values = body.map(raw => permission(raw, sessionId))
       if (new Set(values.map(value => value.requestId)).size !== values.length) {throw new Error('duplicate_native_permission')}
@@ -55,7 +56,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       }
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
-        const current = permission(await (await wire.request(requestPath)).json() as unknown, sessionId)
+        const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
         if (current.requestId !== requestId) {throw new Error('native_permission_identity_mismatch')}
       } catch {
         // This method's grant POST has not begun; a failed read cannot have granted permission.
