@@ -7,6 +7,7 @@ import { cut } from './v2-cut-fixture.ts'
 export async function driverPeer() {
   const directory = '/TEST/native-driver', sessionId = 'ses_TESTdriver'
   let submitted = 0, interrupted = 0, foreign = false, lostReceipt = false, hold = false, permissionMode = false, replies = 0
+  let flatSession = false, flatPrompt = false, flatPermissions = false
   let value = cut(), base = cut(), queued: { id: string; text: string } | undefined
   let pauseInterrupt = false, releaseInterrupt: (() => void) | undefined
   let holdGrant = false, releaseGrant: (() => void) | undefined
@@ -56,6 +57,7 @@ export async function driverPeer() {
       }}
     } else { outputs.set(queued.id, structuredClone(value)); queued = undefined }
   }
+  const envelope = (data: unknown, flat: boolean) => JSON.stringify(flat ? data : { data })
   const server = createServer((req, res) => {
     const url = new URL(req.url!, 'http://TEST.invalid')
     res.setHeader('content-type', 'application/json')
@@ -74,7 +76,7 @@ export async function driverPeer() {
       if (url.pathname.includes('/permission')) {
         const permission = { id: 'request_TESTpermission', sessionID: sessionId, action: 'TEST.tool', resources: ['TEST-resource'],
           source: { type: 'tool', messageID: 'msg_TESTassistant' + submitted, id: 'TEST-tool' } }
-        const body = JSON.stringify(url.pathname.endsWith('/permission') ? (permissionMode && queued ? [permission] : []) : permission)
+        const body = envelope(url.pathname.endsWith('/permission') ? (permissionMode && queued ? [permission] : []) : permission, flatPermissions)
         if (url.pathname.endsWith('/permission')) {
           permissionLists++
           if (holdPermissionList) { releasePermissionList = () => res.end(body); return }
@@ -85,8 +87,8 @@ export async function driverPeer() {
         res.end(body); return
       }
       sessionReads++
-      res.end(JSON.stringify({ id: sessionId, location: { directory: foreign ? '/TEST/foreign' : directory },
-        agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } })); return
+      res.end(envelope({ id: sessionId, location: { directory: foreign ? '/TEST/foreign' : directory },
+        agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } }, flatSession)); return
     }
     let body = ''; req.on('data', chunk => { body += chunk }); req.on('end', () => {
       if (url.pathname.endsWith('/prompt')) {
@@ -94,7 +96,7 @@ export async function driverPeer() {
         const input = JSON.parse(body) as { id: string; text: string }
         submittedIds.push(input.id); queued = input; base = structuredClone(value); if (!hold) {complete();} else if (permissionMode) {complete(true)}
         if (lostReceipt) { req.socket.destroy(); return }
-        res.end(JSON.stringify({ id: input.id, sessionID: sessionId, type: 'user', delivery: 'queue', time: { created: 1 }, payload: { text: input.text } })); return
+        res.end(envelope({ id: input.id, sessionID: sessionId, type: 'user', delivery: 'queue', time: { created: 1 }, payload: { text: input.text } }, flatPrompt)); return
       }
       if (req.method === 'DELETE' && url.pathname.includes('/inbox/')) {
         const id = url.pathname.split('/').at(-1)!; cancelled.push(id)
@@ -123,6 +125,7 @@ export async function driverPeer() {
     permissionLists: () => permissionLists, sessionReads: () => sessionReads,
     pauseInterrupt: () => { pauseInterrupt = true }, releaseInterrupt: () => { releaseInterrupt?.(); releaseInterrupt = undefined },
     hold: () => { hold = true }, permission: () => { hold = true; permissionMode = true }, foreign: () => { foreign = true }, loseReceipt: () => { lostReceipt = true },
+    flatSession: () => { flatSession = true }, flatPrompt: () => { flatPrompt = true }, flatPermissions: () => { flatPermissions = true },
     counts: () => ({ submitted, interrupted, replies }),
     close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) }) },
   }
