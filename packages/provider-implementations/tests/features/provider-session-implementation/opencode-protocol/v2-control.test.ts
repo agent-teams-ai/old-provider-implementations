@@ -6,7 +6,7 @@ import { createOpenCodeV2SessionControl, wasOpenCodeV2InputNotSubmitted } from '
 
 async function peer() {
   const effects: Array<{ path: string; body: unknown }> = []
-  let foreign = false, loseReceipt = false, flatPermissions = false, calls = 0
+  let foreign = false, loseReceipt = false, flatPermissions = false, flatInstructions = false, calls = 0
   const server = createServer((req, res) => {
     calls++
     const url = new URL(req.url!, 'http://TEST.invalid')
@@ -16,7 +16,7 @@ async function peer() {
       const permission = { id: 'request_' + sessionID, sessionID: foreign ? 'ses_foreign' : sessionID, action: 'TEST.tool', resources: ['TEST-resource'] }
       if (url.pathname.endsWith('/permission')) {res.end(JSON.stringify(flatPermissions ? [permission] : { data: [permission] }))}
       else if (url.pathname.includes('/permission/')) {res.end(JSON.stringify(flatPermissions ? permission : { data: permission }))}
-      else {res.end('[]')}
+      else {res.end(JSON.stringify(flatInstructions ? [] : { data: [] }))}
       return
     }
     let text = ''
@@ -32,7 +32,7 @@ async function peer() {
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const address = server.address(); assert(address && typeof address !== 'string')
   return { endpoint: `http://127.0.0.1:${address.port}`, effects,
-    setForeign: () => { foreign = true }, loseReceipt: () => { loseReceipt = true }, flatPermissions: () => { flatPermissions = true }, calls: () => calls,
+    setForeign: () => { foreign = true }, loseReceipt: () => { loseReceipt = true }, flatPermissions: () => { flatPermissions = true }, flatInstructions: () => { flatInstructions = true }, calls: () => calls,
     close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) }) },
   }
 }
@@ -50,6 +50,7 @@ test('bound native control translates both dialects without touching neighboring
     await a.cancelInbox('msg_original')
     await a.putInstruction('test.role', { role: 'TEST' })
     assert.equal((await b.pendingPermissions())[0]?.sessionId, 'ses_B')
+    assert.deepEqual(await a.instructions(), [])
     assert.deepEqual(host.effects, [
       { path: `/api/session/ses_A/interrupt?${version === '2.0.0' ? 'continue' : 'resume'}=false`, body: null },
       { path: '/api/session/ses_A/permission/request_ses_A/reply', body: { [version === '2.0.0' ? 'reply' : 'decision']: 'reject' } },
@@ -106,5 +107,14 @@ test('legacy flat V1-style permission responses cannot issue a native V2 grant',
   await assert.rejects(control.replyPermission('request_ses_A', 'once'), error => {
     assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
   })
+  assert.deepEqual(host.effects, [])
+})
+
+test('V2 instructions list requires the pinned data envelope', async t => {
+  const host = await peer(); t.after(host.close); host.flatInstructions()
+  const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original', version: '2.0.21',
+    deadline: Date.now() + 10_000, nativeSessionId: 'ses_A', readPassword: () => 'TEST-private' })
+  t.after(control.dispose)
+  await assert.rejects(control.instructions(), /invalid_native_envelope/)
   assert.deepEqual(host.effects, [])
 })
