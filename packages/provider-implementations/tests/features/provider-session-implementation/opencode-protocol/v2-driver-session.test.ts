@@ -153,7 +153,7 @@ test('permission list held across a completed interrupt ACK cannot resurrect int
     host.releasePermissions()
     // The next cut starts only after the held permission response has been processed.
     await until(() => host.sessionReads() > reads)
-    const ref = host.submittedIds[0] + ':request_TESTpermission'
+    const ref = host.submittedIds[0] + ':per_TESTpermission'
     assert.deepEqual(await session.respondToInteraction(ref, { kind: 'permission', decision: 'allow' }), { ok: false, code: 'stale' })
     assert.equal(events.some(event => event.kind === 'interaction'), false)
     assert.equal(host.counts().replies, 0)
@@ -177,7 +177,7 @@ test('unqualified native execution lineage cannot authorize permissions, while t
     assert.equal((await session.submit({ inputId: 'TEST-unknown', operationRef: 'TEST-op', content: 'TEST unknown' })).ok, true)
     await until(() => host.sessionReads() >= 6)
     assert.equal(events.some(event => event.kind === 'interaction'), false)
-    const ref = host.submittedIds[0] + ':request_TESTpermission'
+    const ref = host.submittedIds[0] + ':per_TESTpermission'
     assert.deepEqual(await session.respondToInteraction(ref, { kind: 'permission', decision: 'allow' }), { ok: false, code: 'stale' })
     assert.equal(host.permissionLists(), 0); assert.equal(host.counts().replies, 0)
     host.validLineage(); host.complete()

@@ -74,7 +74,7 @@ export async function driverPeer() {
         res.end(JSON.stringify({ data, cursor: data.length ? { previous: 'start', next: 'end' } : { previous: null, next: null } })); return
       }
       if (url.pathname.includes('/permission')) {
-        const permission = { id: 'request_TESTpermission', sessionID: sessionId, action: 'TEST.tool', resources: ['TEST-resource'],
+        const permission = { id: 'per_TESTpermission', sessionID: sessionId, action: 'TEST.tool', resources: ['TEST-resource'],
           source: { type: 'tool', messageID: 'msg_TESTassistant' + submitted, id: 'TEST-tool' } }
         const body = envelope(url.pathname.endsWith('/permission') ? (permissionMode && queued ? [permission] : []) : permission, flatPermissions)
         if (url.pathname.endsWith('/permission')) {

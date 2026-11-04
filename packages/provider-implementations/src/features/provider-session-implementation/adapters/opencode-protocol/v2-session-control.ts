@@ -13,11 +13,16 @@ function text(value: unknown): string {
   if (typeof value !== 'string' || !value || value.length > 4096) {throw new Error('invalid_native_control_response')}
   return value
 }
+// Both pinned V2 versions brand pending permission IDs with the `per` prefix.
+// Bound to the session route's safe single-segment alphabet before any grant.
+const nativePermissionId = /^per[A-Za-z0-9_-]{0,253}$/
 function permission(value: unknown, sessionId: string): OpenCodeV2Permission {
   const raw = record(value)
   if (!raw || raw.sessionID !== sessionId || !Array.isArray(raw.resources) || raw.resources.length > 256) {throw new Error('foreign_native_permission')}
+  const requestId = text(raw.id)
+  if (!nativePermissionId.test(requestId)) {throw new Error('invalid_native_permission_id')}
   const result: { requestId: string; sessionId: string; action: string; resources: string[]; source?: NonNullable<OpenCodeV2Permission['source']> } = {
-    requestId: text(raw.id), sessionId, action: text(raw.action), resources: raw.resources.map(text),
+    requestId, sessionId, action: text(raw.action), resources: raw.resources.map(text),
   }
   if (raw.source !== undefined) {
     const source = record(raw.source)
@@ -50,7 +55,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       return values
     },
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
-      if (!['once', 'always', 'reject'].includes(decision)) {
+      if (!nativePermissionId.test(requestId) || !['once', 'always', 'reject'].includes(decision)) {
         const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
         unsubmitted.add(failure); throw failure
       }
