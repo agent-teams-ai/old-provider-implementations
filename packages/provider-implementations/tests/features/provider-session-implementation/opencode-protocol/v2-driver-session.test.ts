@@ -43,6 +43,23 @@ test('lost native handoff seals session, rejects unsent neighbor, and never repl
   } finally { await session.close() }
 })
 
+test('malformed post-ACK native V2 envelope seals original UNKNOWN and never replays or submits its neighbor', async t => {
+  const host = await driverPeer(); host.flatPrompt(); t.after(host.close)
+  const session = createV2DriverSession(nativeConfig(host)), events: Event[] = []
+  const observed = (async () => { for await (const event of session.observe()) {events.push(event)} })()
+  try {
+    const first = session.submit({ inputId: 'TEST-ack1', operationRef: 'TEST-op1', content: 'TEST first' })
+    const second = session.submit({ inputId: 'TEST-ack2', operationRef: 'TEST-op2', content: 'TEST second' })
+    assert.deepEqual(await first, { ok: false, code: 'unknown' })
+    assert.deepEqual(await second, { ok: false, code: 'unknown', delivery: 'known-not-sent' })
+    await observed
+    assert.equal(events.filter(event => event.kind === 'result' && event.outcome === 'unknown').length, 1)
+    assert.equal(session.checkpoint().ok, false)
+    assert.equal(host.counts().submitted, 1)
+    assert.equal(host.submittedIds.length, 1)
+  } finally { await session.close() }
+})
+
 test('actual native permission is independent of turn polling, bound to original input, and replied once', async t => {
   const host = await driverPeer(); host.permission(); t.after(host.close)
   const session = createV2DriverSession(nativeConfig(host)), events: Event[] = []
