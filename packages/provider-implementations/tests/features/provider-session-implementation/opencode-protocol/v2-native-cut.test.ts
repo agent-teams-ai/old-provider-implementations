@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
-async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax') {
+async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat') {
   const value = cut(), directory = '/TEST/native-cut'
   let logs = 0, pages = 0, requests = 0
   const server = createServer((req, res) => {
@@ -41,8 +41,9 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
       } else {res.end(JSON.stringify({ data: [], cursor: { previous: null, next: null } }))}
       return
     }
-    res.end(JSON.stringify({ id: sessionID, location: { directory: mode === 'foreign' ? '/TEST/foreign' : directory },
-      agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } }))
+    const session = { id: sessionID, location: { directory: mode === 'foreign' ? '/TEST/foreign' : directory },
+      agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } }
+    res.end(JSON.stringify(mode === 'flat' ? session : { data: session }))
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const address = server.address(); assert(address && typeof address !== 'string')
@@ -69,7 +70,7 @@ test('actual finite HTTP transport reads one stable native cut and projects prov
 })
 
 test('native cut read rejects changing history, pagination cycles and original workspace mismatch', async t => {
-  for (const mode of ['changing', 'cycle', 'foreign'] as const) {
+  for (const mode of ['changing', 'cycle', 'foreign', 'flat'] as const) {
     const host = await fixture(mode); t.after(host.close)
     const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
       version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
@@ -77,9 +78,9 @@ test('native cut read rejects changing history, pagination cycles and original w
     await assert.rejects(readOpenCodeV2NativeCut(transport,
       { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
       { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
-    mode === 'changing' ? /mutable_native_readback/ : mode === 'cycle' ? /incomplete_native_transcript/ : /binding_mismatch/)
+    mode === 'changing' ? /mutable_native_readback/ : mode === 'cycle' ? /incomplete_native_transcript/ : mode === 'flat' ? /invalid_native_envelope/ : /binding_mismatch/)
     if (mode === 'cycle') {assert.equal(host.counts().pages, 2)}
-    if (mode === 'foreign') {assert.deepEqual(host.counts(), { logs: 0, pages: 0, requests: 1 })}
+    if (mode === 'foreign' || mode === 'flat') {assert.deepEqual(host.counts(), { logs: 0, pages: 0, requests: 1 })}
   }
 })
 
