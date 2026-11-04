@@ -72,7 +72,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       await wire.request(entries + '/' + encodeURIComponent(key), { method: 'PUT', body: '{"value":' + encoded + '}' })
     },
     instructions: async () => {
-      const raw: unknown = await (await wire.request(entries)).json()
+      const raw: unknown = decodeV2DataEnvelope(await (await wire.request(entries)).json() as unknown)
       if (!Array.isArray(raw) || raw.length > 256) {throw new Error('invalid_native_instructions')}
       const values = raw.map(value => {
         const entry = record(value), key = text(entry?.key)
