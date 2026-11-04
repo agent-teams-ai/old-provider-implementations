@@ -10,8 +10,14 @@ function text(value: unknown): string {
   requireCut(typeof value === 'string' && value.length > 0 && value.length <= 4096, 'invalid_native_identity')
   return value
 }
+/** Both pinned V2 server versions return an exact { data } envelope on these routes. */
+export function decodeV2DataEnvelope(value: unknown): unknown {
+  const envelope = record(value)
+  requireCut(envelope !== null && Object.keys(envelope).length === 1 && Object.hasOwn(envelope, 'data'), 'invalid_native_envelope')
+  return envelope.data
+}
 export function decodeV2Session(value: unknown, sessionID: string, directory: string) {
-  const raw = record(value), location = record(raw?.location), time = record(raw?.time)
+  const raw = record(decodeV2DataEnvelope(value)), location = record(raw?.location), time = record(raw?.time)
   requireCut(raw?.id === sessionID && location?.directory === directory, 'native_session_binding_mismatch')
   const model = record(raw.model)
   requireCut(model !== null && string(model.providerID) !== null && string(model.id) !== null, 'invalid_native_model')
