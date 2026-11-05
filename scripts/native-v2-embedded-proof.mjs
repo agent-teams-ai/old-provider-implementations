@@ -525,6 +525,7 @@ try {
       throw Error('TEST_embedded_model_cold_lineage_or_no_replay_failed')
     receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
     if (toolMode) {
+      let safeSessionID, safeEventIDs, safeMessageIDs
       // TEST-only: the model requests an outside-workspace read which never
       // opens the canary. V2.0.21 must deny via explicit session rules;
       // V2.1.4 deliberately allows those rules and relies on hard policy.
@@ -638,7 +639,8 @@ try {
         throw Error('TEST_embedded_denied_tool_production_projection_mismatch')
       receipt.steps.push('TEST_embedded_effective_tool_policy_denial_verified')
       receipt.steps.push('TEST_embedded_denied_tool_production_projection_verified')
-      await host.sessions.remove({ sessionID: toolSession.id })
+      const deniedEventIDs = toolLog.filter(item => typeof item.id === 'string').map(item => item.id)
+      const deniedMessageIDs = toolMessages.map(item => item.id).sort()
       toolPhase = false
       if (pinnedVersion === '2.0.21') {
         // Positive control with the official built-in read. The same TEST
@@ -712,9 +714,39 @@ try {
           throw Error('TEST_embedded_allowed_tool_production_projection_mismatch')
         receipt.steps.push('TEST_embedded_builtin_read_inside_workspace_succeeded')
         receipt.steps.push('TEST_embedded_allowed_tool_production_projection_verified')
-        await host.sessions.remove({ sessionID: allowedSession.id })
+        safeSessionID = allowedSession.id
+        safeEventIDs = insideLog.filter(item => typeof item.id === 'string').map(item => item.id)
+        safeMessageIDs = insideMessages.map(item => item.id).sort()
         toolPhase = false
       }
+      // A completed permission-denied tool must never execute again when the
+      // embedded host reopens the exact same durable state. Preserve both
+      // ledger IDs and projected message IDs across this TEST-only restart.
+      const callsBeforeToolRestart = modelCalls
+      await host.close(); host = undefined
+      host = await OpenCode.create(options)
+      const stable = (actual, expected) => JSON.stringify(actual) === JSON.stringify(expected)
+      const deniedAfter = await readLog(host, toolSession.id)
+      const deniedAfterMessages = (await host.message.list({ sessionID: toolSession.id, limit: 200 })).data
+      if (!stable(deniedAfter.filter(e => typeof e.id === 'string').map(e => e.id), deniedEventIDs) ||
+          !stable(deniedAfterMessages.map(e => e.id).sort(), deniedMessageIDs) ||
+          (await host.sessions.get({ sessionID: toolSession.id }))?.id !== toolSession.id)
+        throw Error('TEST_embedded_denied_tool_cold_lineage_mismatch')
+      if (safeSessionID) {
+        const safeAfter = await readLog(host, safeSessionID)
+        const safeAfterMessages = (await host.message.list({ sessionID: safeSessionID, limit: 200 })).data
+        if (!stable(safeAfter.filter(e => typeof e.id === 'string').map(e => e.id), safeEventIDs) ||
+            !stable(safeAfterMessages.map(e => e.id).sort(), safeMessageIDs) ||
+            (await host.sessions.get({ sessionID: safeSessionID }))?.id !== safeSessionID)
+          throw Error('TEST_embedded_allowed_tool_cold_lineage_mismatch')
+        await host.sessions.remove({ sessionID: safeSessionID })
+      }
+      if (modelCalls !== callsBeforeToolRestart)
+        throw Error('TEST_embedded_tool_replayed_after_cold_restart')
+      receipt.toolColdRecovery = { deniedLedgerPreserved: true,
+        allowedLedgerPreserved: !!safeSessionID, extraModelCalls: 0, cleanupPending: false }
+      await host.sessions.remove({ sessionID: toolSession.id })
+      receipt.steps.push('TEST_embedded_tool_lineage_persisted_without_cold_replay')
     }
     await host.sessions.remove({ sessionID: original.id })
   }
