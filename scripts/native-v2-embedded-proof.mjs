@@ -647,7 +647,7 @@ try {
         let insideLog
         for (let attempt = 0; attempt < 80; attempt++) {
           insideLog = await readLog(host, allowedSession.id)
-          if (insideLog.some(event => /^session\\.execution\\.(?:failed|succeeded)$/.test(event.type))) break
+          if (insideLog.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type))) break
           await delay(250)
         }
         const insideMessages = (await host.message.list({ sessionID: allowedSession.id, limit: 200 }))?.data
