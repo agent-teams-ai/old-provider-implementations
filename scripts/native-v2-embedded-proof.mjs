@@ -231,10 +231,14 @@ try {
     const users = Array.isArray(messages) ? messages.filter(row => row.id === inputID && row.type === 'user') : []
     const assistants = Array.isArray(messages) ? messages.filter(row => row.type === 'assistant' &&
       JSON.stringify(row).includes(marker)) : []
-    const idle = Array.isArray(messages) ? messages.filter(row => row.type === 'idle' &&
-      row.outcome === 'succeeded') : []
+    const idleRows = Array.isArray(messages) ? messages.filter(row => row.type === 'idle') : []
+    // Pinned v2.0.0 has no SessionMessage.Idle schema; v2.0.21 added it.
+    // Neither version may substitute a text reply for a durable terminal.
+    const expectedIdleCount = pinnedVersion === '2.0.21' ? 1 : 0
     const state = await host.sessions.get({ sessionID: original.id })
-    if (users.length !== 1 || assistants.length !== 1 || idle.length !== 1 ||
+    if (users.length !== 1 || assistants.length !== 1 ||
+        idleRows.length !== expectedIdleCount ||
+        (expectedIdleCount === 1 && idleRows[0]?.outcome !== 'succeeded') ||
         state?.outcome !== 'succeeded')
       throw Error('TEST_embedded_model_transcript_mismatch')
     // Actual native events and message rows must also pass the private V2
@@ -271,7 +275,7 @@ try {
     receipt.steps.push('TEST_embedded_production_driver_projection_verified')
     receipt.modelTurn = { modelCalls, earlyModelRequests, delivered: 1, terminals: 1,
       loggedEvents: events.length, originalInputBound: true,
-      assistantPresent: true, idlePresent: true }
+      assistantPresent: true, idlePresent: idleRows.length === 1 }
     receipt.steps.push('TEST_embedded_durable_model_terminal_qualified')
     const frozenIDs = events.map(event => event.id)
     const beforeColdCalls = modelCalls
