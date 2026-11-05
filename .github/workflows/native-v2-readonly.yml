@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/native-v2-readonly-proof.mjs
       - scripts/native-v2-model-candidate.mjs
+      - scripts/native-v2-embedded-proof.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
@@ -22,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        proof: [lifecycle, model]
+        proof: [lifecycle, model, embedded]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -36,7 +37,9 @@ jobs:
         run: |
           node --check scripts/native-v2-readonly-proof.mjs
           node --check scripts/native-v2-model-candidate.mjs
+          node --check scripts/native-v2-embedded-proof.mjs
       - name: Install exact official V2 CLI into isolated test prefix
+        if: matrix.proof != 'embedded'
         shell: bash
         env:
           npm_config_audit: 'false'
@@ -48,6 +51,18 @@ jobs:
             --prefix "$RUNNER_TEMP/opencode-v2-native/npm" \
             --no-save --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/cli@2.0.21
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
+      - name: Install exact pinned embedded V2 SDK without install scripts
+        if: matrix.proof == 'embedded'
+        shell: bash
+        env:
+          npm_config_audit: 'false'
+          npm_config_fund: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/opencode-v2-embedded"
+          npm install --prefix "$RUNNER_TEMP/opencode-v2-embedded" --no-save \
+            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@2.0.21
+          npm ls --prefix "$RUNNER_TEMP/opencode-v2-embedded" --depth=0 @opencode/sdk
       - name: TEST native binary, authenticated API and disposable session lifecycle
         if: matrix.proof == 'lifecycle'
         env:
@@ -60,6 +75,12 @@ jobs:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_MODEL_RECEIPT: ${{ github.workspace }}/native-v2-model-candidate.json
         run: node scripts/native-v2-model-candidate.mjs
+      - name: TEST embedded V2 persistent event log through cold host restart
+        if: matrix.proof == 'embedded'
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-proof.json
+        run: node scripts/native-v2-embedded-proof.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -70,4 +91,5 @@ jobs:
           path: |
             native-v2-readonly-proof.json
             native-v2-model-candidate.json
+            native-v2-embedded-proof.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
