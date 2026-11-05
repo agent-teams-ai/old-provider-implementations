@@ -44,7 +44,8 @@ const options = {
 }
 async function readLog(sdk, sessionID) {
   const events = []
-  for await (const value of sdk.sessions.log({ sessionID, follow: false })) {
+  for await (const value of sdk.sessions.log({ sessionID, follow: false },
+    { signal: AbortSignal.timeout(12_000) })) {
     const event = value?.type ? value : value?.data
     if (typeof event?.type !== 'string' || events.length >= 256)
       throw Error('TEST_embedded_log_invalid_or_unbounded')
