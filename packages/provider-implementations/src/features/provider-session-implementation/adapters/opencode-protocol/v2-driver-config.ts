@@ -1,7 +1,7 @@
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
-import { isAbsolute, normalize, parse } from 'node:path'
+import { isAbsolute, normalize, parse, sep } from 'node:path'
 import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
@@ -25,7 +25,8 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
   const loopbackPort = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
   if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
     || !safeV2SessionID(config.nativeSessionId) || typeof config.directory !== 'string'
-    || !isAbsolute(config.directory) || normalize(config.directory) !== config.directory
+    || !isAbsolute(config.directory) || config.directory.endsWith(sep)
+    || normalize(config.directory) !== config.directory
     || parse(config.directory).root === config.directory
     || loopbackPort === undefined || Number(loopbackPort) > 65535
     || !['2.0.0', '2.0.21'].includes(config.version)
