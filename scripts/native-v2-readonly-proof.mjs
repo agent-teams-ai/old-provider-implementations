@@ -494,6 +494,30 @@ try {
       queued[0]?.payload?.text !== synthetic.text || queued[0]?.delivery !== 'queue')
     throw Error('native_synthetic_inbox_not_single')
   receipt.steps.push('native_TEST_durable_synthetic_inbox_single')
+  // Diagnose native durable-log visibility after a real, model-free inbox mutation.
+  // Do not infer session history from a successful inbox write.
+  const queuedLog = await request(endpoint + nativeLogPath, auth, { timeoutMs: 12000 })
+  if (queuedLog.status !== 200 || !queuedLog.contentType?.startsWith('text/event-stream'))
+    throw Error('native_post_enqueue_log_unavailable')
+  const queuedFrames = queuedLog.content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .split('\n\n').flatMap(frame => {
+      const data = frame.split('\n').filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart()).join('\n')
+      return data ? [JSON.parse(data)] : []
+    })
+  const queuedSynced = queuedFrames.at(-1)
+  if (queuedSynced?.type !== 'log.synced' || queuedSynced.aggregateID !== id ||
+      !Number.isSafeInteger(queuedSynced.seq) || queuedSynced.seq < syncedLog.seq)
+    throw Error('native_post_enqueue_log_sync_invalid')
+  const queuedVisible = queuedFrames.slice(0, -1)
+  if (queuedVisible.some(item => item?.durable?.aggregateID !== id ||
+      item?.data?.sessionID !== id || typeof item.type !== 'string' ||
+      !item.type.startsWith('session.') || !Number.isSafeInteger(item?.durable?.seq)))
+    throw Error('native_post_enqueue_log_foreign_event')
+  receipt.nativePostEnqueueLog = { visibleTypes: queuedVisible.map(item => item.type).slice(0, 64),
+    visibleCount: queuedVisible.length, syncedWatermark: queuedSynced.seq,
+    initialSyncedWatermark: syncedLog.seq }
+  receipt.steps.push('native_TEST_post_enqueue_SSE_visibility_captured')
   // The native server admits this exact TEST ID, but a loopback proxy drops
   // the response after the native 200. Reconcile by readback, NOT by retry.
   const lostID = 'msg_TESTlostNativeAck'
