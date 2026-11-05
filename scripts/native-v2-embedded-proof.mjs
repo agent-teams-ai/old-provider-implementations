@@ -25,7 +25,7 @@ for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'tem
 const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedded.sqlite')
 let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
-let toolPhase = false, toolModelRequests = 0
+let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
@@ -151,6 +151,13 @@ try {
           const chunk = (delta, finish_reason = null) => ({ ...base,
             choices: [{ index: 0, delta, finish_reason }] })
           const toolRequest = toolPhase && ++toolModelRequests === 1
+          if (toolRequest) {
+            // Capture only bounded tool names, never prompts, args, credentials or canary text.
+            advertisedToolNames = Array.isArray(value.tools) ? value.tools
+              .map(tool => tool?.function?.name ?? tool?.name)
+              .filter(name => typeof name === 'string')
+              .slice(0, 64).map(name => name.slice(0, 80)) : []
+          }
           const frames = (toolRequest ? [
             chunk({ role: 'assistant' }),
             chunk({ tool_calls: [{ index: 0, id: 'call_TEST_external_read', type: 'function',
@@ -183,9 +190,11 @@ try {
             limit: { context: 8192, output: 1024 } } },
         },
       },
-      // The V2.1.4 policy must win over deliberately permissive session rules;
-      // older pinned V2.0.21 cannot be treated as supporting this contract.
-      ...(toolMode ? { policies: [{ action: 'tool.use', resource: '*', effect: 'deny' }] } : {}),
+      // Deny external-path checks without hiding the read tool itself from
+      // model discovery. A blanket tool.use deny can prevent tool advertising,
+      // leaving a fake-model tool call with no actual native tool invocation.
+      // Older V2.0.21 cannot be treated as supporting this policy contract.
+      ...(toolMode ? { policies: [{ action: 'tool.use', resource: 'external_directory:*', effect: 'deny' }] } : {}),
     })
     receipt.steps.push('TEST_embedded_loopback_model_configured')
   }
@@ -435,8 +444,8 @@ try {
     receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
     if (toolMode) {
       // Native V2.1.4 TEST only: a local model attempts an actual read outside
-      // workspace while the session grants it, but the hard policy denies all
-      // tool.use. Never read or expose the canary through this harness.
+      // workspace while session rules grant it, but the hard policy denies
+      // external_directory. Never read or expose the canary through this harness.
       writeFileSync(join(root, 'outside-canary.txt'), toolCanary, { mode: 0o600 })
       const toolSession = await host.sessions.create({
         location: { directory: workspace }, agent: 'build',
@@ -482,15 +491,24 @@ try {
       // Make this an explicit HOLD, never an implicit policy-enforcement PASS.
       const toolEffectObserved = toolOutcomes.some(part =>
         part.name === 'read' && part.status === 'error')
+      const assistantPartTypes = [...new Set(toolMessages
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
+        .flatMap(message => message.content)
+        .map(part => part?.type)
+        .filter(type => typeof type === 'string'))].slice(0, 16)
+      const advertisedReadTool = advertisedToolNames.includes('read')
       receipt.toolPolicyDiscovery = {
-        attemptedModelTool: true, modelRequests: toolModelRequests, toolOutcomes,
+        attemptedModelTool: true, modelRequests: toolModelRequests,
+        advertisedReadTool, advertisedToolNames, assistantPartTypes, toolOutcomes,
         toolEffectObserved, policyDenialUnverified: true,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
-      receipt.steps.push(toolEffectObserved
-        ? 'TEST_embedded_tool_policy_error_discovery_only'
-        : 'TEST_embedded_tool_policy_missing_native_tool_effect_HOLD')
+      receipt.steps.push(!advertisedReadTool
+        ? 'TEST_embedded_tool_policy_read_not_advertised_HOLD'
+        : toolEffectObserved
+          ? 'TEST_embedded_tool_policy_error_discovery_only'
+          : 'TEST_embedded_tool_policy_missing_native_tool_effect_HOLD')
       await host.sessions.remove({ sessionID: toolSession.id })
       toolPhase = false
     }
