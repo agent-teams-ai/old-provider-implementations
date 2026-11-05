@@ -38,7 +38,7 @@ function discoverSingleNativeBinary(npmRoot) {
   const base = realpathSync(npmRoot)
   const glibc = process.report?.getReport()?.header?.glibcVersionRuntime
   if (!glibc) throw Error('expected_ubuntu_glibc_runner')
-  const supportsAvx2 = /(^|\\s)avx2(\\s|$)/i.test(readFileSync('/proc/cpuinfo', 'utf8'))
+  const supportsAvx2 = /(^|\s)avx2(\s|$)/i.test(readFileSync('/proc/cpuinfo', 'utf8'))
   const packageName = supportsAvx2 ? 'cli-linux-x64' : 'cli-linux-x64-baseline'
   const packageDirectory = realpathSync(join(base, packageName))
   if (!packageDirectory.startsWith(base + '/')) throw Error('native_package_outside_test_prefix')
