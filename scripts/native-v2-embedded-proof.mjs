@@ -735,13 +735,13 @@ try {
       receipt.toolPolicyDiscovery.driverProjection = {
         state: toolProjection.state, reason: toolProjection.reason,
         tools: toolProjection.tools.map(tool => ({ name: tool.toolName,
-          status: tool.status, executed: tool.executed })).slice(0, 8),
+          status: tool.status, providerExecuted: tool.providerExecuted })).slice(0, 8),
       }
       if (toolProjection.state !== 'succeeded' ||
           toolProjection.tools.length !== 1 ||
           toolProjection.tools[0]?.toolName !== 'read' ||
           toolProjection.tools[0]?.status !== 'error' ||
-          toolProjection.tools[0]?.executed !== false)
+          toolProjection.tools[0]?.providerExecuted !== false)
         throw Error('TEST_embedded_denied_tool_production_projection_mismatch')
       receipt.steps.push('TEST_embedded_effective_tool_policy_denial_verified')
       receipt.steps.push('TEST_embedded_denied_tool_production_projection_verified')
@@ -791,6 +791,10 @@ try {
           part.state?.status === 'completed' &&
           JSON.stringify(part.state).includes(insideMarker))
         receipt.safeReadControl = { nativeToolSuccess: success.length,
+           // A local read can really execute with native providerExecuted=false.
+           // This witness is from the built-in read result plus native success,
+           // never inferred from that provider-hosted-execution bit.
+           localReadResultObserved: safeReadResult.length === 1 && success.length === 1,
           nativeToolFailed: failures.length, completedSnapshots: safeReadResult.length,
           sessionOwned: insideAdmission?.sessionID === allowedSession.id,
           canaryLeak: JSON.stringify(insideMessages).includes(toolCanary),
@@ -812,11 +816,13 @@ try {
         receipt.safeReadControl.driverProjection = {
           state: safeProjection.state,
           tools: safeProjection.tools.map(tool => ({ name: tool.toolName,
-            status: tool.status, executed: tool.executed })).slice(0, 8),
+            status: tool.status, providerExecuted: tool.providerExecuted })).slice(0, 8),
         }
         if (safeProjection.state !== 'succeeded' || safeProjection.tools.length !== 1 ||
             safeProjection.tools[0]?.toolName !== 'read' ||
-            safeProjection.tools[0]?.status !== 'completed')
+            safeProjection.tools[0]?.status !== 'completed' ||
+             safeProjection.tools[0]?.providerExecuted !== false ||
+             !receipt.safeReadControl.localReadResultObserved)
           throw Error('TEST_embedded_allowed_tool_production_projection_mismatch')
         receipt.steps.push('TEST_embedded_builtin_read_inside_workspace_succeeded')
         receipt.steps.push('TEST_embedded_allowed_tool_production_projection_verified')

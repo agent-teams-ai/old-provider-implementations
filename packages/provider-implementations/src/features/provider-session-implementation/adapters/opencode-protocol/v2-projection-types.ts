@@ -8,7 +8,10 @@ export type OpenCodeV2NativeTurnCut = Readonly<{
 }>
 export type OpenCodeV2NativeToolFact = Readonly<{
   assistantMessageId: string; toolCallId: string; toolName: string
-  status: 'running' | 'completed' | 'error'; executed: boolean | null
+  // Upstream event.data.executed is the *provider-hosted execution* bit. A
+  // locally executed built-in tool may succeed with this bit false; it is NOT
+  // proof that the tool caused no physical side effects.
+  status: 'running' | 'completed' | 'error'; providerExecuted: boolean | null
   input: unknown; content: readonly unknown[] | null; error: unknown; metadata: unknown
 }>
 export type OpenCodeV2NativeTurn = Readonly<{

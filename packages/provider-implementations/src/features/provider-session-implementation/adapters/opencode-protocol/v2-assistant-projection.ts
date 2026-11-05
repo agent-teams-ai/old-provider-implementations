@@ -13,10 +13,10 @@ function toolCallEvents(related: readonly OpenCodeV2NativeLogEvent[], toolId: st
     || sequence(started, Infinity) >= sequence(called, -1)) { return null }
   return { called, successes: events.filter(event => event.type === 'session.tool.success'), failures: events.filter(event => event.type === 'session.tool.failed') }
 }
-// The native projector accumulates physical execution evidence across Called and
-// terminal events using logical OR. A terminal snapshot must never erase an
-// already executed call, nor invent execution absent from both durable events.
-function validExecutedSnapshot(part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], outcome: readonly OpenCodeV2NativeLogEvent[]): boolean {
+// Upstream v2.0.21/v2.1.4 carries a providerExecuted bit in event.data.executed.
+// It does NOT establish whether a locally hosted tool physically ran. Preserve
+// only that named native fact and reject contradictory event/message snapshots.
+function validProviderExecutedSnapshot(part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], outcome: readonly OpenCodeV2NativeLogEvent[]): boolean {
   const before = called.at(0)?.data.executed, after = outcome.at(0)?.data.executed
   return typeof part.executed === 'boolean' && typeof before === 'boolean'
     && typeof after === 'boolean' && part.executed === (before || after)
@@ -30,20 +30,20 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
   const base = { assistantMessageId: assistantId, toolCallId: toolId, toolName: name, input: state.input }
   if (state.status === 'streaming' || state.status === 'running') {
     if (ended || successes.length !== 0 || failures.length !== 0) { return reject('unsettled_tool_at_execution_terminal') }
-    return { ...base, status: 'running', executed: null, content: null, error: null, metadata: null }
+    return { ...base, status: 'running', providerExecuted: null, content: null, error: null, metadata: null }
   }
-  const executed = typeof part.executed === 'boolean' ? part.executed : null, metadata = state.metadata ?? null
+  const providerExecuted = typeof part.executed === 'boolean' ? part.executed : null, metadata = state.metadata ?? null
   if (state.status === 'error') {
     if (failures.length !== 1 || successes.length !== 0 || !same(failures.at(0)?.data.error, state.error)
-      || sequence(called, Infinity) >= sequence(failures, -1) || !validExecutedSnapshot(part, called, failures)) { return reject('tool_failure_snapshot_mismatch') }
-    return { ...base, status: 'error', executed, content: null, error: state.error, metadata }
+      || sequence(called, Infinity) >= sequence(failures, -1) || !validProviderExecutedSnapshot(part, called, failures)) { return reject('tool_failure_snapshot_mismatch') }
+    return { ...base, status: 'error', providerExecuted, content: null, error: state.error, metadata }
   }
   if (!validToolSuccess(state, part, called, successes, failures)) { return reject('tool_success_snapshot_mismatch') }
-  return { ...base, status: 'completed', executed, content: state.content, error: null, metadata }
+  return { ...base, status: 'completed', providerExecuted, content: state.content, error: null, metadata }
 }
 function validToolSuccess(state: Record<string, unknown>, part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], successes: readonly OpenCodeV2NativeLogEvent[], failures: readonly OpenCodeV2NativeLogEvent[]): state is Record<string, unknown> & { content: readonly unknown[] } {
   return state.status === 'completed' && successes.length === 1 && failures.length === 0 && Array.isArray(state.content)
-    && state.content.length > 0 && same(successes.at(0)?.data.content, state.content) && validExecutedSnapshot(part, called, successes)
+    && state.content.length > 0 && same(successes.at(0)?.data.content, state.content) && validProviderExecutedSnapshot(part, called, successes)
     && sequence(called, Infinity) < sequence(successes, -1)
 }
 function assistantProblem(message: OpenCodeV2NativeTurnCut['messages']['data'][number], related: readonly OpenCodeV2NativeLogEvent[], ended: boolean): string | null {

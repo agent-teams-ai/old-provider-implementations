@@ -19,9 +19,11 @@ test('both native dialects retain exact input, text and raw tool facts without i
     assert.equal(projected.text, 'TEST reply')
     assert.deepEqual(projected.assistantMessageIds, [assistantID])
     assert.deepEqual(projected.tools, [{ assistantMessageId: assistantID, toolCallId: 'TEST-tool',
-      toolName: 'agent-teams_task_done', status: 'completed', executed: false,
+      toolName: 'agent-teams_task_done', status: 'completed', providerExecuted: false,
       input: toolInput, content, error: null, metadata: null }])
     assert.equal('visibleReplies' in projected, false)
+    // A false provider-executed bit does not claim that local tools were not run.
+    assert.equal(Object.hasOwn(projected.tools[0]!, 'executed'), false)
     assert.equal('kind' in projected.tools[0]!, false)
   }
 })
@@ -117,7 +119,7 @@ test('tool execution evidence combines durable called and terminal flags without
     tool.executed = true
     const accepted = projectOpenCodeV2NativeTurn(calledExecuted)
     assert.equal(accepted.state, 'succeeded')
-    assert.equal(accepted.tools[0]?.executed, true)
+    assert.equal(accepted.tools[0]?.providerExecuted, true)
 
     // Both log and projected message must agree with the OR of the durable
     // Called/Success bits; a false tool snapshot must not claim no execution.
@@ -151,7 +153,7 @@ test('failed native tool cannot erase actual execution from durable events', () 
     return value
   }
   const base = makeFailure()
-  assert.equal(projectOpenCodeV2NativeTurn(base).tools[0]?.executed, false)
+  assert.equal(projectOpenCodeV2NativeTurn(base).tools[0]?.providerExecuted, false)
   for (const index of [5, 6]) {
     const inconsistent = makeFailure()
     markLogExecuted(inconsistent, index)
@@ -166,7 +168,7 @@ test('failed native tool cannot erase actual execution from durable events', () 
   const projected = projectOpenCodeV2NativeTurn(cumulative)
   assert.equal(projected.state, 'succeeded')
   assert.equal(projected.tools[0]?.status, 'error')
-  assert.equal(projected.tools[0]?.executed, true)
+  assert.equal(projected.tools[0]?.providerExecuted, true)
 })
 
 test('trimmed or absent native history cannot become input-not-delivered pending', () => {
