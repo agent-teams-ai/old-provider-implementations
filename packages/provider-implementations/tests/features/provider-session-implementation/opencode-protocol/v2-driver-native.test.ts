@@ -16,6 +16,16 @@ test('fresh finite native operations retain original queue anchor and qualify it
   assert.deepEqual(host.counts(), { submitted: 1, interrupted: 0, replies: 0 })
 })
 
+test('stock CLI sync-only log is not a durable execution preflight and cannot submit a model prompt', async t => {
+  const host = await driverPeer(); t.after(host.close); host.syncOnlyLog()
+  const native = createDriverNative(nativeConfig(host), new AbortController().signal)
+  await assert.rejects(native.queue('msg_TESTnotSent', 'TEST must not execute'), error => {
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+    return true
+  })
+  assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+})
+
 test('native queue preflight rejects foreign workspace before POST while lost mutation receipt is unknown', async t => {
   for (const mode of ['foreign', 'lost'] as const) {
     const host = await driverPeer(); t.after(host.close)
