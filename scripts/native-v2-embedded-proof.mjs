@@ -10,6 +10,8 @@ import { tmpdir } from 'node:os'
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
+const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
+if (!['2.0.0', '2.0.21'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
 for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) {
@@ -45,7 +47,7 @@ Object.assign(process.env, {
   } : {}),
 })
 const options = {
-  app: { name: 'TEST-embedded-native-v2', version: '2.0.21' },
+  app: { name: 'TEST-embedded-native-v2', version: pinnedVersion },
   database: { path: database },
   events: { persist: true },
   models: { fetch: false },
@@ -71,7 +73,7 @@ try {
   if (typeof prefix !== 'string' || !isAbsolute(prefix)) throw Error('TEST_embedded_prefix_not_absolute')
   const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-  if (manifest.name !== '@opencode/sdk' || manifest.version !== '2.0.21')
+  if (manifest.name !== '@opencode/sdk' || manifest.version !== pinnedVersion)
     throw Error('TEST_embedded_SDK_package_identity')
   // Resolve only the published ESM export; require.resolve follows the absent CJS condition.
   const exported = manifest.exports?.['.']
@@ -256,7 +258,7 @@ try {
       throw Error('TEST_embedded_native_pagination_not_exhausted')
     receipt.steps.push('TEST_embedded_native_message_pagination_verified')
     const projected = projection.projectOpenCodeV2NativeTurn({
-      pin: '2.0.21', sessionID: original.id, nativeInputID: inputID,
+      pin: pinnedVersion, sessionID: original.id, nativeInputID: inputID,
       originalText: inputText, beforeCursor: 0,
       messages: { data: decodedMessages.data, previous: null, next: null },
       log: decodedLog,
