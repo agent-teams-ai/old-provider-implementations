@@ -87,6 +87,38 @@ test('V2 control uses the same bounded session ID alphabet as its native driver'
   assert.equal(host.calls(), before)
 })
 
+test('raw V2 control rejects coerced or unqualified loopback endpoints before any native activity', async t => {
+  // The control wire can be constructed without the private DriverConfig
+  // snapshot. A JSON array must never be accepted by RegExp coercion.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close)
+    let credentials = 0
+    const options = {
+      directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+      readPassword: () => { credentials++; return 'TEST-private' },
+    }
+    const invalidEndpoints: unknown[] = [
+      [host.endpoint],
+      'http://127.0.0.1:65536',
+      'http://127.0.0.1:100000',
+      'http://127.0.0.1:00080',
+      'http://localhost:14321',
+    ]
+    for (const endpoint of invalidEndpoints) {
+      assert.throws(() => createV2ControlWire({
+        ...options, endpoint: endpoint as string,
+      }), /authority_mismatch/, JSON.stringify(endpoint))
+      assert.throws(() => createOpenCodeV2SessionControl({
+        ...options, endpoint: endpoint as string,
+      }), /authority_mismatch/, JSON.stringify(endpoint))
+    }
+    assert.equal(credentials, 0)
+    assert.equal(host.calls(), 0)
+    assert.deepEqual(host.effects, [])
+  }
+})
+
 test('native permission effect with lost response remains unknown and is not replayed', async t => {
   const host = await peer(); t.after(host.close); host.loseReceipt()
   const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original', version: '2.0.21',
