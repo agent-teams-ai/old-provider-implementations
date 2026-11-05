@@ -4,6 +4,7 @@ import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { decodeV2DataEnvelope } from './v2-cut-codecs.ts'
+import { safeV2MessageID } from './v2-native-identifiers.ts'
 
 export type OpenCodeV2Permission = Readonly<{
   requestId: string; sessionId: string; action: string; resources: readonly string[]
@@ -15,7 +16,12 @@ function text(value: unknown): string {
 }
 // Both pinned V2 versions brand pending permission IDs with the `per` prefix.
 // Bound to the session route's safe single-segment alphabet before any grant.
-const nativePermissionId = /^per[A-Za-z0-9_-]{0,253}$/
+const nativePermissionId = /^per[A-Za-z0-9_-]{1,253}$/
+function denyUnsubmitted(): never {
+  const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
+  unsubmitted.add(failure)
+  throw failure
+}
 function permission(value: unknown, sessionId: string): OpenCodeV2Permission {
   const raw = record(value)
   if (!raw || raw.sessionID !== sessionId || !Array.isArray(raw.resources) || raw.resources.length > 256) {throw new Error('foreign_native_permission')}
@@ -46,7 +52,10 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       if (typeof body?.interrupted !== 'boolean') {throw new Error('invalid_native_interrupt_receipt')}
       return { interrupted: body.interrupted }
     },
-    cancelInbox: async (inboxId: string) => { await wire.request(path + `/inbox/${encodeURIComponent(inboxId)}`, { method: 'DELETE' }) },
+    cancelInbox: async (inboxId: string) => {
+      if (!safeV2MessageID(inboxId)) denyUnsubmitted()
+      await wire.request(path + `/inbox/${encodeURIComponent(inboxId)}`, { method: 'DELETE' })
+    },
     pendingPermissions: async (): Promise<readonly OpenCodeV2Permission[]> => {
       const body: unknown = decodeV2DataEnvelope(await (await wire.request(path + '/permission')).json() as unknown)
       if (!Array.isArray(body) || body.length > 4096) {throw new Error('invalid_native_permission_list')}
@@ -55,10 +64,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       return values
     },
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
-      if (!nativePermissionId.test(requestId) || !['once', 'always', 'reject'].includes(decision)) {
-        const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
-        unsubmitted.add(failure); throw failure
-      }
+      if (!nativePermissionId.test(requestId) || !['once', 'always', 'reject'].includes(decision)) denyUnsubmitted()
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
         const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
@@ -72,6 +78,8 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       await wire.request(requestPath + '/reply', { method: 'POST', body: JSON.stringify({ [key]: decision }) })
     },
     putInstruction: async (key: string, value: unknown) => {
+      // URL encoding does not escape '.' or '..'; reject non-canonical keys before PUT.
+      if (!/^[a-z0-9][a-z0-9._-]{0,255}$/.test(key)) denyUnsubmitted()
       const encoded = canonicalExecutionJSON(value)
       if (Buffer.byteLength(encoded) > 256 * 1024) {throw new Error('native_instruction_byte_budget')}
       await wire.request(entries + '/' + encodeURIComponent(key), { method: 'PUT', body: '{"value":' + encoded + '}' })
