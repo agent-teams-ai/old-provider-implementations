@@ -19,8 +19,9 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
   confirmStopped: () => Promise<boolean>
 }
 export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: OpenConfig): OpenCodeV2DriverConfig {
+  if (record(config) === null) {throw new Error('opencode.driver.invalid-config')}
   const loopbackPort = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
-  if (record(config) === null || config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
+  if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
     || !safeV2SessionID(config.nativeSessionId) || !isAbsolute(config.directory)
     || loopbackPort === undefined || Number(loopbackPort) > 65535
     || !['2.0.0', '2.0.21'].includes(config.version)
