@@ -124,20 +124,31 @@ try {
   receipt.steps.push('actual_TEST_owned_process_executable_digest')
   const endpoint = `http://127.0.0.1:${port}`
   const auth = `Basic ${Buffer.from('opencode:' + password).toString('base64')}`
-  let health
+  // Exact v2.0.21 contract from packages/protocol/src/groups/server.ts:
+  // GET /api/info -> {version,pid,urls,paths}; OpenAPI lives at /openapi.json.
+  // Legacy /global/health and /doc fall through to the HTML web app in V2.
+  let info
   for (let i = 0; i < 80; i++) {
-    try { health = await request(endpoint + '/global/health', auth); break } catch { await delay(250) }
+    try {
+      const candidate = await request(endpoint + '/api/info', auth)
+      if (candidate.status === 200) { info = candidate; break }
+    } catch {
+      // Native readiness can lag the process-spawn event.
+    }
+    await delay(250)
   }
-  if (!health || health.status !== 200) throw Error(`health_unavailable_${health?.status ?? 'no_response'}`)
-  const value = JSON.parse(health.content)
-  receipt.health = { healthy: value.healthy, version: value.version }
-  if (value.healthy !== true || value.version !== version) throw Error('native_health_version_mismatch')
-  receipt.steps.push('authenticated_loopback_native_health')
-  const denied = await request(endpoint + '/global/health')
+  if (!info) throw Error('native_info_unavailable')
+  const value = JSON.parse(info.content)
+  if (value.version !== version || value.pid !== child.pid ||
+      !Array.isArray(value.urls) || typeof value.paths?.tmp !== 'string')
+    throw Error('native_info_identity_mismatch')
+  receipt.serverInfo = { version: value.version, pidMatchesOwnedProcess: true }
+  receipt.steps.push('authenticated_loopback_native_info')
+  const denied = await request(endpoint + '/api/info')
   receipt.unauthenticatedStatus = denied.status
   if (denied.status !== 401) throw Error('loopback_auth_not_enforced')
   receipt.steps.push('unauthenticated_request_rejected')
-  const spec = await request(endpoint + '/doc', auth)
+  const spec = await request(endpoint + '/openapi.json', auth)
   receipt.openapi = { status: spec.status, contentType: spec.contentType, sha256: hash(spec.content) }
   if (spec.status !== 200 || !spec.content.includes('openapi')) throw Error('native_openapi_unavailable')
   receipt.steps.push('native_OpenAPI_retrievable')
