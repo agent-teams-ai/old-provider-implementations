@@ -837,6 +837,9 @@ try {
     try { await host.close() } catch (error) {
       failed = true; receipt.hostCleanupFailure = String(error)
     }
+    if (interruptStream) receipt.interruptAfterHostClose = {
+      socketClosed: interruptStream.destroyed,
+    }
   }
   if (fake) {
     try {
