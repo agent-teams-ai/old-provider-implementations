@@ -1,0 +1,56 @@
+name: OpenCode V2 native discovery (TEST only)
+
+on:
+  pull_request:
+    paths:
+      - scripts/native-v2-readonly-proof.mjs
+      - .github/workflows/native-v2-readonly.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-v2-discovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-x64-native-readonly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install exact official V2 CLI into isolated test prefix
+        shell: bash
+        env:
+          npm_config_audit: 'false'
+          npm_config_fund: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/opencode-v2-native/npm" "$RUNNER_TEMP/opencode-v2-native/install-home"
+          HOME="$RUNNER_TEMP/opencode-v2-native/install-home" npm install \
+            --prefix "$RUNNER_TEMP/opencode-v2-native/npm" \
+            --no-save --package-lock=true --no-audit --no-fund @opencode/cli@2.0.21
+          npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
+      - name: Read-only TEST native executable, auth, version, digest and OpenAPI
+        env:
+          OPENCODE_V2_TEST_BIN: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/.bin/opencode
+          OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
+        run: node scripts/native-v2-readonly-proof.mjs
+      - name: Upload actual runner receipt (even for failed native checks)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-v2-native-discovery-linux-x64
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            native-v2-readonly-proof.json
+            ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
