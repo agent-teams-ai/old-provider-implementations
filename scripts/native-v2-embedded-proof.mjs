@@ -1,6 +1,7 @@
 // TEST-only proof of pinned OpenCode V2 embedded durable event retention.
 // No native CLI, user credentials, external provider or production activation.
 import { pathToFileURL } from 'node:url'
+import { createRequire } from 'node:module'
 import { createServer } from 'node:http'
 import { setTimeout as delay } from 'node:timers/promises'
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -26,6 +27,7 @@ const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedd
 let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
+let toolExecutorCalls = 0, toolAuthorizedCalls = 0
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
@@ -96,6 +98,40 @@ try {
   if (!entry.startsWith(packageRoot + sep)) throw Error('TEST_embedded_SDK_export_outside_package')
   const { OpenCode } = await import(pathToFileURL(entry).href)
   if (typeof OpenCode?.create !== 'function') throw Error('TEST_embedded_api_unavailable')
+  if (toolMode) {
+    // V2-native Promise plugin API only, not a renamed V1 plugin. This
+    // disposable tool never reads a file; its real native permission assert
+    // must deny the external path before the synthetic executor can return.
+    const effectEntry = realpathSync(createRequire(join(packageRoot, 'package.json')).resolve('effect'))
+    if (!effectEntry.startsWith(realpathSync(join(prefix, 'node_modules')) + sep))
+      throw Error('TEST_embedded_effect_outside_pinned_prefix')
+    const { Schema } = await import(pathToFileURL(effectEntry).href)
+    if (typeof Schema?.Struct !== 'function') throw Error('TEST_embedded_native_plugin_schema_unavailable')
+    options.plugins = [{
+      id: 'TEST-v2-owned-native-tool',
+      setup: async (ctx) => {
+        await ctx.tool.transform(editor => {
+          editor.add({
+            name: 'read',
+            description: 'TEST-only synthetic read permission probe (never opens files)',
+            options: { codemode: false },
+            input: Schema.Struct({ filePath: Schema.String }),
+            output: Schema.Struct({ text: Schema.String }),
+            execute: async ({ filePath }, context) => {
+              toolExecutorCalls++
+              await ctx.permission.assert({
+                sessionID: context.sessionID, agent: context.agent,
+                action: 'external_directory', resources: [filePath],
+              })
+              toolAuthorizedCalls++
+              return { output: { text: 'TEST_CONTROLLED_EXECUTION' }, content: 'TEST_CONTROLLED_EXECUTION' }
+            },
+          })
+        })
+      },
+    }]
+    receipt.steps.push('TEST_embedded_v2_native_tool_plugin_configured')
+  }
   receipt.steps.push('pinned_embedded_SDK_module_resolved')
   if (pinnedVersion === '2.0.21') {
     // The private V2 SPI must accept this machine's actual absolute workspace
@@ -495,7 +531,8 @@ try {
       const toolEffectObserved = toolOutcomes.some(part =>
         part.name === 'read' && part.status === 'error') &&
         toolEventTypes.includes('session.tool.called') &&
-        toolEventTypes.includes('session.tool.failed')
+        toolEventTypes.includes('session.tool.failed') &&
+        toolExecutorCalls === 1 && toolAuthorizedCalls === 0
       const assistantPartTypes = [...new Set(toolMessages
         .filter(message => message?.type === 'assistant' && Array.isArray(message.data?.content))
         .flatMap(message => message.data.content)
@@ -505,7 +542,8 @@ try {
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests,
         advertisedReadTool, advertisedToolNames, assistantPartTypes, toolOutcomes,
-        toolEventTypes, toolEffectObserved, policyDenialUnverified: true,
+        toolEventTypes, toolExecutorCalls, toolAuthorizedCalls,
+        toolEffectObserved, policyDenialUnverified: true,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
