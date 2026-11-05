@@ -197,6 +197,19 @@ try {
   receipt.sessionAuthorization = { unauthenticatedRead: unauthRead.status,
     unauthenticatedDelete: unauthDelete.status, stillPresent: unchanged.status }
   receipt.steps.push('native_TEST_session_authz_denials')
+  // A pending native permission is not a grant. Never create one from a guessed ID.
+  const pendingURL = url + '/permission'
+  const pending = await request(pendingURL, auth)
+  if (pending.status !== 200 || !Array.isArray(JSON.parse(pending.content)?.data) ||
+      JSON.parse(pending.content).data.length !== 0) throw Error('native_unexpected_pending_permission')
+  const stalePermissionURL = pendingURL + '/per_TESTnotissued'
+  const staleRead = await request(stalePermissionURL, auth)
+  if (staleRead.status !== 404) throw Error('native_stale_permission_read_accepted')
+  const staleReply = await request(stalePermissionURL + '/reply', auth, {
+    method: 'POST', body: { decision: 'always' },
+  })
+  if (staleReply.status !== 404) throw Error('native_stale_permission_grant_accepted')
+  receipt.steps.push('native_TEST_stale_permission_reply_rejected')
   // Close the first TEST-owned process while preserving its private HOME/XDG store.
   await closeOwnServer()
   if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
@@ -227,6 +240,14 @@ try {
     throw Error('native_cold_session_identity_mismatch')
   receipt.steps.push('native_TEST_session_survived_cold_restart')
   receipt.steps.push('native_TEST_ordered_permission_rules_retained')
+  const pendingRestart = await request(restoredURL + '/permission', auth)
+  if (pendingRestart.status !== 200 ||
+      !Array.isArray(JSON.parse(pendingRestart.content)?.data) ||
+      JSON.parse(pendingRestart.content).data.length !== 0)
+    throw Error('native_pending_permissions_after_restart')
+  receipt.permissionRejection = { pendingBefore: 0, staleRead: staleRead.status,
+    staleReply: staleReply.status, pendingAfterRestart: 0 }
+  receipt.steps.push('native_TEST_no_stale_permission_after_restart')
 
   const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
