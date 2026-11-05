@@ -464,10 +464,23 @@ try {
       if (toolModelRequests < 1 || !toolLog?.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)) ||
           !Array.isArray(toolMessages) || toolHistory.includes(toolCanary))
         throw Error('TEST_policy_tool_not_executed_or_canary_leaked')
+      // Record only bounded, non-sensitive result metadata; never persist any
+      // native tool arguments, error messages, canary content, or user data.
+      const toolOutcomes = toolMessages
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
+        .flatMap(message => message.content)
+        .filter(part => part?.type === 'tool')
+        .slice(0, 16)
+        .map(part => ({
+          name: typeof part.name === 'string' ? part.name.slice(0, 64) : null,
+          status: typeof part.state?.status === 'string' ? part.state.status.slice(0, 32) : null,
+          errorTag: typeof part.state?.error?._tag === 'string' ? part.state.error._tag.slice(0, 80) : null,
+          executed: part.executed === true,
+        }))
       // These receipts are discovery, not a Host permission certificate: inspect
       // the concrete tool/permission outcomes before marking a tool DENY PASS.
       receipt.toolPolicyDiscovery = {
-        attemptedModelTool: true, modelRequests: toolModelRequests,
+        attemptedModelTool: true, modelRequests: toolModelRequests, toolOutcomes,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
