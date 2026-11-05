@@ -339,6 +339,9 @@ try {
   })
   if (!native.pid) throw Error('TEST_model_restart_spawn_failed')
   await once(native, 'spawn')
+  nativeStartTicks = ownedStartTicks(native.pid)
+  if (!nativeStartTicks) throw Error('TEST_model_restart_owned_process_start_unavailable')
+  receipt.coldProcessStartTicks = nativeStartTicks
   if (sha256(readFileSync('/proc/' + native.pid + '/exe')) !== expectedDigest)
     throw Error('TEST_model_restart_executable_digest_mismatch')
   const coldEndpoint = 'http://127.0.0.1:' + coldPort
