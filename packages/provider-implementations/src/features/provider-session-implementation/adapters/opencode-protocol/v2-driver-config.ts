@@ -1,6 +1,7 @@
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
@@ -19,7 +20,7 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
 }
 export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: OpenConfig): OpenCodeV2DriverConfig {
   if (record(config) === null || config.configRevision !== request.configRevision || !config.trustedBinding || !config.accountBinding
-    || !safeV2SessionID(config.nativeSessionId) || !config.directory.startsWith('/')
+    || !safeV2SessionID(config.nativeSessionId) || !isAbsolute(config.directory)
     || !/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(config.endpoint)
     || !['2.0.0', '2.0.21'].includes(config.version)
     || typeof config.readPassword !== 'function' || typeof config.probe !== 'function' || typeof config.confirmStopped !== 'function'
