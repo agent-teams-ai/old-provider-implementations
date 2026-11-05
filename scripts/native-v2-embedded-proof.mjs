@@ -1,9 +1,8 @@
 // TEST-only proof of pinned OpenCode V2 embedded durable event retention.
 // No native CLI, model execution, user credentials, external provider or production activation.
-import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
@@ -55,8 +54,20 @@ async function readLog(sdk, sessionID) {
 }
 try {
   if (!prefix?.startsWith('/')) throw Error('TEST_embedded_prefix_not_absolute')
-  const require = createRequire(join(prefix, 'TEST-source-entry.cjs'))
-  const entry = require.resolve('@opencode/sdk')
+  const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
+  const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+  if (manifest.name !== '@opencode/sdk' || manifest.version !== '2.0.21')
+    throw Error('TEST_embedded_SDK_package_identity')
+  // Resolve only the published ESM export; require.resolve follows the absent CJS condition.
+  const exported = manifest.exports?.['.']
+  const target = typeof exported === 'string' ? exported
+    : typeof exported?.import === 'string' ? exported.import
+    : typeof exported?.import?.default === 'string' ? exported.import.default
+    : exported?.default
+  if (typeof target !== 'string' || !target.startsWith('./'))
+    throw Error('TEST_embedded_SDK_ESM_export_missing')
+  const entry = realpathSync(join(packageRoot, target))
+  if (!entry.startsWith(packageRoot + sep)) throw Error('TEST_embedded_SDK_export_outside_package')
   const { OpenCode } = await import(pathToFileURL(entry).href)
   if (typeof OpenCode?.create !== 'function') throw Error('TEST_embedded_api_unavailable')
   receipt.steps.push('pinned_embedded_SDK_module_resolved')
