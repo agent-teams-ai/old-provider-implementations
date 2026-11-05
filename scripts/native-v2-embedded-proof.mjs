@@ -34,6 +34,7 @@ let toolExecutorCalls = 0, toolAuthorizedCalls = 0, toolPermissionRejections = [
 let toolPluginSetupCalls = 0, toolRegisteredNames = []
 let toolContextCalls = 0, toolContextNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
+let toolTargetPath = join(root, 'outside-canary.txt')
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
 // Preserve only the executable lookup path (case-insensitive on Windows) and locale.
@@ -238,10 +239,11 @@ try {
           }
           const frames = (toolRequest ? [
             chunk({ role: 'assistant' }),
-            chunk({ tool_calls: [{ index: 0, id: 'call_TEST_external_read', type: 'function',
+            chunk({ tool_calls: [{ index: 0,
+              id: toolTargetPath.startsWith(workspace + sep)
+                ? 'call_TEST_inside_read' : 'call_TEST_external_read', type: 'function',
               function: { name: 'read', arguments: JSON.stringify(pinnedVersion === '2.1.4'
-                ? { filePath: join(root, 'outside-canary.txt') }
-                : { path: join(root, 'outside-canary.txt') }) } }] }),
+                ? { filePath: toolTargetPath } : { path: toolTargetPath }) } }] }),
             chunk({}, 'tool_calls'),
           ] : [
             chunk({ role: 'assistant' }), chunk({ content: marker }), chunk({}, 'stop'),
@@ -616,6 +618,61 @@ try {
       receipt.steps.push('TEST_embedded_effective_tool_policy_denial_verified')
       await host.sessions.remove({ sessionID: toolSession.id })
       toolPhase = false
+      if (pinnedVersion === '2.0.21') {
+        // Positive control with the official built-in read. The same TEST
+        // engine must admit an in-project file while the earlier outside file
+        // was denied. No plugin, user path, external network or real model.
+        const insideMarker = 'TEST_NATIVE_ALLOWED_WORKSPACE_READ'
+        toolTargetPath = join(workspace, 'read-control.txt')
+        writeFileSync(toolTargetPath, insideMarker, { mode: 0o600 })
+        toolCallIssued = false; toolModelRequests = 0
+        advertisedToolNames = []; toolRequestProfiles = []; toolPhase = true
+        const callsBefore = modelCalls
+        const allowedSession = await host.sessions.create({
+          location: { directory: workspace }, agent: 'build',
+          model: { providerID: 'test-native', id: 'TEST-native-model' },
+          permissions: [
+            { action: 'external_directory', resource: '*', effect: 'deny' },
+            { action: 'read', resource: '*', effect: 'allow' },
+          ],
+        })
+        const insideInputID = 'msg_TESTinsideRead'
+        const insideAdmission = await host.sessions.prompt({
+          sessionID: allowedSession.id, id: insideInputID,
+          text: 'TEST read a harmless file inside the current workspace',
+          delivery: 'queue', resume: true,
+        })
+        if (insideAdmission?.id !== insideInputID)
+          throw Error('TEST_embedded_inside_read_prompt_not_admitted')
+        let insideLog
+        for (let attempt = 0; attempt < 80; attempt++) {
+          insideLog = await readLog(host, allowedSession.id)
+          if (insideLog.some(event => /^session\\.execution\\.(?:failed|succeeded)$/.test(event.type))) break
+          await delay(250)
+        }
+        const insideMessages = (await host.message.list({ sessionID: allowedSession.id, limit: 200 }))?.data
+        const safeParts = Array.isArray(insideMessages) ? insideMessages
+          .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
+          .flatMap(message => message.content).filter(part => part?.type === 'tool') : []
+        const success = insideLog?.filter(event => event.type === 'session.tool.success') ?? []
+        const failures = insideLog?.filter(event => event.type === 'session.tool.failed') ?? []
+        const safeReadResult = safeParts.filter(part => part.name === 'read' &&
+          part.state?.status === 'completed' &&
+          JSON.stringify(part.state).includes(insideMarker))
+        receipt.safeReadControl = { nativeToolSuccess: success.length,
+          nativeToolFailed: failures.length, completedSnapshots: safeReadResult.length,
+          sessionOwned: insideAdmission?.sessionID === allowedSession.id,
+          canaryLeak: JSON.stringify(insideMessages).includes(toolCanary),
+          newModelCalls: modelCalls - callsBefore, qualified: false }
+        if (success.length !== 1 || failures.length !== 0 || safeReadResult.length !== 1 ||
+            insideAdmission?.sessionID !== allowedSession.id ||
+            receipt.safeReadControl.canaryLeak || modelCalls <= callsBefore ||
+            !insideLog.some(event => event.type === 'session.execution.succeeded'))
+          throw Error('TEST_embedded_in_workspace_positive_tool_control_failed')
+        receipt.steps.push('TEST_embedded_builtin_read_inside_workspace_succeeded')
+        await host.sessions.remove({ sessionID: allowedSession.id })
+        toolPhase = false
+      }
     }
     await host.sessions.remove({ sessionID: original.id })
   }
