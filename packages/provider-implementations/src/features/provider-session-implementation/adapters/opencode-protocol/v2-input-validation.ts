@@ -45,11 +45,15 @@ function executionMethodAllowed(method: string, flags: { session: boolean; list:
   return method === 'GET' && (flags.session || flags.list || flags.log || flags.scoped || flags.identity)
     || method === 'POST' && (flags.create || flags.prompt || flags.activation)
 }
-export function validateExecutionRoute(request: Request, pin: string, directory: string, endpoint: string) {
+export function validateExecutionRoute(request: Request, pin: string, directory: string, endpoint: string, nativeSessionId: string) {
   const url = new URL(request.url)
   executionAssert(url.origin === endpoint && url.username.length === 0 && url.password.length === 0 && url.hash.length === 0, 'authority_mismatch')
-  const session = /^\/api\/session\/[^/]+$/.test(url.pathname), prompt = /^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)
-  const list = /^\/api\/session\/[^/]+\/(?:inbox|message)$/.test(url.pathname), log = /^\/api\/experimental\/session\/[^/]+\/log$/.test(url.pathname)
+  // The private session driver's capability must not apply to another session
+  // on the same loopback server. Exact path binding is enforced before credentials.
+  const sessionPath = `/api/session/${nativeSessionId}`
+  const session = url.pathname === sessionPath, prompt = url.pathname === sessionPath + '/prompt'
+  const list = url.pathname === sessionPath + '/inbox' || url.pathname === sessionPath + '/message'
+  const log = url.pathname === `/api/experimental/session/${nativeSessionId}/log`
   const scoped = /^\/api\/(?:location|agent\/[^/]+|model|integration|config)$/.test(url.pathname)
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   const identity = (pin === '2.0.0' ? ['/api/health', '/api/server'] : ['/api/info']).includes(url.pathname), create = url.pathname === '/api/session'
