@@ -100,6 +100,12 @@ try {
   receipt.binaryRelativePath = binary.slice(realpathSync(supplied).length + 1)
   receipt.binaryBytes = binaryBytes.length
   receipt.steps.push('native_ELF_and_SHA256_recorded')
+  // TEST-only discovery pin from Actions 41944140785, artifact 13377198137.
+  // Independent upstream distribution provenance and product lock admission remain HOLD.
+  const linuxX64Avx2TestDigest = 'f916986543348d7953d8d43aa048516cdbc3f84f4d0dc9c0c5b9d1da3030cea7'
+  if (receipt.avx2 !== true || receipt.binarySha256 !== linuxX64Avx2TestDigest)
+    throw Error('unqualified_native_binary_digest')
+  receipt.steps.push('pre_execution_TEST_binary_SHA256_pin_verified')
   const reported = execFileSync(binary, ['--version'], { cwd: directory, env, encoding: 'utf8', timeout: 12000 }).trim()
   receipt.reportedVersion = reported
   // Exact observed official CLI prefix; never use substring or semver-coercion matching.
