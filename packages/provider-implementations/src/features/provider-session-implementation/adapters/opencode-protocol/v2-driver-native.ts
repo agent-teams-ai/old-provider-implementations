@@ -28,6 +28,10 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
       const log = decodeV2Log(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
         config.nativeSessionId, config.directory)
+      // The stock V2 CLI can acknowledge a prompt while exposing only log.synced
+      // (event retention disabled). Without the original durable session prefix,
+      // no future model turn has a verifiable ownership/terminal lineage.
+      if (log.events.length === 0) throw new Error('native_durable_log_unqualified')
       mutation = true
       const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown))
