@@ -257,6 +257,36 @@ try {
     timeoutMs: 12000, body: synthetic })
   if (repeated.status !== 200 || JSON.parse(repeated.content)?.data?.id !== inboxID)
     throw Error('native_synthetic_idempotent_readback_failed')
+  // Pinned v2.0.21 Inbox.reconcile uses session + input type as the
+  // idempotency boundary, so a changed duplicate must retain the first payload.
+  // A Host must never interpret a 200 replay as acceptance of changed content.
+  const changedDuplicate = await request(syntheticURL, auth, { method: 'POST',
+    timeoutMs: 12000, body: { ...synthetic, text: 'TEST-changed-replay-ignored' } })
+  const firstWriter = changedDuplicate.status === 200 ? JSON.parse(changedDuplicate.content)?.data : undefined
+  if (firstWriter?.id !== inboxID || firstWriter?.payload?.text !== synthetic.text)
+    throw Error('native_synthetic_first_writer_not_retained')
+
+  // An inbox ID belongs to exactly one session. Never allow a foreign session
+  // to adopt the first session's durable input after a retry or restore.
+  const otherSession = await request(endpoint + '/api/session', auth, { method: 'POST',
+    timeoutMs: 12000, body: { location: { directory }, permissions: testPermissions } })
+  const otherID = otherSession.status === 200 ? JSON.parse(otherSession.content)?.data?.id : undefined
+  if (typeof otherID !== 'string' || otherID === id || !otherID.startsWith('ses_'))
+    throw Error('native_second_TEST_session_not_distinct')
+  const otherURL = endpoint + '/api/session/' + encodeURIComponent(otherID)
+  const foreign = await request(otherURL + '/synthetic', auth, { method: 'POST',
+    timeoutMs: 12000, body: { ...synthetic, text: 'TEST-foreign-owner-collision' } })
+  if (foreign.status !== 409) throw Error('native_cross_session_inbox_id_accepted')
+  const foreignInbox = await request(otherURL + '/inbox', auth)
+  const foreignRows = foreignInbox.status === 200 ? JSON.parse(foreignInbox.content)?.data : undefined
+  if (!Array.isArray(foreignRows) || foreignRows.length !== 0)
+    throw Error('native_foreign_session_inbox_mutated')
+  const removedOther = await request(otherURL, auth, { method: 'DELETE', timeoutMs: 12000 })
+  if (removedOther.status !== 204) throw Error('native_second_TEST_session_cleanup_failed')
+  receipt.crossSessionIdempotency = { changedDuplicate: changedDuplicate.status,
+    preservedFirstWriter: true, foreignCollision: foreign.status, foreignInboxItems: 0,
+    foreignSessionCleanup: removedOther.status }
+  receipt.steps.push('native_TEST_first_writer_wins_and_foreign_collision_denied')
   const queue = await request(url + '/inbox', auth)
   const queued = queue.status === 200 ? JSON.parse(queue.content)?.data : undefined
   if (!Array.isArray(queued) || queued.length !== 1 || queued[0]?.id !== inboxID ||
