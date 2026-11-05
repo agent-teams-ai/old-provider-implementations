@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { test } from 'node:test'
 import { createOpenCodeV2SessionControl, wasOpenCodeV2InputNotSubmitted } from '../../../../src/opencode.ts'
+import { createV2ControlWire } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts'
 
 async function peer() {
   const effects: Array<{ path: string; body: unknown }> = []
@@ -105,6 +106,32 @@ test('control credential callback revocation is checked before native invocation
   assert.equal(host.calls(), 0)
 })
 
+
+test('V2 durable always-approval is refused even via raw control wire without native reads or writes', async t => {
+  // Native V2 "always" persists a project-scoped allow rule. Host has not yet
+  // qualified control of those durable approvals or effective permission order.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close)
+    const options = { endpoint: host.endpoint, directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A', readPassword: () => 'TEST-private' }
+    const control = createOpenCodeV2SessionControl(options)
+    const raw = createV2ControlWire(options)
+    t.after(control.dispose); t.after(raw.dispose)
+
+    await assert.rejects(control.replyPermission('per_ses_A', 'always'), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    })
+
+    const key = version === '2.0.0' ? 'reply' : 'decision'
+    await assert.rejects(raw.request('/api/session/ses_A/permission/per_ses_A/reply', {
+      method: 'POST', body: JSON.stringify({ [key]: 'always' }),
+    }), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    })
+    assert.equal(host.calls(), 0, 'no native GET or mutation before Host approval custody')
+    assert.deepEqual(host.effects, [])
+  }
+})
 
 test('invalid untyped permission decision is refused before any native read or mutation', async t => {
   const host = await peer(); t.after(host.close)
