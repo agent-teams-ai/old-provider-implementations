@@ -28,7 +28,7 @@ let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
 let toolCallIssued = false, toolRequestProfiles = []
-let toolExecutorCalls = 0, toolAuthorizedCalls = 0
+let toolExecutorCalls = 0, toolAuthorizedCalls = 0, toolPermissionRejections = []
 let toolPluginSetupCalls = 0, toolRegisteredNames = []
 let toolContextCalls = 0, toolContextNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
@@ -123,10 +123,20 @@ try {
             output: Schema.Struct({ text: Schema.String }),
             execute: async ({ filePath }, context) => {
               toolExecutorCalls++
-              await ctx.permission.assert({
-                sessionID: context.sessionID, agent: context.agent,
-                action: 'external_directory', resources: [filePath],
-              })
+              try {
+                await ctx.permission.assert({
+                  sessionID: context.sessionID, agent: context.agent,
+                  action: 'external_directory', resources: [filePath],
+                })
+              } catch (error) {
+                // Never record the path, error text, policy document or canary.
+                toolPermissionRejections.push({
+                  name: typeof error?.name === 'string' ? error.name.slice(0, 80) : null,
+                  policyDenied: typeof error?.message === 'string' &&
+                    error.message.includes('Blocked by configuration policy'),
+                })
+                throw error
+              }
               toolAuthorizedCalls++
               return { output: { text: 'TEST_CONTROLLED_EXECUTION' }, content: 'TEST_CONTROLLED_EXECUTION' }
             },
@@ -537,30 +547,37 @@ try {
       // Record only bounded, non-sensitive result metadata; never persist any
       // native tool arguments, error messages, canary content, or user data.
       const toolOutcomes = toolMessages
-        .filter(message => message?.type === 'assistant' && Array.isArray(message.data?.content))
-        .flatMap(message => message.data.content)
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
+        .flatMap(message => message.content)
         .filter(part => part?.type === 'tool')
         .slice(0, 16)
         .map(part => ({
           name: typeof part.name === 'string' ? part.name.slice(0, 64) : null,
           status: typeof part.state?.status === 'string' ? part.state.status.slice(0, 32) : null,
-          errorTag: typeof part.state?.error?._tag === 'string' ? part.state.error._tag.slice(0, 80) : null,
+          errorType: typeof part.state?.error?.type === 'string' ? part.state.error.type.slice(0, 80) : null,
           executed: part.executed === true,
         }))
-      // Native messages are wrapped in { data: { content: [...] } }, not
-      // { content: [...] }. Require both the native snapshot and durable tool
-      // lifecycle before counting an actual read denial. Model acceptance and
-      // a terminal alone never establish a native tool invocation.
+      // Raw SDK SessionMessage.Assistant.content is top-level. Only the
+      // private decoder's OpenCodeV2NativeMessage wrapper uses .data.content.
+      // Match the durable failure to this TEST-owned permission evaluation,
+      // not to an arbitrary tool/runtime exception or a model terminal.
       const toolEventTypes = toolLog.filter(event => event.type.startsWith('session.tool.'))
         .map(event => event.type).slice(0, 32)
+      const toolEventFailures = toolLog.filter(event => event.type === 'session.tool.failed')
+        .slice(0, 8).map(event => ({
+          errorType: typeof event.data?.error?.type === 'string' ? event.data.error.type.slice(0, 80) : null,
+          executed: event.data?.executed === true, toolName: typeof event.data?.name === 'string'
+            ? event.data.name.slice(0, 80) : null,
+        }))
       const toolEffectObserved = toolOutcomes.some(part =>
         part.name === 'read' && part.status === 'error') &&
         toolEventTypes.includes('session.tool.called') &&
-        toolEventTypes.includes('session.tool.failed') &&
+        toolEventFailures.length === 1 &&
+        toolPermissionRejections.length === 1 && toolPermissionRejections[0].policyDenied === true &&
         toolExecutorCalls === 1 && toolAuthorizedCalls === 0
       const assistantPartTypes = [...new Set(toolMessages
-        .filter(message => message?.type === 'assistant' && Array.isArray(message.data?.content))
-        .flatMap(message => message.data.content)
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
+        .flatMap(message => message.content)
         .map(part => part?.type)
         .filter(type => typeof type === 'string'))].slice(0, 16)
       const advertisedReadTool = advertisedToolNames.includes('read')
@@ -568,17 +585,14 @@ try {
         attemptedModelTool: true, modelRequests: toolModelRequests,
         advertisedReadTool, advertisedToolNames, toolRequestProfiles, toolCallIssued,
         assistantPartTypes, toolOutcomes,
-        toolEventTypes, toolPluginSetupCalls, toolRegisteredNames,
+        toolEventTypes, toolEventFailures, toolPluginSetupCalls, toolRegisteredNames,
         toolContextCalls, toolContextNames, toolExecutorCalls, toolAuthorizedCalls,
-        toolEffectObserved, policyDenialUnverified: true,
+        toolPermissionRejections, toolEffectObserved, policyDenialUnverified: !toolEffectObserved,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
-      receipt.steps.push(!advertisedReadTool
-        ? 'TEST_embedded_tool_policy_read_not_advertised_HOLD'
-        : toolEffectObserved
-          ? 'TEST_embedded_tool_policy_error_discovery_only'
-          : 'TEST_embedded_tool_policy_missing_native_tool_effect_HOLD')
+      if (!toolEffectObserved) throw Error('TEST_embedded_effective_tool_policy_denial_unverified')
+      receipt.steps.push('TEST_embedded_effective_tool_policy_denial_verified')
       await host.sessions.remove({ sessionID: toolSession.id })
       toolPhase = false
     }
