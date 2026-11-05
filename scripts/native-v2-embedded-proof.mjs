@@ -36,6 +36,13 @@ Object.assign(process.env, {
   OPENCODE_DISABLE_MODELS_FETCH: 'true',
   CI: 'true',
   NO_COLOR: '1',
+  ...(process.platform === 'win32' ? {
+    USERPROFILE: join(root, 'home'),
+    APPDATA: join(root, 'config'),
+    LOCALAPPDATA: join(root, 'data'),
+    TMP: join(root, 'temp'),
+    TEMP: join(root, 'temp'),
+  } : {}),
 })
 const options = {
   app: { name: 'TEST-embedded-native-v2', version: '2.0.21' },
