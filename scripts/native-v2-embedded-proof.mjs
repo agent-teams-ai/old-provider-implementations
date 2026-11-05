@@ -12,6 +12,7 @@ const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
 const toolMode = process.env.OPENCODE_V2_EMBEDDED_TOOL_PROOF === '1'
+const interruptMode = process.env.OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF === '1'
 const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
 const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
 if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
@@ -19,6 +20,8 @@ if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unq
 // hard-deny `policies`; these are separate tests, never a fallback.
 if (toolMode && (!modelMode || !['2.0.21', '2.1.4'].includes(pinnedVersion)))
   throw Error('TEST_tool_policy_requires_supported_embedded_model')
+if (interruptMode && (!modelMode || toolMode || pinnedVersion !== '2.0.21'))
+  throw Error('TEST_interrupt_requires_pinned_embedded_model')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
   qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
@@ -31,6 +34,7 @@ let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelReques
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
 let toolCallIssued = false, toolRequestProfiles = []
 let toolExecutorCalls = 0, toolAuthorizedCalls = 0, toolPermissionRejections = []
+let interruptArmed = false, interruptStream, notifyInterruptStream
 let toolPluginSetupCalls = 0, toolRegisteredNames = []
 let toolContextCalls = 0, toolContextNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
@@ -219,6 +223,16 @@ try {
             model: modelID, created: 1 }
           const chunk = (delta, finish_reason = null) => ({ ...base,
             choices: [{ index: 0, delta, finish_reason }] })
+          if (interruptArmed) {
+            // Keep only this TEST-owned local response in-flight. The real
+            // embedded engine must abort it; the fixture never completes it.
+            interruptArmed = false
+            response.writeHead(200, { 'content-type': 'text/event-stream' })
+            response.write('data: ' + JSON.stringify(chunk({ role: 'assistant' })) + '\n\n')
+            interruptStream = response
+            notifyInterruptStream?.()
+            return
+          }
           let toolRequest = false
           if (toolPhase) {
             toolModelRequests++
@@ -524,6 +538,59 @@ try {
         modelCalls !== beforeColdCalls)
       throw Error('TEST_embedded_model_cold_lineage_or_no_replay_failed')
     receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
+    if (interruptMode) {
+      // A real in-flight native model call must be interrupted, not simply
+      // pre-cancelled or allowed to complete. Leave the TEST fake model stream
+      // pending until the embedded runtime cancels its HTTP request.
+      const interrupted = await host.sessions.create({ location: { directory: workspace },
+        agent: 'build', model: { providerID: 'test-native', id: 'TEST-native-model' },
+        permissions: [{ action: 'shell', resource: '*', effect: 'deny' }] })
+      const input = 'msg_TESTinFlightInterrupt'
+      let signalStarted
+      const started = new Promise(resolve => { signalStarted = resolve })
+      notifyInterruptStream = signalStarted
+      interruptArmed = true
+      const beforeInterruptCalls = modelCalls
+      const admitted = await host.sessions.prompt({ sessionID: interrupted.id, id: input,
+        text: 'TEST interrupt the pending local stream', delivery: 'queue', resume: true })
+      if (admitted?.id !== input || admitted?.sessionID !== interrupted.id)
+        throw Error('TEST_active_interrupt_prompt_not_admitted')
+      await Promise.race([started, delay(12_000).then(() => { throw Error('TEST_active_interrupt_stream_not_started') })])
+      if (!interruptStream || modelCalls !== beforeInterruptCalls + 1)
+        throw Error('TEST_active_interrupt_model_not_observed')
+      const stopped = await host.sessions.interrupt({ sessionID: interrupted.id, resume: false })
+      if (stopped?.interrupted !== true) throw Error('TEST_active_interrupt_receipt_not_true')
+      let interruptedLog
+      for (let attempt = 0; attempt < 60; attempt++) {
+        interruptedLog = await readLog(host, interrupted.id)
+        if (interruptedLog.some(e => e.type === 'session.execution.interrupted')) break
+        await delay(200)
+      }
+      const ledger = interruptedLog?.filter(e => e.type !== 'log.synced') ?? []
+      const terminal = ledger.filter(e => e.type.startsWith('session.execution.') &&
+        ['succeeded', 'failed', 'interrupted'].some(t => e.type.endsWith('.' + t)))
+      const delivery = ledger.filter(e => e.type === 'session.inbox.delivered' &&
+        e.data?.inboxID === input)
+      if (terminal.length !== 1 || terminal[0].type !== 'session.execution.interrupted' ||
+          terminal[0].data?.reason !== 'user' || delivery.length !== 1 ||
+          modelCalls !== beforeInterruptCalls + 1 || !interruptStream.destroyed)
+        throw Error('TEST_active_interrupt_durable_terminal_or_cancel_unqualified')
+      const originalIDs = ledger.map(e => e.id)
+      const callsAtInterrupt = modelCalls
+      await host.close(); host = undefined
+      host = await OpenCode.create(options)
+      const restored = await readLog(host, interrupted.id)
+      const actualIDs = restored.filter(e => e.type !== 'log.synced').map(e => e.id)
+      if (JSON.stringify(actualIDs) !== JSON.stringify(originalIDs) ||
+          modelCalls !== callsAtInterrupt ||
+          (await host.sessions.get({ sessionID: interrupted.id }))?.id !== interrupted.id)
+        throw Error('TEST_active_interrupt_restarted_or_replayed')
+      await host.sessions.remove({ sessionID: interrupted.id })
+      receipt.nativeInterrupt = { active: true, interrupted: true,
+        reason: 'user', delivered: 1, modelRequests: 1, extraAfterRestart: 0,
+        streamCancelled: true, durableTerminalCount: 1, qualified: false }
+      receipt.steps.push('TEST_embedded_active_interrupt_durable_cold_no_replay')
+    }
     if (toolMode) {
       let safeSessionID, safeEventIDs, safeMessageIDs
       // TEST-only: the model requests an outside-workspace read which never
