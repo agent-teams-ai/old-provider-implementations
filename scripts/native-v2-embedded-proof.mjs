@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
+const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
 const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
 if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
@@ -71,6 +72,8 @@ async function readLog(sdk, sessionID) {
   return events
 }
 try {
+  if (expectedPlatform !== `${process.platform}-${process.arch}`)
+    throw Error('TEST_embedded_runner_platform_mismatch')
   if (typeof prefix !== 'string' || !isAbsolute(prefix)) throw Error('TEST_embedded_prefix_not_absolute')
   const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
