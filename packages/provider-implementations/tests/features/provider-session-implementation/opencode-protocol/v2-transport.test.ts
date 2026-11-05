@@ -89,6 +89,11 @@ test('V2 unsupported route, workspace and create binding reject before native fe
   }
   assert.equal(requests, 0)
   assert.throws(() => createOpenCodeV2ExecutionTransport({ ...config(host.endpoint), version: 'future' as '2.0.21' }), /unqualified_version/)
+  // A raw transport must not accept a one-element JSON array as a URL just
+  // because RegExp.test() would coerce it to a matching string.
+  assert.throws(() => createOpenCodeV2ExecutionTransport({
+    ...config(host.endpoint), endpoint: [host.endpoint],
+  } as unknown as ReturnType<typeof config>), /authority_mismatch/)
 })
 
 test('V2 transport cleanup cancels only its requests on a shared host; neighboring transport remains usable', async t => {
