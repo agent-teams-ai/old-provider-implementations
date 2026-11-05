@@ -161,22 +161,42 @@ try {
   // Official v2.0.21 SessionGroup: POST /api/session, GET/DELETE /api/session/:sessionID.
   // Only this disposable TEST workspace and isolated HOME/DB may be mutated.
   // Never retry a POST if its acceptance/acknowledgement is ambiguous.
+  // Restrictive TEST-only rules exercise the exact native ordered Permission.Ruleset
+  // persistence. Their actual tool-enforcement semantics require separate E2E.
+  const testPermissions = [
+    { action: 'external_directory', resource: '*', effect: 'deny' },
+    { action: 'shell', resource: '*', effect: 'ask' },
+  ]
+  const matchesPermissions = (value) => JSON.stringify(value) === JSON.stringify(testPermissions)
   const created = await request(endpoint + '/api/session', auth, {
-    method: 'POST', timeoutMs: 12000, body: { location: { directory } },
+    method: 'POST', timeoutMs: 12000, body: { location: { directory }, permissions: testPermissions },
   })
   if (created.status !== 200) throw Error('native_session_create_status_' + created.status)
   const createdData = JSON.parse(created.content)?.data
   const id = createdData?.id
   if (typeof id !== 'string' || !/^ses_[a-zA-Z0-9]+$/.test(id) ||
-      createdData?.location?.directory !== directory) throw Error('native_session_create_identity')
+      createdData?.location?.directory !== directory ||
+      !matchesPermissions(createdData.permissions)) throw Error('native_session_create_identity')
   receipt.steps.push('native_TEST_session_created')
   const url = endpoint + '/api/session/' + encodeURIComponent(id)
   const read = await request(url, auth)
   if (read.status !== 200) throw Error('native_session_read_status_' + read.status)
   const readData = JSON.parse(read.content)?.data
-  if (readData?.id !== id || readData?.location?.directory !== directory)
+  if (readData?.id !== id || readData?.location?.directory !== directory ||
+      !matchesPermissions(readData?.permissions))
     throw Error('native_session_read_identity')
   receipt.steps.push('native_TEST_session_readback')
+
+  const unauthRead = await request(url)
+  const unauthDelete = await request(url, undefined, { method: 'DELETE' })
+  if (unauthRead.status !== 401 || unauthDelete.status !== 401)
+    throw Error('native_session_authorization_bypass')
+  const unchanged = await request(url, auth)
+  if (unchanged.status !== 200 || JSON.parse(unchanged.content)?.data?.id !== id)
+    throw Error('native_unauthorized_delete_applied')
+  receipt.sessionAuthorization = { unauthenticatedRead: unauthRead.status,
+    unauthenticatedDelete: unauthDelete.status, stillPresent: unchanged.status }
+  receipt.steps.push('native_TEST_session_authz_denials')
   // Close the first TEST-owned process while preserving its private HOME/XDG store.
   await closeOwnServer()
   if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
@@ -202,9 +222,11 @@ try {
   const restored = await request(restoredURL, auth)
   if (restored.status !== 200) throw Error('native_cold_session_not_restored_' + restored.status)
   const restoredData = JSON.parse(restored.content)?.data
-  if (restoredData?.id !== id || restoredData?.location?.directory !== directory)
+  if (restoredData?.id !== id || restoredData?.location?.directory !== directory ||
+      !matchesPermissions(restoredData?.permissions))
     throw Error('native_cold_session_identity_mismatch')
   receipt.steps.push('native_TEST_session_survived_cold_restart')
+  receipt.steps.push('native_TEST_ordered_permission_rules_retained')
 
   const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
