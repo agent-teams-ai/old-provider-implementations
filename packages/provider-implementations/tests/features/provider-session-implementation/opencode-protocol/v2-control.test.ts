@@ -231,6 +231,38 @@ test('malformed native permission source message ID never permits a control gran
 })
 
 
+test('session-bound control denies global MCP mutation and discovery before credentials', async t => {
+  // MCP in V2 belongs to the trusted Host/project configuration boundary.
+  // A session permission or interrupt capability must not turn into access
+  // to the global MCP registry, even on the same authenticated loopback.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close)
+    let credentials = 0
+    const raw = createV2ControlWire({
+      endpoint: host.endpoint, directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+      readPassword: () => { credentials++; return 'TEST-private' },
+    })
+    t.after(raw.dispose)
+    for (const [path, method] of [
+      ['/api/mcp', 'GET'],
+      ['/api/mcp/resource', 'GET'],
+      ['/api/experimental/mcp/TEST-foreign', 'PUT'],
+      ['/api/experimental/mcp/TEST-foreign/connect', 'POST'],
+      ['/api/experimental/mcp/TEST-foreign/disconnect', 'POST'],
+      ['/api/experimental/mcp/TEST-foreign', 'DELETE'],
+    ] as const) {
+      await assert.rejects(raw.request(path, { method }), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      }, path)
+    }
+    assert.equal(credentials, 0, 'global MCP routes cannot request Host credentials')
+    assert.equal(host.calls(), 0, 'no global MCP HTTP effects')
+    assert.deepEqual(host.effects, [])
+  }
+})
+
 test('native V2 tool-origin permission keeps valid message lineage and allows only explicit once', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     const host = await peer(); t.after(host.close); host.validPermissionSource()
