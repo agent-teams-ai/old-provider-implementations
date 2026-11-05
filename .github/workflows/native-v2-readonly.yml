@@ -113,6 +113,7 @@ jobs:
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-floor-proof.json
           OPENCODE_V2_EMBEDDED_VERSION: '2.0.0'
           OPENCODE_V2_EMBEDDED_MODEL_PROOF: '0'
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: 'linux-x64'
         run: |
           set +e
           node scripts/native-v2-embedded-proof.mjs
