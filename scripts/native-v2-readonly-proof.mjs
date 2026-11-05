@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { decodeV2Session } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts'
 
 const version = '2.0.21'
 const receiptPath = resolve(process.env.OPENCODE_V2_TEST_RECEIPT || 'native-v2-readonly-proof.json')
@@ -273,6 +274,31 @@ try {
       !matchesPermissions(readData?.permissions))
     throw Error('native_session_read_identity')
   receipt.steps.push('native_TEST_session_readback')
+  // Qualify the actual production V2 session decoder against a native response.
+  // A separate model-bound TEST session is persisted but never resumed/inferred.
+  const testAgent = 'build', testModel = { providerID: 'TEST-provider', id: 'TEST-model' }
+  const boundCreate = await request(endpoint + '/api/session', auth, { method: 'POST',
+    timeoutMs: 12000, body: { location: { directory }, agent: testAgent,
+      model: testModel, permissions: testPermissions },
+  })
+  if (boundCreate.status !== 200) throw Error('native_bound_session_create_status_' + boundCreate.status)
+  const boundData = JSON.parse(boundCreate.content)?.data
+  const boundID = boundData?.id
+  if (typeof boundID !== 'string' || !/^ses_[A-Za-z0-9_-]+$/.test(boundID) || boundID === id)
+    throw Error('native_bound_session_create_identity')
+  const boundURL = endpoint + '/api/session/' + encodeURIComponent(boundID)
+  const boundRead = await request(boundURL, auth)
+  if (boundRead.status !== 200) throw Error('native_bound_session_read_status_' + boundRead.status)
+  const codecValue = decodeV2Session(JSON.parse(boundRead.content), boundID, directory)
+  if (codecValue.id !== boundID || codecValue.directory !== directory ||
+      codecValue.agent !== testAgent || codecValue.model.providerID !== testModel.providerID ||
+      codecValue.model.id !== testModel.id || !Number.isSafeInteger(codecValue.timeCreated))
+    throw Error('native_production_codec_mismatch')
+  const boundDelete = await request(boundURL, auth, { method: 'DELETE', timeoutMs: 12000 })
+  if (boundDelete.status !== 204) throw Error('native_bound_session_delete_failed')
+  receipt.nativeDriverSessionCodec = { accepted: boundCreate.status, read: boundRead.status,
+    deleted: boundDelete.status, decodedModel: true, decodedAgent: true }
+  receipt.steps.push('native_TEST_production_V2_session_codec_bound')
 
   const unauthRead = await request(url)
   const unauthDelete = await request(url, undefined, { method: 'DELETE' })
