@@ -477,14 +477,20 @@ try {
           errorTag: typeof part.state?.error?._tag === 'string' ? part.state.error._tag.slice(0, 80) : null,
           executed: part.executed === true,
         }))
-      // These receipts are discovery, not a Host permission certificate: inspect
-      // the concrete tool/permission outcomes before marking a tool DENY PASS.
+      // An accepted model request is not a native tool invocation. The
+      // current fake-model protocol may finish without recording a tool call.
+      // Make this an explicit HOLD, never an implicit policy-enforcement PASS.
+      const toolEffectObserved = toolOutcomes.some(part =>
+        part.name === 'read' && part.status === 'error')
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests, toolOutcomes,
+        toolEffectObserved, expectedDenialObserved: toolEffectObserved,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
-      receipt.steps.push('TEST_embedded_tool_policy_discovery_no_canary_leak')
+      receipt.steps.push(toolEffectObserved
+        ? 'TEST_embedded_tool_policy_error_discovery_only'
+        : 'TEST_embedded_tool_policy_missing_native_tool_effect_HOLD')
       await host.sessions.remove({ sessionID: toolSession.id })
       toolPhase = false
     }
