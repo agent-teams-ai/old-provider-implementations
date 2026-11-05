@@ -3,7 +3,7 @@
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { isAbsolute, join, resolve, sep } from 'node:path'
+import { isAbsolute, join, resolve, sep, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
@@ -50,6 +50,9 @@ if (process.argv[2] === '--mcp-child') {
   const workspace = join(root, 'workspace'), marker = join(root, 'mcp-boot.json')
   let host, failed = false, childPid, removePid, hostClosePid
   const originalPath = process.env.PATH ?? process.env.Path ?? ''
+  // Windows Node 24 needs SystemRoot for OS cryptographic initialization. Keep
+  // only this non-secret trusted OS directory, not ambient user credentials.
+  const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT
   // No ambient CI credentials or user config can reach the embedded engine.
   for (const name of Object.keys(process.env)) {
     if (!['LANG', 'TZ'].includes(name)) delete process.env[name]
@@ -61,6 +64,8 @@ if (process.argv[2] === '--mcp-child') {
     TMPDIR: join(root, 'temp'), OPENCODE_DISABLE_MODELS_FETCH: 'true',
     CI: 'true', NO_COLOR: '1',
     ...(process.platform === 'win32' ? {
+      ...(typeof systemRoot === 'string' && win32.isAbsolute(systemRoot) && systemRoot.length <= 1024
+        ? { SystemRoot: systemRoot } : {}),
       USERPROFILE: join(root, 'home'), APPDATA: join(root, 'config'),
       LOCALAPPDATA: join(root, 'data'), TEMP: join(root, 'temp'), TMP: join(root, 'temp'),
     } : {}),
@@ -76,6 +81,8 @@ if (process.argv[2] === '--mcp-child') {
   try {
     if (expectedPlatform !== `${process.platform}-${process.arch}`)
       throw Error('TEST_MCP_runner_platform_mismatch')
+    if (process.platform === 'win32' && !process.env.SystemRoot)
+      throw Error('TEST_MCP_windows_systemroot_unavailable')
     if (!prefix || !isAbsolute(prefix)) throw Error('TEST_MCP_prefix_missing')
     const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
     const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
