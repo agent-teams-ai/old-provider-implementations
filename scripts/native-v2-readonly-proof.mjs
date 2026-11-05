@@ -210,6 +210,37 @@ try {
   })
   if (staleReply.status !== 404) throw Error('native_stale_permission_grant_accepted')
   receipt.steps.push('native_TEST_stale_permission_reply_rejected')
+
+  // Exercise the real V2 Permission.Service.ask and reply routes. No model turn
+  // or tool executes: only TEST-owned permission state is created and rejected.
+  const denied = await request(pendingURL, auth, { method: 'POST',
+    body: { action: 'external_directory', resources: ['/TEST/outside'] } })
+  if (denied.status !== 200 || JSON.parse(denied.content)?.data?.effect !== 'deny')
+    throw Error('native_explicit_external_directory_deny_failed')
+  const asked = await request(pendingURL, auth, { method: 'POST',
+    body: { action: 'shell', resources: ['*'] } })
+  const askedData = asked.status === 200 ? JSON.parse(asked.content)?.data : undefined
+  if (!askedData || askedData.effect !== 'ask' ||
+      typeof askedData.id !== 'string' || !askedData.id.startsWith('per'))
+    throw Error('native_shell_permission_ask_failed')
+  const requested = await request(pendingURL, auth)
+  const requests = requested.status === 200 ? JSON.parse(requested.content)?.data : undefined
+  if (!Array.isArray(requests) || requests.length !== 1 ||
+      requests[0]?.id !== askedData.id || requests[0]?.sessionID !== id)
+    throw Error('native_pending_permission_not_session_scoped')
+  receipt.steps.push('native_TEST_permission_ask_pending_owned')
+  const replyURL = pendingURL + '/' + encodeURIComponent(askedData.id) + '/reply'
+  const rejected = await request(replyURL, auth, { method: 'POST', body: { decision: 'reject' } })
+  if (rejected.status !== 204) throw Error('native_permission_reject_failed')
+  const duplicate = await request(replyURL, auth, { method: 'POST', body: { decision: 'once' } })
+  if (duplicate.status !== 404) throw Error('native_permission_reply_replayed')
+  const cleared = await request(pendingURL, auth)
+  if (cleared.status !== 200 || !Array.isArray(JSON.parse(cleared.content)?.data) ||
+      JSON.parse(cleared.content).data.length !== 0)
+    throw Error('native_permission_pending_not_cleared')
+  receipt.nativePermissionEvaluation = { externalDirectory: 'deny', shell: 'ask',
+    ownedPending: 1, reject: rejected.status, replay: duplicate.status, remaining: 0 }
+  receipt.steps.push('native_TEST_permission_rejected_and_not_replayable')
   // Close the first TEST-owned process while preserving its private HOME/XDG store.
   await closeOwnServer()
   if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
