@@ -53,6 +53,10 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   const scoped = /^\/api\/(?:location|agent\/[^/]+|model|integration|config)$/.test(url.pathname)
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   const identity = (pin === '2.0.0' ? ['/api/health', '/api/server'] : ['/api/info']).includes(url.pathname), create = url.pathname === '/api/session'
+  // The V2 Session SPI binds an already owned session. Native creation is a separate
+  // Host-custody operation: this transport cannot prove effective ordered permissions
+  // or prevent V2's default external_directory allow. Deny before any native fetch.
+  executionAssert(!create, 'capabilities_pending')
   executionAssert(executionMethodAllowed(request.method, { session, prompt, list, log, scoped, activation, identity, create }), 'capabilities_pending')
   const allowed = scoped || activation ? ['location[directory]'] : log ? ['after', 'follow'] : url.pathname.endsWith('/message') ? ['cursor', 'limit'] : []
   for (const key of url.searchParams.keys()) { executionAssert(allowed.includes(key) && url.searchParams.getAll(key).length === 1, 'authority_mismatch') }
