@@ -13,7 +13,8 @@ function logProblem(input: OpenCodeV2NativeTurnCut): string | null {
   }
   // Session events are filtered from a shared durable bus; valid sequence gaps
   // and a synced watermark beyond the last emitted event do not imply loss.
-  return input.log.watermark === null || input.log.watermark < last ? 'incomplete_log_watermark' : null
+  return typeof input.log.watermark !== 'number' || !Number.isSafeInteger(input.log.watermark)
+    || input.log.watermark < last ? 'incomplete_log_watermark' : null
 }
 function cutProblem(input: OpenCodeV2NativeTurnCut): string | null {
   if (record(input.messages)?.previous !== null || record(input.messages)?.next !== null || record(input.log)?.synced !== true) { return 'incomplete_native_cut' }

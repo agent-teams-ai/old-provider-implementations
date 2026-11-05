@@ -33,7 +33,9 @@ test('gaps, mixed sessions, duplicate delivery and mismatching snapshots remain 
   const negatives: Array<(value: OpenCodeV2NativeTurnCut) => void> = [
     value => { value.messages.next = 'unread_page' },
     value => { value.log.events[4]!.seq = 50 },
-    value => { value.log.watermark = 50 },
+    value => { value.log.watermark = 8 },
+    value => { value.log.watermark = Number.NaN },
+    value => { value.log.watermark = Number.POSITIVE_INFINITY },
     value => { value.log.events[4]!.data = { ...value.log.events[4]!.data, sessionID: 'ses_foreign' } },
     value => { value.log.events[4]!.type = 'session.inbox.delivered' },
     value => { value.messages.data[0]!.data = { ...value.messages.data[0]!.data, text: 'foreign input' } },
@@ -49,6 +51,13 @@ test('gaps, mixed sessions, duplicate delivery and mismatching snapshots remain 
     assert.equal(projected.state, 'unknown')
     assert.deepEqual(projected.tools, [])
   }
+})
+
+
+test('native log sync may safely include filtered bus sequence beyond final session event', () => {
+  const value = cut()
+  value.log.watermark = 50
+  assert.equal(projectOpenCodeV2NativeTurn(value).state, 'succeeded')
 })
 
 test('only adjacent clean retry lineage can reuse one native assistant identity', () => {
