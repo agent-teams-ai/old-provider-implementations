@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -31,6 +31,28 @@ const env = {
 let child
 let failed = false
 const hash = (data) => createHash('sha256').update(data).digest('hex')
+/** The public npm CLI is a Node launcher. Never hash or execute the shim as an engine. */
+function discoverSingleNativeBinary(npmRoot) {
+  const base = realpathSync(npmRoot)
+  const matches = []
+  let inspected = 0
+  function scan(directory) {
+    if (++inspected > 10000) throw Error('native_package_scan_budget')
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) { scan(path); continue }
+      if (!entry.isFile() || entry.name !== 'opencode') continue
+      const bytes = readFileSync(path)
+      if (bytes.subarray(0, 4).toString('hex') === '7f454c46') matches.push(path)
+    }
+  }
+  scan(base)
+  if (matches.length !== 1) throw Error('native_elf_count_' + matches.length)
+  const native = realpathSync(matches[0])
+  if (!native.startsWith(base + '/')) throw Error('native_binary_outside_test_prefix')
+  return native
+}
 async function freePort() {
   const server = createServer()
   await new Promise((ok, reject) => server.once('error', reject).listen(0, '127.0.0.1', ok))
@@ -71,12 +93,13 @@ async function closeOwnServer() {
 }
 try {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw Error('unsupported_test_runner')
-  const supplied = process.env.OPENCODE_V2_TEST_BIN
-  if (!supplied || !supplied.startsWith('/')) throw Error('missing_absolute_test_binary')
-  const binary = realpathSync(supplied)
+  const supplied = process.env.OPENCODE_V2_TEST_NPM_ROOT
+  if (!supplied || !supplied.startsWith('/')) throw Error('missing_absolute_test_package_root')
+  const binary = discoverSingleNativeBinary(supplied)
   const binaryBytes = readFileSync(binary)
   if (binaryBytes.subarray(0, 4).toString('hex') !== '7f454c46') throw Error('installed_cli_is_not_native_elf')
   receipt.binarySha256 = hash(binaryBytes)
+  receipt.binaryRelativePath = binary.slice(realpathSync(supplied).length + 1)
   receipt.binaryBytes = binaryBytes.length
   receipt.steps.push('native_ELF_and_SHA256_recorded')
   const reported = execFileSync(binary, ['--version'], { cwd: directory, env, encoding: 'utf8', timeout: 12000 }).trim()
