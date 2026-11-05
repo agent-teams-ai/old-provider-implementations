@@ -299,6 +299,43 @@ try {
   if (fakeFailure || modelCalls < 1 || !assistant)
     throw Error('TEST_native_real_model_turn_not_observed')
   receipt.steps.push('TEST_native_fake_model_assistant_message_received')
+  // Stock CLI does not retain event payloads in Session.log by default.
+  // Inspect the separate source-defined terminal projections without silently
+  // upgrading them to authoritative input-to-terminal event lineage.
+  let nativeSessionState, terminalMessages = []
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const [state, page] = await Promise.all([
+      request(url, auth, { timeoutMs: 3500 }),
+      request(url + '/message?limit=200', auth, { timeoutMs: 3500 }),
+    ])
+    nativeSessionState = state.status === 200 ? state.json?.data : undefined
+    terminalMessages = page.status === 200 && Array.isArray(page.json?.data) ? page.json.data : []
+    const idle = terminalMessages.filter(item => item?.type === 'idle')
+    if (nativeSessionState?.outcome && nativeSessionState?.time?.idle &&
+        idle.length > 0) break
+    await delay(250)
+  }
+  const originalUsers = terminalMessages.filter(item =>
+    item?.type === 'user' && item?.id === inputID)
+  const originalAssistants = terminalMessages.filter(item =>
+    item?.type === 'assistant' && item?.id === assistant.id &&
+    item?.agent === 'build' && item?.model?.providerID === providerID &&
+    item?.model?.id === modelID && JSON.stringify(item).includes(fakeMarker))
+  const idleRows = terminalMessages.filter(item => item?.type === 'idle')
+  receipt.nativeTerminalProjection = {
+    sessionOutcome: nativeSessionState?.outcome ?? null,
+    sessionIdle: nativeSessionState?.time?.idle ?? null,
+    inputRows: originalUsers.length, assistantRows: originalAssistants.length,
+    idleOutcomes: idleRows.map(item => item.outcome).slice(0, 12),
+    assistantFinished: originalAssistants[0]?.time?.completed !== undefined,
+  }
+  if (nativeSessionState?.id !== session.id || nativeSessionState?.outcome !== 'succeeded' ||
+      !Number.isFinite(nativeSessionState?.time?.idle) ||
+      originalUsers.length !== 1 || originalAssistants.length !== 1 ||
+      !Number.isFinite(originalAssistants[0]?.time?.completed) ||
+      idleRows.length !== 1 || idleRows[0]?.outcome !== 'succeeded')
+    throw Error('TEST_native_model_terminal_projection_not_qualified')
+  receipt.steps.push('TEST_native_session_outcome_and_idle_consistent')
 
   // A visible assistant message is not sufficient without a trustworthy native
   // terminal event. Keep this a stop-ship gate; do not infer completion from text.
@@ -372,6 +409,14 @@ try {
       coldPage.status !== 200 || originalUserRows.length !== 1 ||
       preservedAssistants.length !== 1 || modelCalls !== modelCallsBeforeCold)
     throw Error('TEST_native_model_cold_history_or_no_replay_failed')
+  const coldIdleRows = coldMessages.filter(item => item?.type === 'idle')
+  receipt.coldModelTurn.sessionOutcome = coldSession.json?.data?.outcome ?? null
+  receipt.coldModelTurn.sessionIdle = coldSession.json?.data?.time?.idle ?? null
+  receipt.coldModelTurn.idleOutcomes = coldIdleRows.map(item => item?.outcome).slice(0, 12)
+  if (coldSession.json?.data?.outcome !== 'succeeded' ||
+      coldSession.json?.data?.time?.idle !== nativeSessionState.time.idle ||
+      coldIdleRows.length !== 1 || coldIdleRows[0]?.outcome !== 'succeeded')
+    throw Error('TEST_native_model_cold_terminal_projection_changed')
   receipt.steps.push('TEST_native_model_cold_history_retained_without_replay')
   const removed = await request(coldURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('TEST_native_model_session_delete_failed')
