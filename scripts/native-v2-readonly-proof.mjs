@@ -416,6 +416,12 @@ try {
     })
   const syncedLog = logFrames.at(-1)
   const nativeEvents = logFrames.slice(0, -1)
+  // Bounded, TEST-only diagnostics: expose event kinds and routing, never payloads.
+  receipt.nativeLogDiagnostic = { status: logResponse.status,
+    contentType: logResponse.contentType, frameTypes: logFrames.slice(0, 24).map(item => item?.type ?? null),
+    frameCount: logFrames.length, syncedType: syncedLog?.type ?? null,
+    syncedOwnerMatches: syncedLog?.aggregateID === id,
+    firstType: nativeEvents[0]?.type ?? null }
   if (syncedLog?.type !== 'log.synced' || syncedLog.aggregateID !== id ||
       nativeEvents.length === 0 || nativeEvents[0]?.type !== 'session.created')
     throw Error('native_session_log_missing_prefix_or_sync')
