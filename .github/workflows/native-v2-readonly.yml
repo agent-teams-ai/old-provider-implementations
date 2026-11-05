@@ -1,4 +1,4 @@
-name: OpenCode V2 native session lifecycle (TEST only)
+name: OpenCode V2 native E2E qualification (TEST only)
 
 on:
   pull_request:
@@ -16,9 +16,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux-x64-native-readonly:
+  linux-x64-native:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        proof: [lifecycle, model]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -45,11 +49,13 @@ jobs:
             --no-save --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/cli@2.0.21
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
       - name: TEST native binary, authenticated API and disposable session lifecycle
+        if: matrix.proof == 'lifecycle'
         env:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
         run: node scripts/native-v2-readonly-proof.mjs
-      - name: Qualify isolated TEST-local model binding (no model calls)
+      - name: TEST native local model turn and durable terminal qualification
+        if: matrix.proof == 'model'
         env:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_MODEL_RECEIPT: ${{ github.workspace }}/native-v2-model-candidate.json
@@ -58,7 +64,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-v2-native-discovery-linux-x64
+          name: opencode-v2-native-discovery-linux-x64-${{ matrix.proof }}
           if-no-files-found: warn
           retention-days: 7
           path: |
