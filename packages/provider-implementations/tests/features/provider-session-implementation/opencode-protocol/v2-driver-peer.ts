@@ -7,7 +7,7 @@ import { cut } from './v2-cut-fixture.ts'
 export async function driverPeer() {
   const directory = '/TEST/native-driver', sessionId = 'ses_TESTdriver'
   let submitted = 0, interrupted = 0, foreign = false, lostReceipt = false, hold = false, permissionMode = false, replies = 0
-  let flatSession = false, flatPrompt = false, flatPermissions = false
+  let flatSession = false, flatPrompt = false, flatPermissions = false, syncOnlyLog = false
   let value = cut(), base = cut(), queued: { id: string; text: string } | undefined
   let pauseInterrupt = false, releaseInterrupt: (() => void) | undefined
   let holdGrant = false, releaseGrant: (() => void) | undefined
@@ -64,7 +64,7 @@ export async function driverPeer() {
     if (req.method === 'GET') {
       if (url.pathname.endsWith('/log')) {
         res.setHeader('content-type', 'text/event-stream')
-        res.end([...value.log.events.map(row => ({ id: row.id, type: row.type, durable: { aggregateID: sessionId, seq: row.seq },
+        res.end([...(syncOnlyLog ? [] : value.log.events).map(row => ({ id: row.id, type: row.type, durable: { aggregateID: sessionId, seq: row.seq },
           data: row.data, location: { directory } })), { type: 'log.synced', aggregateID: sessionId, seq: value.log.watermark }]
           .map(row => `data: ${JSON.stringify(row)}\n\n`).join('')); return
       }
@@ -126,6 +126,7 @@ export async function driverPeer() {
     pauseInterrupt: () => { pauseInterrupt = true }, releaseInterrupt: () => { releaseInterrupt?.(); releaseInterrupt = undefined },
     hold: () => { hold = true }, permission: () => { hold = true; permissionMode = true }, foreign: () => { foreign = true }, loseReceipt: () => { lostReceipt = true },
     flatSession: () => { flatSession = true }, flatPrompt: () => { flatPrompt = true }, flatPermissions: () => { flatPermissions = true },
+    syncOnlyLog: () => { syncOnlyLog = true },
     counts: () => ({ submitted, interrupted, replies }),
     close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) }) },
   }
