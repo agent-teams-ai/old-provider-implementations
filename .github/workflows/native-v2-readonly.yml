@@ -64,6 +64,8 @@ jobs:
           - { os: windows-2022, proof: embedded-pinned-tool }
           - { os: windows-2022, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded-target-mcp }
+          # Windows 11 ARM64 is a separate native SDK tuple, not Server 2022 x64.
+          - { os: windows-11-arm, proof: embedded-target-mcp }
           - { os: windows-2022, proof: embedded-target }
           - { os: windows-2022, proof: embedded-target-model }
     steps:
@@ -179,7 +181,7 @@ jobs:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_MCP_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
           OPENCODE_V2_MCP_VERSION: ${{ matrix.proof == 'embedded-target-mcp' && '2.1.4' || '2.0.21' }}
-          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
         run: node scripts/native-v2-mcp-proof.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
