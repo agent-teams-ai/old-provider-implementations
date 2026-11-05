@@ -33,6 +33,9 @@ jobs:
           - { os: ubuntu-24.04, proof: embedded-floor }
           - { os: ubuntu-24.04, proof: embedded-target }
           - { os: ubuntu-24.04, proof: embedded-target-model }
+          # Discovery only: actual local fake-model tool call, policy hard-deny,
+          # and an outside-workspace canary. Not a Host/production PASS.
+          - { os: ubuntu-24.04, proof: embedded-target-tool }
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
           # GitHub-hosted macos-15 is Apple Silicon; macos-15-intel is x64.
@@ -129,7 +132,8 @@ jobs:
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
-          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ endsWith(matrix.proof, '-model') && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ (endsWith(matrix.proof, '-model') || endsWith(matrix.proof, '-tool')) && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_TOOL_PROOF: ${{ endsWith(matrix.proof, '-tool') && '1' || '0' }}
           OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
         run: node scripts/native-v2-embedded-proof.mjs
@@ -148,5 +152,6 @@ jobs:
             native-v2-embedded-floor-proof.json
             native-v2-embedded-target-proof.json
             native-v2-embedded-target-model-proof.json
+            native-v2-embedded-target-tool-proof.json
             ${{ runner.temp }}/opencode-v2-embedded/package-lock.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
