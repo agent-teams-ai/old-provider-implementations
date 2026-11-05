@@ -63,7 +63,12 @@ function controlResponse(response: Response, body: string, routes: ControlRoutes
 export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   const config = { ...supplied }, controllers = new Set<AbortController>(), pending = new Set<Promise<unknown>>()
   let closed = false
-  executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(config.endpoint)
+  // Raw control-wire callers bypass the DriverConfig snapshot. Never let
+  // RegExp.exec coerce an untyped JSON array into a trusted loopback endpoint.
+  const port = typeof config.endpoint === 'string'
+    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
+    : undefined
+  executionAssert(port !== undefined && Number(port) <= 65535
     && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)
