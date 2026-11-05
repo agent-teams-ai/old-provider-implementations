@@ -22,7 +22,7 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
   if (record(config) === null || record(config.binding) === null || record(config.limits) === null) {
     throw new Error('opencode.driver.invalid-config')
   }
-  const loopbackPort = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
+  // RegExp.exec coerces a one-element JSON array into a string; never let an\n  // untyped Host capture masquerade as a qualified loopback endpoint.\n  const loopbackPort = typeof config.endpoint === 'string'\n    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]\n    : undefined
   if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
     || !safeV2SessionID(config.nativeSessionId) || typeof config.directory !== 'string'
     || !isAbsolute(config.directory) || config.directory.endsWith(sep)
