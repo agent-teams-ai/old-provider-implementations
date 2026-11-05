@@ -10,6 +10,8 @@ import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { decodeV2Session } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts'
 import { createOpenCodeV2ExecutionTransport } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts'
+import { createV2ControlWire } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts'
+import { createOpenCodeV2SessionControl } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-session-control.ts'
 import { executionWasNotSubmitted } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-failures.ts'
 
 const version = '2.0.21'
@@ -383,6 +385,44 @@ try {
       throw Error('native_transport_owned_read_unavailable')
     receipt.steps.push('native_TEST_execution_transport_foreign_session_fenced')
   } finally { await scoped.dispose() }
+  // The native interrupt is an idle no-op here: it must never create a model
+  // turn, clear another session, or silently resume parked work. Qualify both
+  // the private session-bound control wire and its production receipt decoder.
+  let controlCredentialReads = 0
+  const controlConfig = { endpoint, directory, nativeSessionId: id, version,
+    readPassword: () => { controlCredentialReads++; return password },
+    deadline: Date.now() + 15_000 }
+  const controlWire = createV2ControlWire(controlConfig)
+  try {
+    for (const [foreignPath, method] of [
+      [otherURL.slice(endpoint.length) + '/interrupt?resume=false', 'POST'],
+      [otherURL.slice(endpoint.length) + '/permission', 'GET'],
+    ]) {
+      let deniedBeforeSend = false
+      try { await controlWire.request(foreignPath, { method }) }
+      catch (error) { deniedBeforeSend = executionWasNotSubmitted(error) }
+      if (!deniedBeforeSend || controlCredentialReads !== 0)
+        throw Error('native_control_foreign_session_route_not_fenced')
+    }
+  } finally { await controlWire.dispose() }
+  const control = createOpenCodeV2SessionControl(controlConfig)
+  try {
+    const interrupted = await control.interrupt()
+    if (interrupted.interrupted !== false || controlCredentialReads !== 1)
+      throw Error('native_idle_interrupt_receipt_mismatch')
+  } finally { await control.dispose() }
+  const afterInterrupt = await request(url, auth)
+  const afterInterruptData = afterInterrupt.status === 200
+    ? JSON.parse(afterInterrupt.content)?.data : undefined
+  if (afterInterruptData?.id !== id || !matchesPermissions(afterInterruptData?.permissions))
+    throw Error('native_idle_interrupt_changed_owned_session')
+  const neighborAfterInterrupt = await request(otherURL, auth)
+  if (neighborAfterInterrupt.status !== 200 ||
+      JSON.parse(neighborAfterInterrupt.content)?.data?.id !== otherID)
+    throw Error('native_idle_interrupt_changed_neighbor')
+  receipt.nativeIdleInterrupt = { interrupted: false, ownCredentialReads: controlCredentialReads,
+    foreignPreflightDenials: 2, ownedSessionIntact: true, neighborIntact: true }
+  receipt.steps.push('native_TEST_idle_interrupt_and_foreign_control_fenced')
   const foreignPermissionURL = otherURL + '/permission/' + encodeURIComponent(askedData.id)
   const foreignPermissionRead = await request(foreignPermissionURL, auth)
   if (foreignPermissionRead.status !== 404) throw Error('native_foreign_permission_exposed')
