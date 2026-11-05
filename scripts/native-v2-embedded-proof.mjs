@@ -551,7 +551,8 @@ try {
         if (toolLog.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type))) break
         await delay(250)
       }
-      const toolMessages = (await host.message.list({ sessionID: toolSession.id, limit: 200 }))?.data
+      const toolPage = await host.message.list({ sessionID: toolSession.id, limit: 200 })
+      const toolMessages = toolPage?.data
       const toolHistory = JSON.stringify({ toolLog, toolMessages })
       if (toolModelRequests < 1 || !toolLog?.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)) ||
           !Array.isArray(toolMessages) || toolHistory.includes(toolCanary))
@@ -615,7 +616,28 @@ try {
         canaryLeak: false, qualified: false,
       }
       if (!toolEffectObserved) throw Error('TEST_embedded_effective_tool_policy_denial_unverified')
+      const toolCut = {
+        pin: pinnedVersion, sessionID: toolSession.id, nativeInputID: 'msg_TESTpolicyTool',
+        originalText: 'TEST ask to read the outside canary', beforeCursor: 0,
+        messages: { data: codecs.decodeV2MessagePage(toolPage, toolSession.id).data,
+          previous: null, next: null },
+        log: codecs.decodeV2Log(toolLog.map(item => 'data: ' + JSON.stringify(item) + '\n\n').join(''),
+          toolSession.id, workspace),
+      }
+      const toolProjection = projection.projectOpenCodeV2NativeTurn(toolCut)
+      receipt.toolPolicyDiscovery.driverProjection = {
+        state: toolProjection.state, reason: toolProjection.reason,
+        tools: toolProjection.tools.map(tool => ({ name: tool.toolName,
+          status: tool.status, executed: tool.executed })).slice(0, 8),
+      }
+      if (toolProjection.state !== 'succeeded' ||
+          toolProjection.tools.length !== 1 ||
+          toolProjection.tools[0]?.toolName !== 'read' ||
+          toolProjection.tools[0]?.status !== 'error' ||
+          toolProjection.tools[0]?.executed !== false)
+        throw Error('TEST_embedded_denied_tool_production_projection_mismatch')
       receipt.steps.push('TEST_embedded_effective_tool_policy_denial_verified')
+      receipt.steps.push('TEST_embedded_denied_tool_production_projection_verified')
       await host.sessions.remove({ sessionID: toolSession.id })
       toolPhase = false
       if (pinnedVersion === '2.0.21') {
@@ -650,7 +672,8 @@ try {
           if (insideLog.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type))) break
           await delay(250)
         }
-        const insideMessages = (await host.message.list({ sessionID: allowedSession.id, limit: 200 }))?.data
+        const insidePage = await host.message.list({ sessionID: allowedSession.id, limit: 200 })
+        const insideMessages = insidePage?.data
         const safeParts = Array.isArray(insideMessages) ? insideMessages
           .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
           .flatMap(message => message.content).filter(part => part?.type === 'tool') : []
@@ -669,7 +692,26 @@ try {
             receipt.safeReadControl.canaryLeak || modelCalls <= callsBefore ||
             !insideLog.some(event => event.type === 'session.execution.succeeded'))
           throw Error('TEST_embedded_in_workspace_positive_tool_control_failed')
+        const insideCut = {
+          pin: pinnedVersion, sessionID: allowedSession.id, nativeInputID: insideInputID,
+          originalText: 'TEST read a harmless file inside the current workspace', beforeCursor: 0,
+          messages: { data: codecs.decodeV2MessagePage(insidePage, allowedSession.id).data,
+            previous: null, next: null },
+          log: codecs.decodeV2Log(insideLog.map(item => 'data: ' + JSON.stringify(item) + '\n\n').join(''),
+            allowedSession.id, workspace),
+        }
+        const safeProjection = projection.projectOpenCodeV2NativeTurn(insideCut)
+        receipt.safeReadControl.driverProjection = {
+          state: safeProjection.state,
+          tools: safeProjection.tools.map(tool => ({ name: tool.toolName,
+            status: tool.status, executed: tool.executed })).slice(0, 8),
+        }
+        if (safeProjection.state !== 'succeeded' || safeProjection.tools.length !== 1 ||
+            safeProjection.tools[0]?.toolName !== 'read' ||
+            safeProjection.tools[0]?.status !== 'completed')
+          throw Error('TEST_embedded_allowed_tool_production_projection_mismatch')
         receipt.steps.push('TEST_embedded_builtin_read_inside_workspace_succeeded')
+        receipt.steps.push('TEST_embedded_allowed_tool_production_projection_verified')
         await host.sessions.remove({ sessionID: allowedSession.id })
         toolPhase = false
       }
