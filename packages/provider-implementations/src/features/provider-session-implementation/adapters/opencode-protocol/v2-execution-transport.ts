@@ -63,7 +63,7 @@ class OpenCodeV2ExecutionFetch {
     this.readPassword = config.readPassword
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
-    executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(this.endpoint), 'authority_mismatch')
+    executionAssert(typeof this.endpoint === 'string' && /^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(this.endpoint), 'authority_mismatch')
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
     executionAssert(safeV2SessionID(this.nativeSessionId), 'authority_mismatch')
     executionAssert(Number.isFinite(this.context.deadline) && typeof this.directory === 'string' && this.directory.length > 0, 'deadline')
