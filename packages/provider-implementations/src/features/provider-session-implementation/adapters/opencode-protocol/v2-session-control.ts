@@ -64,7 +64,9 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       return values
     },
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
-      if (!nativePermissionId.test(requestId) || !['once', 'always', 'reject'].includes(decision)) denyUnsubmitted()
+      // V2 `always` writes a durable project-scoped approval pattern. Until Host
+      // owns and proves that mutation, reject it before even reading native state.
+      if (!nativePermissionId.test(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
         const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
