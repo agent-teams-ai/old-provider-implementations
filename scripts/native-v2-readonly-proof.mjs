@@ -213,9 +213,9 @@ try {
 
   // Exercise the real V2 Permission.Service.ask and reply routes. No model turn
   // or tool executes: only TEST-owned permission state is created and rejected.
-  const denied = await request(pendingURL, auth, { method: 'POST',
+  const deniedPermission = await request(pendingURL, auth, { method: 'POST',
     body: { action: 'external_directory', resources: ['/TEST/outside'] } })
-  if (denied.status !== 200 || JSON.parse(denied.content)?.data?.effect !== 'deny')
+  if (deniedPermission.status !== 200 || JSON.parse(deniedPermission.content)?.data?.effect !== 'deny')
     throw Error('native_explicit_external_directory_deny_failed')
   const asked = await request(pendingURL, auth, { method: 'POST',
     body: { action: 'shell', resources: ['*'] } })

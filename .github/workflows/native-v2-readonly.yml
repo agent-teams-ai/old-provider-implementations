@@ -27,6 +27,8 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
+      - name: Validate native TEST harness syntax
+        run: node --check scripts/native-v2-readonly-proof.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         shell: bash
         env:
