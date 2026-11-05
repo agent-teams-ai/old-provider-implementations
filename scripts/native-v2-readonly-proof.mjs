@@ -146,9 +146,9 @@ function nativeProcessStartTicks(pid) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error }
   const endCommand = stat.lastIndexOf(') ')
   if (endCommand < 0) throw Error('invalid_native_proc_stat')
-  const fields = stat.slice(endCommand + 2).trim().split(/\\s+/)
+  const fields = stat.slice(endCommand + 2).trim().split(/\s+/)
   const ticks = fields[19]
-  if (!/^\\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid || Number(fields[3]) !== pid)
+  if (!/^\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid || Number(fields[3]) !== pid)
     throw Error('native_process_not_owned_detached_group')
   return ticks
 }
