@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { decodeV2Log } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts'
+import { projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
+import { cut } from './v2-cut-fixture.ts'
 
 const sessionID = 'ses_TESTemptyNative', directory = '/TEST/native-v2'
 const frame = (value: unknown) => 'data: ' + JSON.stringify(value) + '\n\n'
@@ -47,4 +49,15 @@ test('known nonempty session-created prefix remains valid and ordered', () => {
     ],
     synced: true, watermark: 5,
   })
+})
+
+test('empty synced native read cannot be projected as a completed model turn', () => {
+  const source = cut()
+  // This real pre-execution native SSE shape cannot certify a model response,
+  // even if the message page somehow contains assistant-looking content.
+  source.log.events = []
+  source.log.watermark = 1
+  const projected = projectOpenCodeV2NativeTurn(source)
+  assert.equal(projected.state, 'unknown')
+  assert.equal(projected.reason, 'missing_native_log_prefix')
 })
