@@ -63,6 +63,11 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
     const event = nativeLogEvent(raw, sessionID, directory, { previous, ids, count: events.length })
     ids.add(event.id); previous = event.seq; events.push(event)
   }
-  requireCut(synced && events.at(0)?.seq === 0 && events.at(0)?.type === 'session.created', 'incomplete_native_log')
+  // Pinned native V2.0.21 emits only an owned log.synced frame on a fresh
+  // session, before first execution. No synthetic session.created is implied.
+  // Keep the stronger known prefix rule for non-empty history until a real
+  // post-execution native turn is separately qualified.
+  requireCut(synced && (events.length === 0 ||
+    (events[0]?.seq === 0 && events[0]?.type === 'session.created')), 'incomplete_native_log')
   return { events, synced: true as const, watermark }
 }
