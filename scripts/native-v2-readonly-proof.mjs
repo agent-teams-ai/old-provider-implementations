@@ -667,6 +667,30 @@ try {
   receipt.nativePromptAdmission = { accepted: promptAck.status, queueItems: 1,
     cancelled: promptCancelled.status, remaining: 0, modelTurn: false }
   receipt.steps.push('native_TEST_prompt_admit_and_cancel_without_model')
+  // The actual V2 user-prompt route may commit before its HTTP acknowledgement is lost.
+  // Recover by original ID from durable inbox; never submit the user prompt again.
+  const lostPromptID = 'msg_TESTnativePromptLostAck'
+  const lostPromptText = 'TEST-native-prompt-committed-lost-ack'
+  const lostPrompt = await submitWithLostAck(restoredURL + '/prompt', auth, {
+    id: lostPromptID, text: lostPromptText, delivery: 'queue', resume: false,
+  })
+  const readAfterLostPrompt = await request(restoredURL + '/inbox', auth)
+  const lostPromptRows = readAfterLostPrompt.status === 200
+    ? JSON.parse(readAfterLostPrompt.content)?.data : undefined
+  if (!Array.isArray(lostPromptRows) || lostPromptRows.length !== 1 ||
+      lostPromptRows[0]?.id !== lostPromptID || lostPromptRows[0]?.type !== 'user' ||
+      lostPromptRows[0]?.payload?.text !== lostPromptText)
+    throw Error('native_lost_prompt_ack_not_reconciled')
+  const cancelledLostPrompt = await request(restoredURL + '/inbox/' +
+    encodeURIComponent(lostPromptID), auth, { method: 'DELETE' })
+  if (cancelledLostPrompt.status !== 204) throw Error('native_lost_prompt_ack_cancel_failed')
+  const afterCancelLostPrompt = await request(restoredURL + '/inbox', auth)
+  if (afterCancelLostPrompt.status !== 200 ||
+      JSON.parse(afterCancelLostPrompt.content)?.data?.length !== 0)
+    throw Error('native_lost_prompt_ack_inbox_not_empty')
+  receipt.nativeLostPromptAck = { ...lostPrompt, readbackCount: 1, retryPOSTCount: 0,
+    cancelled: cancelledLostPrompt.status, remaining: 0 }
+  receipt.steps.push('native_TEST_user_prompt_lost_ack_reconciled_without_replay')
 
   const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
