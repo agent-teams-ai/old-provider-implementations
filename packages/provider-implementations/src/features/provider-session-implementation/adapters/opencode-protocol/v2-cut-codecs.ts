@@ -39,7 +39,8 @@ function nativeLogEvent(raw: Record<string, unknown>, sessionID: string, directo
   const durable = record(raw.durable), body = record(raw.data), location = raw.location === undefined ? null : record(raw.location)
   requireCut(durable?.aggregateID === sessionID && body?.sessionID === sessionID && (raw.location === undefined || location?.directory === directory), 'foreign_native_log')
   const seq = position(durable.seq), id = text(raw.id), type = text(raw.type)
-  requireCut(type.startsWith('session.') && seq > previous && (previous < 0 || seq === previous + 1) && !ids.has(id) && count < 4096, 'incomplete_native_log')
+  // The native bus sequence includes filtered non-session durable events; gaps are valid.
+  requireCut(type.startsWith('session.') && seq > previous && !ids.has(id) && count < 4096, 'incomplete_native_log')
   return { id, type, aggregateID: sessionID, seq, data: body }
 }
 export function decodeV2Log(source: string, sessionID: string, directory: string) {
@@ -55,7 +56,8 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
     if (raw.type === 'log.synced') {
       requireCut(raw.aggregateID === sessionID, 'foreign_native_log')
       watermark = raw.seq === undefined ? null : position(raw.seq)
-      requireCut(watermark === (previous < 0 ? null : previous), 'incomplete_native_log')
+      // The synchronization watermark may include filtered bus events beyond the final session event.
+      requireCut(watermark !== null && watermark >= previous, 'incomplete_native_log')
       synced = true; continue
     }
     const event = nativeLogEvent(raw, sessionID, directory, { previous, ids, count: events.length })
