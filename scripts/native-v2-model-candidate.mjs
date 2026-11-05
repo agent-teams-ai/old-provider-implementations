@@ -33,15 +33,16 @@ const version = '2.0.21'
 const expectedDigest = 'f916986543348d7953d8d43aa048516cdbc3f84f4d0dc9c0c5b9d1da3030cea7'
 
 async function request(url, authorization, operation = {}) {
+  const headers = authorization ? { authorization } : {}
+  if (operation.body !== undefined) headers['content-type'] = 'application/json'
   const response = await fetch(url, {
-    method: operation.method || 'GET',
-    redirect: 'error',
-    headers: authorization ? { authorization } : {},
+    method: operation.method || 'GET', redirect: 'error', headers,
+    body: operation.body === undefined ? undefined : JSON.stringify(operation.body),
     signal: AbortSignal.timeout(operation.timeoutMs || 2500),
   })
   const body = await response.text()
   if (Buffer.byteLength(body) > 2 * 1024 * 1024) throw Error('TEST_response_too_large')
-  return { status: response.status, json: JSON.parse(body) }
+  return { status: response.status, json: body ? JSON.parse(body) : null }
 }
 async function closeNative() {
   if (!native?.pid) return
@@ -85,11 +86,54 @@ try {
   receipt.steps.push('pre_execution_native_elf_version_digest_verified')
 
   // Isolated fake provider never forwards requests or accepts external traffic.
-  let attemptedInference = 0
+  let attemptedInference = 0, modelCalls = 0, fakeFailure = null, allowInference = false
+  const fakeMarker = 'TEST_NATIVE_V2_LOCAL_MODEL_REPLY'
   fake = createServer((req, res) => {
-    attemptedInference++
-    res.writeHead(503, { 'content-type': 'application/json' })
-    res.end('{"error":"TEST_model_turn_not_authorized"}')
+    if (!allowInference) {
+      attemptedInference++
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end('{"error":"TEST_model_turn_not_authorized"}')
+      return
+    }
+    if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+      fakeFailure = 'unexpected_TEST_inference_path'
+      res.writeHead(404).end()
+      return
+    }
+    let body = '', bytes = 0
+    req.on('data', chunk => {
+      bytes += chunk.byteLength
+      if (bytes > 2 * 1024 * 1024) {
+        fakeFailure = 'unbounded_TEST_inference_request'
+        req.destroy()
+      } else body += chunk.toString()
+    })
+    req.on('end', () => {
+      try {
+        const payload = JSON.parse(body)
+        if (payload.model !== 'TEST-native-model' || payload.stream !== true)
+          throw Error('unexpected_TEST_inference_model_or_mode')
+        modelCalls++
+        const shared = { id: 'chatcmpl-TEST-native', object: 'chat.completion.chunk',
+          created: 1, model: 'TEST-native-model' }
+        const delta = (value, finish = null) => ({ ...shared,
+          choices: [{ index: 0, delta: value, finish_reason: finish }] })
+        const frames = [
+          delta({ role: 'assistant' }),
+          delta({ content: fakeMarker }),
+          delta({}, 'stop'),
+          { ...shared, choices: [], usage: { prompt_tokens: 20,
+            completion_tokens: 8, total_tokens: 28 } },
+        ].map(value => 'data: ' + JSON.stringify(value))
+        res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache' })
+        res.end([...frames, 'data: [DONE]'].join('\n\n') + '\n\n')
+      } catch (error) {
+        fakeFailure = String(error instanceof Error ? error.message : error)
+        res.writeHead(400, { 'content-type': 'application/json' })
+        res.end('{"error":"TEST_invalid_fake_inference"}')
+      }
+    })
   })
   await new Promise((ok, fail) => fake.once('error', fail).listen(0, '127.0.0.1', ok))
   const addr = fake.address()
@@ -173,6 +217,75 @@ try {
       attemptedInference !== 0)
     throw Error('TEST_native_local_model_binding_not_qualified')
   receipt.steps.push('TEST_native_local_model_selected_without_inference')
+  // Only after native API proves the exact TEST default do we enable
+  // model inference, with a single loopback-only fake provider.
+  allowInference = true
+  const created = await request(endpoint + '/api/session', auth, { method: 'POST', timeoutMs: 12000,
+    body: { location: { directory }, agent: 'build', model: { providerID, id: modelID },
+      permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' },
+        { action: 'shell', resource: '*', effect: 'deny' }] },
+  })
+  const session = created.json?.data
+  if (created.status !== 200 || typeof session?.id !== 'string' || !session.id.startsWith('ses_') ||
+      session?.location?.directory !== directory || session?.model?.providerID !== providerID ||
+      session?.model?.id !== modelID)
+    throw Error('TEST_native_model_session_binding_failed')
+  receipt.steps.push('TEST_native_model_session_created')
+  const url = endpoint + '/api/session/' + encodeURIComponent(session.id)
+  const inputID = 'msg_TESTnativeModelTurn'
+  const submitted = await request(url + '/prompt', auth, { method: 'POST', timeoutMs: 12000,
+    body: { id: inputID, text: 'TEST echo the deterministic local marker',
+      delivery: 'queue', resume: true },
+  })
+  if (submitted.status !== 200 || submitted.json?.data?.id !== inputID ||
+      submitted.json?.data?.sessionID !== session.id || submitted.json?.data?.type !== 'user')
+    throw Error('TEST_native_model_prompt_not_admitted')
+  receipt.steps.push('TEST_native_real_prompt_admitted')
+  let assistant = null, messageKinds = [], lastError = null
+  for (let i = 0; i < 80; i++) {
+    try {
+      const page = await request(url + '/message?limit=200', auth, { timeoutMs: 3500 })
+      if (page.status === 200 && Array.isArray(page.json?.data)) {
+        const messages = page.json.data
+        messageKinds = messages.map(item => item?.type ?? null).slice(0, 24)
+        assistant = messages.find(item => item?.type === 'assistant' &&
+          JSON.stringify(item).includes(fakeMarker)) || null
+        if (assistant) break
+      }
+    } catch (error) { lastError = String(error instanceof Error ? error.message : error) }
+    await delay(500)
+  }
+  receipt.modelTurn = { promptStatus: submitted.status, modelCalls,
+    fakeFailure, messageKinds, assistantPresent: assistant !== null,
+    lastReadError: lastError }
+  if (fakeFailure || modelCalls < 1 || !assistant)
+    throw Error('TEST_native_real_model_turn_not_observed')
+  receipt.steps.push('TEST_native_fake_model_assistant_message_received')
+
+  // A visible assistant message is not sufficient without a trustworthy native
+  // terminal event. Keep this a stop-ship gate; do not infer completion from text.
+  const logResponse = await fetch(endpoint + '/api/experimental/session/' +
+    encodeURIComponent(session.id) + '/log?follow=false', {
+    redirect: 'error', headers: { authorization: auth }, signal: AbortSignal.timeout(12000),
+  })
+  const sse = await logResponse.text()
+  if (Buffer.byteLength(sse) > 2 * 1024 * 1024) throw Error('TEST_native_model_log_too_large')
+  const frames = sse.replace(/\r\n/g, '\n').split('\n\n').flatMap(frame => {
+    const data = frame.split('\n').filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trimStart()).join('\n')
+    return data ? [JSON.parse(data)] : []
+  })
+  const events = frames.slice(0, -1), sync = frames.at(-1)
+  receipt.modelTurn.sessionLog = { status: logResponse.status,
+    visibleTypes: events.map(item => item?.type ?? null).slice(0, 40),
+    watermark: sync?.seq ?? null, synced: sync?.type === 'log.synced' }
+  if (logResponse.status !== 200 || sync?.aggregateID !== session.id ||
+      !events.some(event => event?.type === 'session.execution.succeeded'))
+    throw Error('TEST_native_model_terminal_event_not_qualified')
+  receipt.steps.push('TEST_native_model_execution_terminal_verified')
+  const removed = await request(url, auth, { method: 'DELETE', timeoutMs: 12000 })
+  if (removed.status !== 204) throw Error('TEST_native_model_session_delete_failed')
+  receipt.steps.push('TEST_native_model_session_removed')
 } catch (error) {
   failed = true
   receipt.failure = error instanceof Error ? error.message : String(error)
