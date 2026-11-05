@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - scripts/native-v2-readonly-proof.mjs
+      - scripts/native-v2-model-candidate.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
@@ -28,7 +29,9 @@ jobs:
           node-version: 24.21.0
           package-manager-cache: false
       - name: Validate native TEST harness syntax
-        run: node --check scripts/native-v2-readonly-proof.mjs
+        run: |
+          node --check scripts/native-v2-readonly-proof.mjs
+          node --check scripts/native-v2-model-candidate.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         shell: bash
         env:
@@ -46,6 +49,11 @@ jobs:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
         run: node scripts/native-v2-readonly-proof.mjs
+      - name: Qualify isolated TEST-local model binding (no model calls)
+        env:
+          OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
+          OPENCODE_V2_TEST_MODEL_RECEIPT: ${{ github.workspace }}/native-v2-model-candidate.json
+        run: node scripts/native-v2-model-candidate.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -55,4 +63,5 @@ jobs:
           retention-days: 7
           path: |
             native-v2-readonly-proof.json
+            native-v2-model-candidate.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
