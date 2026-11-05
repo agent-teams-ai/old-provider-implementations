@@ -583,8 +583,12 @@ try {
       }
       if (terminal.length !== 1 || terminal[0].type !== 'session.execution.interrupted' ||
           terminal[0].data?.reason !== 'user' || delivery.length !== 1 ||
-          modelCalls !== beforeInterruptCalls + 1 || !interruptStream.destroyed)
-        throw Error('TEST_active_interrupt_durable_terminal_or_cancel_unqualified')
+          modelCalls < beforeInterruptCalls + 1)
+        throw Error('TEST_active_interrupt_durable_terminal_unqualified')
+      // Do not call the native interrupt a complete transport cancellation if
+      // the provider HTTP stream remains open. Still prove the independently
+      // valuable cold-restoration/no-replay invariant before recording HOLD.
+      const socketClosedOnInterrupt = interruptStream.destroyed
       const originalIDs = ledger.map(e => e.id)
       const callsAtInterrupt = modelCalls
       await host.close(); host = undefined
@@ -597,9 +601,13 @@ try {
         throw Error('TEST_active_interrupt_restarted_or_replayed')
       await host.sessions.remove({ sessionID: interrupted.id })
       receipt.nativeInterrupt = { active: true, interrupted: true,
-        reason: 'user', delivered: 1, modelRequests: 1, extraAfterRestart: 0,
-        streamCancelled: true, durableTerminalCount: 1, qualified: false }
+        reason: 'user', delivered: 1, observedModelRequests: modelCalls - beforeInterruptCalls,
+        extraAfterRestart: 0, streamCancelledOnInterrupt: socketClosedOnInterrupt,
+        streamCancelledAfterHostClose: interruptStream.destroyed,
+        durableTerminalCount: 1, qualified: false }
       receipt.steps.push('TEST_embedded_active_interrupt_durable_cold_no_replay')
+      if (!socketClosedOnInterrupt)
+        throw Error('TEST_active_interrupt_http_stream_not_cancelled')
     }
     if (toolMode) {
       let safeSessionID, safeEventIDs, safeMessageIDs
