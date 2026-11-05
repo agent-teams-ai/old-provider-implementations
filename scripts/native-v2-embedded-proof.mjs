@@ -190,8 +190,9 @@ try {
       throw Error('TEST_embedded_model_used_before_owner_admission')
     allowInference = true
     const inputID = 'msg_TESTembeddedModelTurn'
+    const inputText = 'TEST return the local marker'
     const admitted = await host.sessions.prompt({ sessionID: original.id,
-      id: inputID, text: 'TEST return the local marker',
+      id: inputID, text: inputText,
       delivery: 'queue', resume: true })
     if (admitted?.id !== inputID || admitted?.sessionID !== original.id ||
         admitted?.type !== 'user')
@@ -224,6 +225,27 @@ try {
     if (users.length !== 1 || assistants.length !== 1 || idle.length !== 1 ||
         state?.outcome !== 'succeeded')
       throw Error('TEST_embedded_model_transcript_mismatch')
+    // Actual native events and message rows must also pass the private V2
+    // driver codec/projector; a fixture-only success is insufficient.
+    const codecs = await import('../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts')
+    const projection = await import('../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-turn-projection.ts')
+    const encodedFrames = terminalLog.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join('')
+    const decodedLog = codecs.decodeV2Log(encodedFrames, original.id, workspace)
+    const decodedMessages = codecs.decodeV2MessagePage({
+      data: messages, cursor: { previous: null, next: null },
+    }, original.id)
+    const projected = projection.projectOpenCodeV2NativeTurn({
+      pin: '2.0.21', sessionID: original.id, nativeInputID: inputID,
+      originalText: inputText, beforeCursor: 0,
+      messages: { data: decodedMessages.data, previous: null, next: null },
+      log: decodedLog,
+    })
+    receipt.driverProjection = { state: projected.state, reason: projected.reason,
+      assistantLineage: projected.assistantMessageIds.length }
+    if (projected.state !== 'succeeded' || projected.assistantMessageIds.length !== 1 ||
+        !projected.text.includes(marker))
+      throw Error('TEST_embedded_production_driver_projection_' + projected.reason)
+    receipt.steps.push('TEST_embedded_production_driver_projection_verified')
     receipt.modelTurn = { modelCalls, earlyModelRequests, delivered: 1, terminals: 1,
       loggedEvents: events.length, originalInputBound: true,
       assistantPresent: true, idlePresent: true }
