@@ -36,6 +36,9 @@ jobs:
           # Discovery only: actual local fake-model tool call, policy hard-deny,
           # and an outside-workspace canary. Not a Host/production PASS.
           - { os: ubuntu-24.04, proof: embedded-target-tool }
+          # Actual 2.0.21 private-driver pin: native tool blocked by explicit
+          # session external_directory deny, not the newer config policy.
+          - { os: ubuntu-24.04, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
           # GitHub-hosted macos-15 is Apple Silicon; macos-15-intel is x64.
@@ -153,5 +156,6 @@ jobs:
             native-v2-embedded-target-proof.json
             native-v2-embedded-target-model-proof.json
             native-v2-embedded-target-tool-proof.json
+            native-v2-embedded-pinned-tool-proof.json
             ${{ runner.temp }}/opencode-v2-embedded/package-lock.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
