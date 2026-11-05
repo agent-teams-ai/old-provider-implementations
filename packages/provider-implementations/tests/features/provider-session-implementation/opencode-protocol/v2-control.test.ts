@@ -154,3 +154,28 @@ test('pinned V2 permission IDs reject old-format input and malformed native repl
   })
   assert.deepEqual(host.effects, [])
 })
+
+test('malformed V2 control identifiers cannot reach a native route or mutate another session', async t => {
+  const host = await peer(); t.after(host.close)
+  const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original',
+    version: '2.0.21', deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+    readPassword: () => 'TEST-private' })
+  t.after(control.dispose)
+  for (const requestId of ['per', 'request_ses_A', 'per/foreign', 'per?decision=always']) {
+    await assert.rejects(control.replyPermission(requestId, 'once'), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    }, requestId)
+  }
+  for (const inboxId of ['', 'msg_', 'msg_A/../other', '..', 'msg_A%2Fother', 'ses_foreign']) {
+    await assert.rejects(control.cancelInbox(inboxId), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    }, inboxId)
+  }
+  for (const key of ['', '.', '..', '../permission', 'foreign/key', '%2E%2E', 'A', 'valid?bad']) {
+    await assert.rejects(control.putInstruction(key, { value: 'TEST' }), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    }, key)
+  }
+  assert.equal(host.calls(), 0)
+  assert.deepEqual(host.effects, [])
+})
