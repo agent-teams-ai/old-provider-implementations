@@ -12,6 +12,8 @@ on:
       - scripts/verify-native-v2-cli-hold.mjs
       - scripts/native-v2-embedded-proof.mjs
       - scripts/verify-native-v2-embedded-floor-hold.mjs
+      - scripts/verify-native-v2-interrupt-proof.mjs
+      - scripts/native-v2-mcp-proof.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
