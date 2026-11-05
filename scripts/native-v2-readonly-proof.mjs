@@ -30,6 +30,7 @@ const env = {
   CI: 'true', NO_COLOR: '1',
 }
 let child
+let ownedStartTicks
 let failed = false
 const hash = (data) => createHash('sha256').update(data).digest('hex')
 /** Match the official v2.0.21 launcher candidate for glibc x64, but run the native ELF directly.
@@ -136,25 +137,61 @@ async function readNativeServerInfo(endpoint, authorization, expectedPid) {
     throw Error('native_info_identity_mismatch')
   return value
 }
+// Linux /proc/PID/stat field 22 is process start time (clock ticks). Detached
+// children must also own their own process-group and session IDs. PID alone
+// is not a safe signal authority: it can be reused after a process exits.
+function nativeProcessStartTicks(pid) {
+  let stat
+  try { stat = readFileSync(`/proc/${pid}/stat`, 'utf8') }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error }
+  const endCommand = stat.lastIndexOf(') ')
+  if (endCommand < 0) throw Error('invalid_native_proc_stat')
+  const fields = stat.slice(endCommand + 2).trim().split(/\\s+/)
+  const ticks = fields[19]
+  if (!/^\\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid || Number(fields[3]) !== pid)
+    throw Error('native_process_not_owned_detached_group')
+  return ticks
+}
+function processOrGroupPresent(pid) {
+  try { process.kill(pid, 0); return true }
+  catch (error) { if (error.code === 'ESRCH') return false; throw error }
+}
 async function closeOwnServer() {
   if (!child?.pid) return
-  // detached=true made an exclusive process group. No process owned by another user is targeted.
-  try { process.kill(-child.pid, 'SIGTERM') } catch (error) {
+  const pid = child.pid
+  const observedStart = nativeProcessStartTicks(pid)
+  if (!observedStart || observedStart !== ownedStartTicks) {
+    if (observedStart === null && !processOrGroupPresent(pid) && !processOrGroupPresent(-pid)) {
+      receipt.cleanup = true
+      return
+    }
+    // Never signal a PID or process group after losing the original identity.
+    throw Error('native_process_start_identity_changed_before_stop')
+  }
+  try { process.kill(-pid, 'SIGTERM') } catch (error) {
     if (error.code !== 'ESRCH') throw error
   }
   for (let i = 0; i < 20; i++) {
-    try { process.kill(child.pid, 0) } catch (error) {
-      if (error.code === 'ESRCH') { receipt.cleanup = true; return }
-      throw error
+    if (!processOrGroupPresent(pid) && !processOrGroupPresent(-pid)) {
+      receipt.cleanup = true
+      return
     }
     await delay(100)
   }
-  try { process.kill(-child.pid, 'SIGKILL') } catch (error) {
+  // A vanished group leader cannot authorize a subsequent group-wide SIGKILL.
+  if (!processOrGroupPresent(pid) || nativeProcessStartTicks(pid) !== ownedStartTicks)
+    throw Error('native_process_group_outlived_verified_owner')
+  try { process.kill(-pid, 'SIGKILL') } catch (error) {
     if (error.code !== 'ESRCH') throw error
   }
-  await delay(100)
-  try { process.kill(child.pid, 0); receipt.cleanup = false }
-  catch (error) { if (error.code === 'ESRCH') receipt.cleanup = true; else throw error }
+  for (let i = 0; i < 10; i++) {
+    if (!processOrGroupPresent(pid) && !processOrGroupPresent(-pid)) {
+      receipt.cleanup = true
+      return
+    }
+    await delay(100)
+  }
+  throw Error('native_owned_process_group_cleanup_unconfirmed')
 }
 try {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw Error('unsupported_test_runner')
@@ -185,6 +222,9 @@ try {
   if (!child.pid) throw Error('native_process_not_started')
   await once(child, 'spawn')
   receipt.ownedProcessPid = child.pid
+  ownedStartTicks = nativeProcessStartTicks(child.pid)
+  if (!ownedStartTicks) throw Error('native_owned_process_start_unavailable')
+  receipt.ownedProcessStartTicks = ownedStartTicks
   const observed = readFileSync(`/proc/${child.pid}/exe`)
   receipt.processExecutableSha256 = hash(observed)
   if (receipt.processExecutableSha256 !== receipt.binarySha256) throw Error('process_executable_digest_mismatch')
@@ -445,11 +485,14 @@ try {
   })
   if (!child.pid) throw Error('native_restart_process_not_started')
   await once(child, 'spawn')
+  ownedStartTicks = nativeProcessStartTicks(child.pid)
+  if (!ownedStartTicks) throw Error('native_restart_start_unavailable')
   const restartedDigest = hash(readFileSync(`/proc/${child.pid}/exe`))
   if (restartedDigest !== receipt.binarySha256) throw Error('native_restart_executable_digest_mismatch')
   const restoredEndpoint = `http://127.0.0.1:${restartPort}`
   await readNativeServerInfo(restoredEndpoint, auth, child.pid)
-  receipt.restart = { executableSha256: restartedDigest, version, pidMatchesNewProcess: true }
+  receipt.restart = { executableSha256: restartedDigest, version, pidMatchesNewProcess: true,
+    ownedProcessStartTicks: ownedStartTicks }
   receipt.steps.push('native_TEST_cold_restart_identity')
 
   const restoredURL = restoredEndpoint + '/api/session/' + encodeURIComponent(id)
