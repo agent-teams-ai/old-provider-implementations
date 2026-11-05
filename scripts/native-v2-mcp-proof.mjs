@@ -117,7 +117,11 @@ if (process.argv[2] === '--mcp-child') {
       const category = typeof lastStatus?.error === 'string'
         ? lastStatus.error.match(/\b(?:ENOENT|EACCES|EINVAL|EPERM|timeout|handshake|spawn|transport)\b/i)?.[0]?.toLowerCase() ?? 'other'
         : 'none'
-      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker) }
+      const detail = typeof lastStatus?.error === 'string'
+        ? lastStatus.error.replaceAll(root, '[TEST_ROOT]').replaceAll(process.execPath, '[NODE]')
+          .replaceAll(script, '[TEST_SCRIPT]').replace(/[\r\n]+/g, ' ').slice(0, 400)
+        : null
+      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker), detail }
       throw Error('TEST_MCP_native_connection_not_ready')
     }
     const boot = JSON.parse(readFileSync(marker, 'utf8'))
