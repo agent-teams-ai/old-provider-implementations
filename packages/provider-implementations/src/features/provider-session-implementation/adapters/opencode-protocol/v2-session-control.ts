@@ -32,7 +32,9 @@ function permission(value: unknown, sessionId: string): OpenCodeV2Permission {
   }
   if (raw.source !== undefined) {
     const source = record(raw.source)
-    if (!source || source.type !== 'tool') {throw new Error('invalid_native_permission_source')}
+    if (!source || source.type !== 'tool' || !safeV2MessageID(source.messageID)) {
+      throw new Error('invalid_native_permission_source')
+    }
     result.source = { type: 'tool', messageID: text(source.messageID), id: text(source.id) }
   }
   return result
