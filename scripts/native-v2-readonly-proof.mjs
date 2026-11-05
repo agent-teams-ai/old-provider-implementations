@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { decodeV2Session } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts'
+import { createOpenCodeV2ExecutionTransport } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts'
+import { executionWasNotSubmitted } from '../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-failures.ts'
 
 const version = '2.0.21'
 const receiptPath = resolve(process.env.OPENCODE_V2_TEST_RECEIPT || 'native-v2-readonly-proof.json')
@@ -349,6 +351,38 @@ try {
   if (typeof otherID !== 'string' || otherID === id || !otherID.startsWith('ses_'))
     throw Error('native_second_TEST_session_not_distinct')
   const otherURL = endpoint + '/api/session/' + encodeURIComponent(otherID)
+  // This is the real pinned native engine, not a localhost HTTP mock.
+  // Raw V2 transport must refuse an adjacent session before asking for the
+  // owned credential, including read, queue and durable log routes.
+  let credentialReads = 0
+  const scoped = createOpenCodeV2ExecutionTransport({
+    endpoint, directory, nativeSessionId: id, version,
+    readPassword: () => { credentialReads++; return password },
+    deadline: Date.now() + 12_000,
+  })
+  try {
+    const rejectedRoutes = [
+      [otherURL, undefined],
+      [otherURL + '/message?limit=200', undefined],
+      [otherURL + '/inbox', undefined],
+      [endpoint + '/api/experimental/session/' + encodeURIComponent(otherID) + '/log?follow=false', undefined],
+      [otherURL + '/prompt', { method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'msg_TESTforeign', text: 'TEST foreign', resume: false, delivery: 'queue' }) }],
+    ]
+    for (const [url, init] of rejectedRoutes) {
+      let rejectedBeforeSend = false
+      try { await scoped.fetch(url, init) }
+      catch (error) { rejectedBeforeSend = executionWasNotSubmitted(error) }
+      if (!rejectedBeforeSend || credentialReads !== 0)
+        throw Error('native_transport_foreign_session_route_not_fenced')
+    }
+    const own = await scoped.fetch(endpoint + '/api/session/' + encodeURIComponent(id))
+    if (own.status !== 200 || JSON.parse(await own.text())?.data?.id !== id ||
+      credentialReads !== 1)
+      throw Error('native_transport_owned_read_unavailable')
+    receipt.steps.push('native_TEST_execution_transport_foreign_session_fenced')
+  } finally { await scoped.dispose() }
   const foreignPermissionURL = otherURL + '/permission/' + encodeURIComponent(askedData.id)
   const foreignPermissionRead = await request(foreignPermissionURL, auth)
   if (foreignPermissionRead.status !== 404) throw Error('native_foreign_permission_exposed')
