@@ -6,7 +6,7 @@ import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpe
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
 async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
-  'gapped' | 'backwards' | 'stale-sync') {
+  'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync') {
   const value = cut(), directory = '/TEST/native-cut'
   let logs = 0, pages = 0, requests = 0
   const server = createServer((req, res) => {
@@ -28,7 +28,9 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
         while (rows.length < count) { const seq = rows.length; rows.push({ id: `evt_max${seq}`, type: 'session.updated',
           durable: { aggregateID: sessionID, seq }, data: { sessionID }, location: { directory } }) }
       }
-      const watermark = rows.at(-1)!.durable.seq + (mode === 'gapped' ? 2 : mode === 'stale-sync' ? -1 : 0)
+      if (mode === 'empty-owned-sync') rows.length = 0
+      const watermark = mode === 'empty-owned-sync' ? 0
+        : rows.at(-1)!.durable.seq + (mode === 'gapped' ? 2 : mode === 'stale-sync' ? -1 : 0)
       res.setHeader('content-type', 'text/event-stream')
       res.end([...rows, { type: 'log.synced', aggregateID: sessionID, seq: watermark }]
         .map(row => `data: ${JSON.stringify(row)}\n\n`).join(''))
@@ -108,6 +110,21 @@ test('pinned native durable log accepts filtered bus gaps but rejects non-monoto
       assert.equal(projectOpenCodeV2NativeTurn(snapshot).state, 'succeeded')
     } else { await assert.rejects(work, /incomplete_native_log/) }
   }
+})
+
+test('real pre-execution V2 log with owned sync only never qualifies a successful turn', async t => {
+  const host = await fixture('empty-owned-sync'); t.after(host.close)
+  const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
+  t.after(() => transport.dispose())
+  const snapshot = await readOpenCodeV2NativeCut(transport,
+    { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+  assert.deepEqual(snapshot.log, { events: [], synced: true, watermark: 0 })
+  const result = projectOpenCodeV2NativeTurn(snapshot)
+  assert.equal(result.state, 'unknown')
+  assert.equal(result.reason, 'missing_native_log_prefix')
+  assert.deepEqual(result.tools, [])
 })
 
 test('native finite cut accepts 4096 events plus synced frame and rejects a 4097th event', async t => {
