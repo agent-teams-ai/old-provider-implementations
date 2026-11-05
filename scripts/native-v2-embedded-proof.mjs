@@ -92,6 +92,25 @@ try {
   const { OpenCode } = await import(pathToFileURL(entry).href)
   if (typeof OpenCode?.create !== 'function') throw Error('TEST_embedded_api_unavailable')
   receipt.steps.push('pinned_embedded_SDK_module_resolved')
+  if (pinnedVersion === '2.0.21') {
+    // The private V2 SPI must accept this machine's actual absolute workspace
+    // path. This is config admission only, not a Host/executable custody proof.
+    const { snapshotDriverConfig } = await import('../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts')
+    const binding = { tenantId: 'TEST-tenant', projectId: 'TEST-project',
+      sessionId: 'TEST-runtime', generation: 1 }
+    const config = { endpoint: 'http://127.0.0.1:14321', directory: workspace,
+      nativeSessionId: 'ses_TESTowned', version: '2.0.21',
+      trustedBinding: 'TEST-host', accountBinding: 'TEST-account', configRevision: 'TEST-r1',
+      readPassword: () => 'TEST-private',
+      binding, limits: { queuedInputs: 2, inputBytes: 4096, outputBytes: 32768,
+        outputEvents: 64, pendingInteractions: 2, timeoutMs: 2000 },
+      probe: async () => true, confirmStopped: async () => true }
+    const accepted = snapshotDriverConfig(config, { ...binding, configRevision: 'TEST-r1',
+      requiredCapabilities: ['text'] })
+    if (accepted.directory !== workspace || !isAbsolute(accepted.directory))
+      throw Error('TEST_native_SPI_workspace_admission_failed')
+    receipt.steps.push('TEST_native_SPI_platform_absolute_directory_admitted')
+  }
   if (modelMode) {
     const modelID = 'TEST-native-model', providerID = 'test-native'
     const marker = 'TEST_V2_EMBEDDED_LOCAL_REPLY'
