@@ -484,7 +484,7 @@ try {
         part.name === 'read' && part.status === 'error')
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests, toolOutcomes,
-        toolEffectObserved, expectedDenialObserved: toolEffectObserved,
+        toolEffectObserved, policyDenialUnverified: true,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
