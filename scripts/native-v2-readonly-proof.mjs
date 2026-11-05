@@ -10,7 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 const version = '2.0.21'
 const receiptPath = resolve(process.env.OPENCODE_V2_TEST_RECEIPT || 'native-v2-readonly-proof.json')
-const receipt = { kind: 'TEST_NATIVE_DISCOVERY_ONLY', version, qualified: false, steps: [], cleanup: false }
+const receipt = { kind: 'TEST_NATIVE_SESSION_LIFECYCLE_ONLY', version, qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-opencode-v2-'))
 const directory = join(root, 'workspace')
 for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) mkdirSync(join(root, dir))
@@ -59,11 +59,13 @@ async function freePort() {
   await new Promise((ok, reject) => server.close(err => err ? reject(err) : ok()))
   return addr.port
 }
-async function request(url, authorization) {
+async function request(url, authorization, operation = {}) {
+  const headers = authorization ? { authorization } : {}
+  if (operation.body !== undefined) headers['content-type'] = 'application/json'
   const response = await fetch(url, {
-    method: 'GET', redirect: 'error',
-    headers: authorization ? { authorization } : {},
-    signal: AbortSignal.timeout(2500),
+    method: operation.method ?? 'GET', redirect: 'error',
+    headers, body: operation.body === undefined ? undefined : JSON.stringify(operation.body),
+    signal: AbortSignal.timeout(operation.timeoutMs ?? 2500),
   })
   const content = await response.text()
   if (Buffer.byteLength(content) > 2 * 1024 * 1024) throw Error('unbounded_server_response')
@@ -152,7 +154,34 @@ try {
   receipt.openapi = { status: spec.status, contentType: spec.contentType, sha256: hash(spec.content) }
   if (spec.status !== 200 || !spec.content.includes('openapi')) throw Error('native_openapi_unavailable')
   receipt.steps.push('native_OpenAPI_retrievable')
-  // Important: no session POST, model/credential use, permission reply or production admission.
+  // Official v2.0.21 SessionGroup: POST /api/session, GET/DELETE /api/session/:sessionID.
+  // Only this disposable TEST workspace and isolated HOME/DB may be mutated.
+  // Never retry a POST if its acceptance/acknowledgement is ambiguous.
+  const created = await request(endpoint + '/api/session', auth, {
+    method: 'POST', timeoutMs: 12000, body: { location: { directory } },
+  })
+  if (created.status !== 200) throw Error('native_session_create_status_' + created.status)
+  const createdData = JSON.parse(created.content)?.data
+  const id = createdData?.id
+  if (typeof id !== 'string' || !/^ses_[a-zA-Z0-9]+$/.test(id) ||
+      createdData?.location?.directory !== directory) throw Error('native_session_create_identity')
+  receipt.steps.push('native_TEST_session_created')
+  const url = endpoint + '/api/session/' + encodeURIComponent(id)
+  const read = await request(url, auth)
+  if (read.status !== 200) throw Error('native_session_read_status_' + read.status)
+  const readData = JSON.parse(read.content)?.data
+  if (readData?.id !== id || readData?.location?.directory !== directory)
+    throw Error('native_session_read_identity')
+  receipt.steps.push('native_TEST_session_readback')
+  const removed = await request(url, auth, { method: 'DELETE', timeoutMs: 12000 })
+  if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
+  receipt.steps.push('native_TEST_session_removed')
+  const missing = await request(url, auth)
+  if (missing.status !== 404) throw Error('native_session_post_delete_visible')
+  receipt.sessionLifecycle = { created: created.status, read: read.status,
+    deleted: removed.status, absent: missing.status, idPrefix: 'ses_' }
+  receipt.steps.push('native_TEST_session_absence_verified')
+  // No provider prompt, external files, model credentials, permission grant, or production admission.
 } catch (error) {
   failed = true
   receipt.failure = String(error instanceof Error ? error.message : error)
