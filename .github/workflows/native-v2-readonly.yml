@@ -75,6 +75,7 @@ jobs:
           node --check scripts/verify-native-v2-cli-hold.mjs
           node --check scripts/native-v2-embedded-proof.mjs
           node --check scripts/verify-native-v2-embedded-floor-hold.mjs
+          node --check scripts/verify-native-v2-interrupt-hold.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
         shell: bash
@@ -142,7 +143,7 @@ jobs:
           fi
           node scripts/verify-native-v2-embedded-floor-hold.mjs
       - name: TEST embedded V2 persistent event log through cold host restart
-        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor'
+        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt'
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
@@ -152,6 +153,26 @@ jobs:
           OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
         run: node scripts/native-v2-embedded-proof.mjs
+      - name: Assert pinned embedded active-interrupt stream HOLD (negative control)
+        if: matrix.proof == 'embedded-interrupt'
+        shell: bash
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-interrupt-proof.json
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: '1'
+          OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: '1'
+          OPENCODE_V2_EMBEDDED_VERSION: '2.0.21'
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: 'linux-x64'
+        run: |
+          set +e
+          node scripts/native-v2-embedded-proof.mjs
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo '::error::Pinned embedded active-interrupt behavior changed; requalify before adoption'
+            exit 1
+          fi
+          node scripts/verify-native-v2-interrupt-hold.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
