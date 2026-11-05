@@ -46,15 +46,18 @@ jobs:
           - { os: ubuntu-24.04, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
+          - { os: macos-15, proof: embedded-interrupt }
           - { os: macos-15, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded-target-tool }
           # GitHub-hosted macos-15 is Apple Silicon; macos-15-intel is x64.
           - { os: macos-15-intel, proof: embedded }
           - { os: macos-15-intel, proof: embedded-model }
+          - { os: macos-15-intel, proof: embedded-interrupt }
           - { os: macos-15-intel, proof: embedded-pinned-tool }
           - { os: macos-15-intel, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded }
           - { os: windows-2022, proof: embedded-model }
+          - { os: windows-2022, proof: embedded-interrupt }
           - { os: windows-2022, proof: embedded-pinned-tool }
           - { os: windows-2022, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded-target }
@@ -161,7 +164,7 @@ jobs:
           OPENCODE_V2_EMBEDDED_MODEL_PROOF: '1'
           OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: '1'
           OPENCODE_V2_EMBEDDED_VERSION: '2.0.21'
-          OPENCODE_V2_TEST_EXPECTED_PLATFORM: 'linux-x64'
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
         run: |
           node scripts/native-v2-embedded-proof.mjs
           node scripts/verify-native-v2-interrupt-proof.mjs
