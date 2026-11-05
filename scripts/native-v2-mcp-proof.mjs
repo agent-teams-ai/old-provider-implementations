@@ -2,7 +2,7 @@
 // No product Host, provider inference, user files, or production credentials.
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -102,15 +102,24 @@ if (process.argv[2] === '--mcp-child') {
       protocol: 'legacy', timeout: { startup: 6000, catalog: 6000, execution: 6000 } })
     await host.mcp.add({ server, location: { directory: workspace }, config: localMcp(marker) })
     receipt.steps.push('TEST_real_MCP_server_registered')
-    let status
+    let status, lastStatus
     for (let attempt = 0; attempt < 35; attempt++) {
       const result = await host.mcp.list({ location: { directory: workspace } })
       const items = result?.data
-      status = Array.isArray(items) ? items.find(row => row.name === server)?.status?.status : null
+      lastStatus = Array.isArray(items) ? items.find(row => row.name === server)?.status : null
+      status = lastStatus?.status ?? null
       if (status === 'connected') break
       await delay(200)
     }
-    if (status !== 'connected') throw Error('TEST_MCP_native_connection_not_ready')
+    if (status !== 'connected') {
+      // Exact bounded diagnostic without publishing the native error text,
+      // runner paths, credentials, or the TEST child environment.
+      const category = typeof lastStatus?.error === 'string'
+        ? lastStatus.error.match(/\b(?:ENOENT|EACCES|EINVAL|EPERM|timeout|handshake|spawn|transport)\b/i)?.[0]?.toLowerCase() ?? 'other'
+        : 'none'
+      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker) }
+      throw Error('TEST_MCP_native_connection_not_ready')
+    }
     const boot = JSON.parse(readFileSync(marker, 'utf8'))
     if (!Number.isSafeInteger(boot.pid) || boot.pid <= 0 || boot.method !== 'initialize' ||
         boot.pid === process.pid || !childPresent(boot.pid))
