@@ -476,8 +476,8 @@ try {
       // Record only bounded, non-sensitive result metadata; never persist any
       // native tool arguments, error messages, canary content, or user data.
       const toolOutcomes = toolMessages
-        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
-        .flatMap(message => message.content)
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.data?.content))
+        .flatMap(message => message.data.content)
         .filter(part => part?.type === 'tool')
         .slice(0, 16)
         .map(part => ({
@@ -486,21 +486,26 @@ try {
           errorTag: typeof part.state?.error?._tag === 'string' ? part.state.error._tag.slice(0, 80) : null,
           executed: part.executed === true,
         }))
-      // An accepted model request is not a native tool invocation. The
-      // current fake-model protocol may finish without recording a tool call.
-      // Make this an explicit HOLD, never an implicit policy-enforcement PASS.
+      // Native messages are wrapped in { data: { content: [...] } }, not
+      // { content: [...] }. Require both the native snapshot and durable tool
+      // lifecycle before counting an actual read denial. Model acceptance and
+      // a terminal alone never establish a native tool invocation.
+      const toolEventTypes = toolLog.filter(event => event.type.startsWith('session.tool.'))
+        .map(event => event.type).slice(0, 32)
       const toolEffectObserved = toolOutcomes.some(part =>
-        part.name === 'read' && part.status === 'error')
+        part.name === 'read' && part.status === 'error') &&
+        toolEventTypes.includes('session.tool.called') &&
+        toolEventTypes.includes('session.tool.failed')
       const assistantPartTypes = [...new Set(toolMessages
-        .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
-        .flatMap(message => message.content)
+        .filter(message => message?.type === 'assistant' && Array.isArray(message.data?.content))
+        .flatMap(message => message.data.content)
         .map(part => part?.type)
         .filter(type => typeof type === 'string'))].slice(0, 16)
       const advertisedReadTool = advertisedToolNames.includes('read')
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests,
         advertisedReadTool, advertisedToolNames, assistantPartTypes, toolOutcomes,
-        toolEffectObserved, policyDenialUnverified: true,
+        toolEventTypes, toolEffectObserved, policyDenialUnverified: true,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
       }
