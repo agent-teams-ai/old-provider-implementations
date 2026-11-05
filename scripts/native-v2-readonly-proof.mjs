@@ -639,6 +639,34 @@ try {
     changedReplay: changedDuplicate.status, replayAfterRestart: replayAfterRestart.status,
     persistedItems: 1, cancel: cancelled.status, remaining: 0 }
   receipt.steps.push('native_TEST_synthetic_inbox_cancelled')
+  // A real V2 user prompt with resume:false performs durable input admission only.
+  // No provider/model request, tool execution, or implicit replay is permitted.
+  const promptID = 'msg_TESTnativePromptNoModel'
+  const promptRequest = { id: promptID, text: 'TEST-native-prompt-inbox-no-model',
+    delivery: 'queue', resume: false }
+  const promptAck = await request(restoredURL + '/prompt', auth, {
+    method: 'POST', timeoutMs: 12000, body: promptRequest,
+  })
+  const promptData = promptAck.status === 200 ? JSON.parse(promptAck.content)?.data : undefined
+  if (promptData?.id !== promptID || promptData?.sessionID !== id ||
+      promptData?.type !== 'user' || promptData?.payload?.text !== promptRequest.text ||
+      promptData?.delivery !== 'queue')
+    throw Error('native_model_free_prompt_receipt_mismatch')
+  const promptInbox = await request(restoredURL + '/inbox', auth)
+  const promptItems = promptInbox.status === 200 ? JSON.parse(promptInbox.content)?.data : undefined
+  if (!Array.isArray(promptItems) || promptItems.length !== 1 ||
+      promptItems[0]?.id !== promptID || promptItems[0]?.type !== 'user' ||
+      promptItems[0]?.payload?.text !== promptRequest.text)
+    throw Error('native_model_free_prompt_not_durable')
+  const promptCancelled = await request(restoredURL + '/inbox/' + encodeURIComponent(promptID),
+    auth, { method: 'DELETE' })
+  if (promptCancelled.status !== 204) throw Error('native_model_free_prompt_cancel_failed')
+  const promptEmpty = await request(restoredURL + '/inbox', auth)
+  if (promptEmpty.status !== 200 || JSON.parse(promptEmpty.content)?.data?.length !== 0)
+    throw Error('native_model_free_prompt_not_cleared')
+  receipt.nativePromptAdmission = { accepted: promptAck.status, queueItems: 1,
+    cancelled: promptCancelled.status, remaining: 0, modelTurn: false }
+  receipt.steps.push('native_TEST_prompt_admit_and_cancel_without_model')
 
   const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
