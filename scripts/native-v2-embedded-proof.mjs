@@ -11,8 +11,9 @@ const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
 const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
-if (!['2.0.0', '2.0.21'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
-const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', qualified: false, steps: [], cleanup: false }
+if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
+const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
+  qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
 for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) {
   mkdirSync(join(root, dir), { recursive: true })
@@ -234,7 +235,7 @@ try {
     const idleRows = Array.isArray(messages) ? messages.filter(row => row.type === 'idle') : []
     // Pinned v2.0.0 has no SessionMessage.Idle schema; v2.0.21 added it.
     // Neither version may substitute a text reply for a durable terminal.
-    const expectedIdleCount = pinnedVersion === '2.0.21' ? 1 : 0
+    const expectedIdleCount = pinnedVersion === '2.0.0' ? 0 : 1
     const state = await host.sessions.get({ sessionID: original.id })
     if (users.length !== 1 || assistants.length !== 1 ||
         idleRows.length !== expectedIdleCount ||
@@ -261,18 +262,25 @@ try {
         terminalPage.previous !== null)
       throw Error('TEST_embedded_native_pagination_not_exhausted')
     receipt.steps.push('TEST_embedded_native_message_pagination_verified')
-    const projected = projection.projectOpenCodeV2NativeTurn({
-      pin: pinnedVersion, sessionID: original.id, nativeInputID: inputID,
-      originalText: inputText, beforeCursor: 0,
-      messages: { data: decodedMessages.data, previous: null, next: null },
-      log: decodedLog,
-    })
-    receipt.driverProjection = { state: projected.state, reason: projected.reason,
-      assistantLineage: projected.assistantMessageIds.length }
-    if (projected.state !== 'succeeded' || projected.assistantMessageIds.length !== 1 ||
-        !projected.text.includes(marker))
-      throw Error('TEST_embedded_production_driver_projection_' + projected.reason)
-    receipt.steps.push('TEST_embedded_production_driver_projection_verified')
+    if (pinnedVersion === '2.1.4') {
+      // This is only an upstream SDK target check; the private driver has not
+      // qualified this protocol version. Do not coerce 2.1.4 to a 2.0.21 pin.
+      receipt.driverProjection = { state: 'not_qualified', reason: 'driver_version_unverified' }
+      receipt.steps.push('TEST_embedded_target_native_only_driver_held')
+    } else {
+      const projected = projection.projectOpenCodeV2NativeTurn({
+        pin: pinnedVersion, sessionID: original.id, nativeInputID: inputID,
+        originalText: inputText, beforeCursor: 0,
+        messages: { data: decodedMessages.data, previous: null, next: null },
+        log: decodedLog,
+      })
+      receipt.driverProjection = { state: projected.state, reason: projected.reason,
+        assistantLineage: projected.assistantMessageIds.length }
+      if (projected.state !== 'succeeded' || projected.assistantMessageIds.length !== 1 ||
+          !projected.text.includes(marker))
+        throw Error('TEST_embedded_production_driver_projection_' + projected.reason)
+      receipt.steps.push('TEST_embedded_production_driver_projection_verified')
+    }
     receipt.modelTurn = { modelCalls, earlyModelRequests, delivered: 1, terminals: 1,
       loggedEvents: events.length, originalInputBound: true,
       assistantPresent: true, idlePresent: idleRows.length === 1 }
