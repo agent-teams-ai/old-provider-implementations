@@ -1,3 +1,4 @@
+import { safeV2MessageID } from './v2-native-identifiers.ts'
 import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 function validateMention(value: unknown, textLength: number): void {
@@ -29,7 +30,7 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
   }
   const fields = parsed as Record<string, unknown>
   executionAssert(Object.keys(fields).every(key => ['id', 'text', 'files', 'agents', 'skills', 'delivery', 'resume'].includes(key))
-    && typeof fields.id === 'string' && /^msg_[A-Za-z0-9]+$/.test(fields.id)
+    && typeof fields.id === 'string' && safeV2MessageID(fields.id)
     && typeof fields.text === 'string' && fields.text.trim().length > 0 && Buffer.byteLength(fields.text) <= 256 * 1024
     && fields.delivery === 'queue' && typeof fields.resume === 'boolean', 'invalid_input')
   for (const key of ['files', 'agents', 'skills']) {
