@@ -64,6 +64,7 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
 test('actual finite HTTP transport reads one stable native cut and projects provider facts', async t => {
   const host = await fixture('stable'); t.after(host.close)
   const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID,
     version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
   t.after(() => transport.dispose())
   const snapshot = await readOpenCodeV2NativeCut(transport,
@@ -81,6 +82,7 @@ test('native cut read rejects changing history, pagination cycles and original w
   for (const mode of ['changing', 'cycle', 'foreign', 'flat'] as const) {
     const host = await fixture(mode); t.after(host.close)
     const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID,
       version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
     t.after(() => transport.dispose())
     await assert.rejects(readOpenCodeV2NativeCut(transport,
@@ -97,6 +99,7 @@ test('pinned native durable log accepts filtered bus gaps but rejects non-monoto
   for (const mode of ['gapped', 'backwards', 'stale-sync'] as const) {
     const host = await fixture(mode); t.after(host.close)
     const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID,
       version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
     t.after(() => transport.dispose())
     const work = readOpenCodeV2NativeCut(transport,
@@ -115,6 +118,7 @@ test('pinned native durable log accepts filtered bus gaps but rejects non-monoto
 test('real pre-execution V2 log with owned sync only never qualifies a successful turn', async t => {
   const host = await fixture('empty-owned-sync'); t.after(host.close)
   const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID,
     version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
   t.after(() => transport.dispose())
   const snapshot = await readOpenCodeV2NativeCut(transport,
@@ -131,6 +135,7 @@ test('native finite cut accepts 4096 events plus synced frame and rejects a 4097
   for (const mode of ['max', 'overmax'] as const) {
     const host = await fixture(mode); t.after(host.close)
     const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID,
       version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
     t.after(() => transport.dispose())
     const work = readOpenCodeV2NativeCut(transport,
