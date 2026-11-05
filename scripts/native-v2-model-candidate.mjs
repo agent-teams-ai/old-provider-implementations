@@ -143,15 +143,31 @@ try {
   if (!ready) throw Error('TEST_native_server_not_ready')
   receipt.steps.push('TEST_native_model_server_identity_verified')
 
-  const available = await request(endpoint + '/api/model', auth, { timeoutMs: 15000 })
-  const preferred = await request(endpoint + '/api/model/default', auth, { timeoutMs: 15000 })
-  const items = available.json?.data, selected = preferred.json?.data
-  receipt.modelDiscovery = { listStatus: available.status, defaultStatus: preferred.status,
+  const configRead = await request(endpoint + '/api/config', auth, { timeoutMs: 15000 })
+  const entries = Array.isArray(configRead.json) ? configRead.json : []
+  const hasTestConfig = entries.some(item =>
+    item?.type === 'document' && item?.info?.providers?.[providerID]?.package ===
+      '@opencode/ai/providers/openai-compatible')
+  receipt.configDiscovery = { status: configRead.status, documentCount: entries.length,
+    hasTestConfig }
+  let available, preferred, items, selected, attempts = 0
+  // Config/model plugin settlement may lag native server readiness.
+  for (attempts = 1; attempts <= 40; attempts++) {
+    available = await request(endpoint + '/api/model', auth, { timeoutMs: 3000 })
+    preferred = await request(endpoint + '/api/model/default', auth, { timeoutMs: 3000 })
+    items = available.json?.data; selected = preferred.json?.data
+    if (available.status === 200 && preferred.status === 200 &&
+        Array.isArray(items) &&
+        items.some(item => item.id === modelID && item.providerID === providerID) &&
+        selected?.id === modelID && selected?.providerID === providerID) break
+    await delay(250)
+  }
+  receipt.modelDiscovery = { listStatus: available?.status, defaultStatus: preferred?.status,
     modelCount: Array.isArray(items) ? items.length : null,
     selectedID: selected?.id ?? null, selectedProvider: selected?.providerID ?? null,
-    fakeInferenceRequests: attemptedInference }
-  if (available.status !== 200 || preferred.status !== 200 ||
-      !Array.isArray(items) ||
+    snapshotAttempts: attempts, fakeInferenceRequests: attemptedInference }
+  if (configRead.status !== 200 || !hasTestConfig ||
+      available?.status !== 200 || preferred?.status !== 200 || !Array.isArray(items) ||
       !items.some(item => item.id === modelID && item.providerID === providerID) ||
       selected?.id !== modelID || selected?.providerID !== providerID ||
       attemptedInference !== 0)
