@@ -1,6 +1,5 @@
 // Isolated TEST-only MCP local process lifecycle against pinned embedded V2.0.21.
 // No product Host, provider inference, user files, or production credentials.
-import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { createInterface } from 'node:readline'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -23,7 +22,7 @@ if (process.argv[2] === '--mcp-child') {
     try { value = JSON.parse(line) } catch { break }
     if (value?.method === 'initialize') {
       writeFileSync(marker, JSON.stringify({ pid: process.pid, method: 'initialize' }), { flag: 'wx', mode: 0o600 })
-      send(value.id, { protocolVersion: '2025-11-25', capabilities: { tools: {} },
+      send(value.id, { protocolVersion: '2025-11-25', capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'TEST-owned-mcp', version: '0.0.1' } })
     } else if (value?.method === 'tools/list') {
       send(value.id, { tools: [{ name: 'TEST_echo', description: 'TEST only, no external effects',
@@ -32,7 +31,9 @@ if (process.argv[2] === '--mcp-child') {
       // This lifecycle proof never authorizes a tool call.
       send(value.id, { isError: true, content: [{ type: 'text', text: 'TEST_not_authorized' }] })
     } else if (value?.method === 'prompts/list') send(value.id, { prompts: [] })
-    else if (value?.method === 'resources/list') send(value.id, { resources: [] })
+    else if (value?.method === 'resources/list') send(value.id, { resources: [
+      { name: 'TEST-only-resource', uri: 'test://owned/marker', description: 'TEST no filesystem read' },
+    ] })
     else if (value?.method === 'resources/templates/list') send(value.id, { resourceTemplates: [] })
   }
 } else {
@@ -42,7 +43,7 @@ if (process.argv[2] === '--mcp-child') {
   const receipt = { kind: 'TEST_V2_EMBEDDED_MCP_LIFECYCLE_ONLY', version: '2.0.21',
     qualified: false, steps: [], cleanup: false, completed: false }
   const root = mkdtempSync(join(tmpdir(), 'TEST-opencode-mcp-'))
-  for (const name of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp'])
+  for (const name of ['workspace', 'neighbor', 'home', 'config', 'cache', 'data', 'state', 'temp'])
     mkdirSync(join(root, name))
   const workspace = join(root, 'workspace'), marker = join(root, 'mcp-boot.json')
   let host, failed = false, childPid
@@ -109,6 +110,17 @@ if (process.argv[2] === '--mcp-child') {
       throw Error('TEST_MCP_owned_child_missing')
     childPid = boot.pid
     receipt.steps.push('TEST_MCP_stdio_handshake_and_owned_process')
+    // Actual MCP resource round trip, not just a status flag. The neighboring
+    // TEST workspace must not observe a server added to the selected location.
+    const catalog = await host.mcp.resource.catalog({ location: { directory: workspace } })
+    const resources = catalog?.data?.resources
+    if (!Array.isArray(resources) || resources.length !== 1 ||
+        resources[0]?.server !== server || resources[0]?.uri !== 'test://owned/marker')
+      throw Error('TEST_MCP_native_resource_catalog_mismatch')
+    const neighbor = await host.mcp.list({ location: { directory: join(root, 'neighbor') } })
+    if (!Array.isArray(neighbor?.data) || neighbor.data.some(row => row.name === server))
+      throw Error('TEST_MCP_foreign_workspace_server_disclosed')
+    receipt.steps.push('TEST_MCP_native_resource_discovery_and_workspace_isolation')
     await host.mcp.disconnect({ server, location: { directory: workspace } })
     receipt.steps.push('TEST_MCP_disconnect_accepted')
     await host.mcp.remove({ server, location: { directory: workspace } })
