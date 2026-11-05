@@ -39,7 +39,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/opencode-v2-native/npm" "$RUNNER_TEMP/opencode-v2-native/install-home"
           HOME="$RUNNER_TEMP/opencode-v2-native/install-home" npm install \
             --prefix "$RUNNER_TEMP/opencode-v2-native/npm" \
-            --no-save --package-lock=true --no-audit --no-fund @opencode/cli@2.0.21
+            --no-save --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/cli@2.0.21
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
       - name: TEST native binary, authenticated API and disposable session lifecycle
         env:
