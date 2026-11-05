@@ -46,7 +46,7 @@ if (process.argv[2] === '--mcp-child') {
   for (const name of ['workspace', 'neighbor', 'home', 'config', 'cache', 'data', 'state', 'temp'])
     mkdirSync(join(root, name))
   const workspace = join(root, 'workspace'), marker = join(root, 'mcp-boot.json')
-  let host, failed = false, childPid, hostClosePid
+  let host, failed = false, childPid, removePid, hostClosePid
   const originalPath = process.env.PATH ?? process.env.Path ?? ''
   // No ambient CI credentials or user config can reach the embedded engine.
   for (const name of Object.keys(process.env)) {
@@ -122,21 +122,63 @@ if (process.argv[2] === '--mcp-child') {
     if (!Array.isArray(resources) || resources.length !== 1 ||
         resources[0]?.server !== server || resources[0]?.uri !== 'test://owned/marker')
       throw Error('TEST_MCP_native_resource_catalog_mismatch')
-    const neighbor = await host.mcp.list({ location: { directory: join(root, 'neighbor') } })
+    const neighborDirectory = join(root, 'neighbor')
+    const neighbor = await host.mcp.list({ location: { directory: neighborDirectory } })
     if (!Array.isArray(neighbor?.data) || neighbor.data.some(row => row.name === server))
       throw Error('TEST_MCP_foreign_workspace_server_disclosed')
+    const neighborCatalog = await host.mcp.resource.catalog({ location: { directory: neighborDirectory } })
+    if (!Array.isArray(neighborCatalog?.data?.resources) ||
+        neighborCatalog.data.resources.some(row => row.server === server || row.uri === 'test://owned/marker'))
+      throw Error('TEST_MCP_foreign_workspace_resource_disclosed')
     receipt.steps.push('TEST_MCP_native_resource_discovery_and_workspace_isolation')
     await host.mcp.disconnect({ server, location: { directory: workspace } })
     const disabled = await host.mcp.list({ location: { directory: workspace } })
     if (disabled?.data?.find(row => row.name === server)?.status?.status !== 'disabled' ||
         !(await waitGone(childPid)))
       throw Error('TEST_MCP_disconnect_did_not_stop_own_child')
+    const disconnectedCatalog = await host.mcp.resource.catalog({ location: { directory: workspace } })
+    if (!Array.isArray(disconnectedCatalog?.data?.resources) ||
+        disconnectedCatalog.data.resources.some(row => row.server === server || row.uri === 'test://owned/marker'))
+      throw Error('TEST_MCP_disconnected_resource_still_exposed')
     receipt.steps.push('TEST_MCP_disconnect_stopped_child')
     await host.mcp.remove({ server, location: { directory: workspace } })
     const after = await host.mcp.list({ location: { directory: workspace } })
     if (Array.isArray(after?.data) && after.data.some(row => row.name === server))
       throw Error('TEST_MCP_removed_server_still_listed')
+    const removedCatalog = await host.mcp.resource.catalog({ location: { directory: workspace } })
+    if (!Array.isArray(removedCatalog?.data?.resources) ||
+        removedCatalog.data.resources.some(row => row.server === server || row.uri === 'test://owned/marker'))
+      throw Error('TEST_MCP_removed_resource_still_exposed')
     receipt.steps.push('TEST_MCP_server_removed')
+    // Independent active child: remove directly, without first disconnecting.
+    const removeServer = 'TEST-owned-mcp-direct-remove'
+    const removeMarker = join(root, 'remove-boot.json')
+    await host.mcp.add({ server: removeServer, location: { directory: workspace },
+      config: localMcp(removeMarker) })
+    let removeConnected = false
+    for (let attempt = 0; attempt < 35; attempt++) {
+      const list = await host.mcp.list({ location: { directory: workspace } })
+      if (list?.data?.some(row => row.name === removeServer && row.status?.status === 'connected')) {
+        removeConnected = true; break
+      }
+      await delay(200)
+    }
+    if (!removeConnected) throw Error('TEST_MCP_direct_remove_child_not_connected')
+    const removeBoot = JSON.parse(readFileSync(removeMarker, 'utf8'))
+    if (!Number.isSafeInteger(removeBoot.pid) || removeBoot.pid <= 0 ||
+        removeBoot.pid === childPid || !childPresent(removeBoot.pid))
+      throw Error('TEST_MCP_direct_remove_child_not_owned')
+    removePid = removeBoot.pid
+    receipt.steps.push('TEST_MCP_direct_remove_child_active')
+    await host.mcp.remove({ server: removeServer, location: { directory: workspace } })
+    if (!(await waitGone(removePid))) throw Error('TEST_MCP_direct_remove_child_survived')
+    const noRemove = await host.mcp.list({ location: { directory: workspace } })
+    const noRemoveCatalog = await host.mcp.resource.catalog({ location: { directory: workspace } })
+    if (!Array.isArray(noRemove?.data) || noRemove.data.some(row => row.name === removeServer) ||
+        !Array.isArray(noRemoveCatalog?.data?.resources) ||
+        noRemoveCatalog.data.resources.some(row => row.server === removeServer || row.uri === 'test://owned/marker'))
+      throw Error('TEST_MCP_direct_remove_leaked_server_or_resource')
+    receipt.steps.push('TEST_MCP_direct_remove_stopped_active_child')
     // Different live TEST child: verify closing an owning embedded Host itself
     // performs teardown, not simply a prior explicit disconnect/remove.
     const secondServer = 'TEST-owned-mcp-host-close'
@@ -171,6 +213,7 @@ if (process.argv[2] === '--mcp-child') {
       }
     }
     if ((childPid && childPresent(childPid)) ||
+        (removePid && childPresent(removePid)) ||
         (hostClosePid && childPresent(hostClosePid))) {
       failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
     }
