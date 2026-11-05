@@ -416,6 +416,18 @@ try {
     })
   const syncedLog = logFrames.at(-1)
   const nativeEvents = logFrames.slice(0, -1)
+  // This report contains only event kinds and numeric sequence metadata from
+  // disposable TEST state; never persist message payloads or credentials.
+  receipt.nativeLogObserved = {
+    frameCount: logFrames.length,
+    responseBytes: Buffer.byteLength(logResponse.content),
+    firstTypes: logFrames.slice(0, 12).map(frame => typeof frame?.type === 'string' ? frame.type : null),
+    lastType: typeof syncedLog?.type === 'string' ? syncedLog.type : null,
+    firstSessionIDMatches: nativeEvents[0]?.durable?.aggregateID === id,
+    lastSessionIDMatches: syncedLog?.aggregateID === id,
+    firstSeq: nativeEvents[0]?.durable?.seq ?? null,
+    lastSeq: syncedLog?.seq ?? null,
+  }
   // Bounded, TEST-only diagnostics: expose event kinds and routing, never payloads.
   receipt.nativeLogDiagnostic = { status: logResponse.status,
     contentType: logResponse.contentType, frameTypes: logFrames.slice(0, 24).map(item => item?.type ?? null),
