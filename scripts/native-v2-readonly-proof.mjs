@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:net'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -31,26 +31,24 @@ const env = {
 let child
 let failed = false
 const hash = (data) => createHash('sha256').update(data).digest('hex')
-/** The public npm CLI is a Node launcher. Never hash or execute the shim as an engine. */
+/** Match the official v2.0.21 launcher candidate for glibc x64, but run the native ELF directly.
+ * Source: anomalyco/opencode@8a8bd622a3d7dc29ccf30ec17f84e363ed95ed72
+ * packages/cli/bin/opencode.cjs. Do not fall back to another architecture or to OPENCODE_BIN_PATH. */
 function discoverSingleNativeBinary(npmRoot) {
   const base = realpathSync(npmRoot)
-  const matches = []
-  let inspected = 0
-  function scan(directory) {
-    if (++inspected > 10000) throw Error('native_package_scan_budget')
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.isSymbolicLink()) continue
-      const path = join(directory, entry.name)
-      if (entry.isDirectory()) { scan(path); continue }
-      if (!entry.isFile() || entry.name !== 'opencode') continue
-      const bytes = readFileSync(path)
-      if (bytes.subarray(0, 4).toString('hex') === '7f454c46') matches.push(path)
-    }
-  }
-  scan(base)
-  if (matches.length !== 1) throw Error('native_elf_count_' + matches.length)
-  const native = realpathSync(matches[0])
-  if (!native.startsWith(base + '/')) throw Error('native_binary_outside_test_prefix')
+  const glibc = process.report?.getReport()?.header?.glibcVersionRuntime
+  if (!glibc) throw Error('expected_ubuntu_glibc_runner')
+  const supportsAvx2 = /(^|\\s)avx2(\\s|$)/i.test(readFileSync('/proc/cpuinfo', 'utf8'))
+  const packageName = supportsAvx2 ? 'cli-linux-x64' : 'cli-linux-x64-baseline'
+  const packageDirectory = realpathSync(join(base, packageName))
+  if (!packageDirectory.startsWith(base + '/')) throw Error('native_package_outside_test_prefix')
+  const manifest = JSON.parse(readFileSync(join(packageDirectory, 'package.json'), 'utf8'))
+  if (manifest.name !== '@opencode/' + packageName || manifest.version !== version)
+    throw Error('native_package_name_or_version_mismatch')
+  const native = realpathSync(join(packageDirectory, 'bin', 'opencode'))
+  if (!native.startsWith(packageDirectory + '/')) throw Error('native_binary_outside_test_package')
+  receipt.platformPackage = manifest.name
+  receipt.avx2 = supportsAvx2
   return native
 }
 async function freePort() {
