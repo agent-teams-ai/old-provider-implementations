@@ -1,19 +1,23 @@
 // TEST-only proof of pinned OpenCode V2 embedded durable event retention.
-// No native CLI, model execution, user credentials, external provider or production activation.
+// No native CLI, user credentials, external provider or production activation.
 import { pathToFileURL } from 'node:url'
+import { createServer } from 'node:http'
+import { setTimeout as delay } from 'node:timers/promises'
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
+const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
 for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) {
   mkdirSync(join(root, dir), { recursive: true })
 }
 const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedded.sqlite')
-let host
+let host, fake
+let modelCalls = 0, fakeFailure = null
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
 for (const key of Object.keys(process.env)) {
@@ -71,6 +75,62 @@ try {
   const { OpenCode } = await import(pathToFileURL(entry).href)
   if (typeof OpenCode?.create !== 'function') throw Error('TEST_embedded_api_unavailable')
   receipt.steps.push('pinned_embedded_SDK_module_resolved')
+  if (modelMode) {
+    const modelID = 'TEST-native-model', providerID = 'test-native'
+    const marker = 'TEST_V2_EMBEDDED_LOCAL_REPLY'
+    fake = createServer((request, response) => {
+      if (request.method !== 'POST' || request.url !== '/v1/chat/completions') {
+        fakeFailure = 'unexpected_TEST_model_route'
+        response.writeHead(404).end()
+        return
+      }
+      let received = '', size = 0
+      request.on('data', chunk => {
+        size += chunk.length
+        if (size > 2 * 1024 * 1024) { fakeFailure = 'unbounded_TEST_model_request'; request.destroy() }
+        else received += chunk.toString()
+      })
+      request.on('end', () => {
+        try {
+          const value = JSON.parse(received)
+          if (value.model !== modelID || value.stream !== true)
+            throw Error('TEST_unexpected_model_or_nonstream')
+          modelCalls++
+          const base = { id: 'chatcmpl-TEST-embedded', object: 'chat.completion.chunk',
+            model: modelID, created: 1 }
+          const chunk = (delta, finish_reason = null) => ({ ...base,
+            choices: [{ index: 0, delta, finish_reason }] })
+          const frames = [
+            chunk({ role: 'assistant' }), chunk({ content: marker }), chunk({}, 'stop'),
+            { ...base, choices: [], usage: { prompt_tokens: 20,
+              completion_tokens: 8, total_tokens: 28 } },
+          ].map(value => 'data: ' + JSON.stringify(value))
+          response.writeHead(200, { 'content-type': 'text/event-stream' })
+          response.end([...frames, 'data: [DONE]'].join('\n\n') + '\n\n')
+        } catch (error) {
+          fakeFailure = String(error instanceof Error ? error.message : error)
+          response.writeHead(400, { 'content-type': 'application/json' })
+          response.end('{"error":"TEST_invalid_fake_model_request"}')
+        }
+      })
+    })
+    await new Promise((ok, reject) => fake.once('error', reject).listen(0, '127.0.0.1', ok))
+    const address = fake.address()
+    if (!address || typeof address === 'string') throw Error('TEST_fake_model_not_loopback')
+    options.config.content = JSON.stringify({
+      model: providerID + '/' + modelID, providers: {
+        [providerID]: { name: 'TEST isolated local model',
+          package: '@opencode/ai/providers/openai-compatible',
+          settings: { baseURL: 'http://127.0.0.1:' + address.port + '/v1',
+            apiKey: 'TEST-non-secret' },
+          models: { [modelID]: { name: 'TEST local only',
+            capabilities: { tools: false, input: ['text'], output: ['text'] },
+            limit: { context: 8192, output: 1024 } } },
+        },
+      },
+    })
+    receipt.steps.push('TEST_embedded_loopback_model_configured')
+  }
   host = await OpenCode.create(options)
   const session = await host.sessions.create({ location: { directory: workspace } })
   if (typeof session?.id !== 'string' || !session.id.startsWith('ses_') ||
@@ -99,6 +159,82 @@ try {
       after.at(-1)?.seq !== before.at(-1)?.seq)
     throw Error('TEST_embedded_cold_durable_log_mismatch')
   receipt.steps.push('TEST_embedded_durable_log_survived_cold_restart')
+  if (modelMode) {
+    const modelID = 'TEST-native-model', providerID = 'test-native'
+    const marker = 'TEST_V2_EMBEDDED_LOCAL_REPLY'
+    let models
+    for (let attempt = 0; attempt < 40; attempt++) {
+      models = await host.model.list()
+      if (Array.isArray(models?.data) && models.data.some(item =>
+        item.id === modelID && item.providerID === providerID)) break
+      await delay(250)
+    }
+    if (!Array.isArray(models?.data) || !models.data.some(item =>
+      item.id === modelID && item.providerID === providerID))
+      throw Error('TEST_embedded_model_selection_not_qualified')
+    const original = await host.sessions.create({ location: { directory: workspace },
+      agent: 'build', model: { providerID, id: modelID },
+      permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' },
+        { action: 'shell', resource: '*', effect: 'deny' }] })
+    const inputID = 'msg_TESTembeddedModelTurn'
+    const admitted = await host.sessions.prompt({ sessionID: original.id,
+      id: inputID, text: 'TEST return the local marker',
+      delivery: 'queue', resume: true })
+    if (admitted?.id !== inputID || admitted?.sessionID !== original.id ||
+        admitted?.type !== 'user')
+      throw Error('TEST_embedded_model_prompt_not_admitted')
+    receipt.steps.push('TEST_embedded_model_prompt_admitted')
+    let terminalLog, transcript
+    for (let attempt = 0; attempt < 80; attempt++) {
+      terminalLog = await readLog(host, original.id)
+      if (terminalLog.some(event => event.type === 'session.execution.succeeded')) break
+      await delay(250)
+    }
+    const events = terminalLog.filter(event => event.type !== 'log.synced')
+    const delivered = events.filter(event => event.type === 'session.inbox.delivered' &&
+      event.data?.inboxID === inputID)
+    const terminals = events.filter(event => event.type === 'session.execution.succeeded')
+    const sequence = events.map(event => event?.durable?.seq)
+    if (fakeFailure || modelCalls < 1 || delivered.length !== 1 ||
+        terminals.length !== 1 || !events.some(event => event.type === 'session.created') ||
+        sequence.some((value, index) => !Number.isSafeInteger(value) ||
+          (index > 0 && value <= sequence[index - 1])))
+      throw Error('TEST_embedded_model_durable_lineage_unqualified')
+    transcript = await host.message.list({ sessionID: original.id, limit: 200 })
+    const messages = transcript?.data
+    const users = Array.isArray(messages) ? messages.filter(row => row.id === inputID && row.type === 'user') : []
+    const assistants = Array.isArray(messages) ? messages.filter(row => row.type === 'assistant' &&
+      JSON.stringify(row).includes(marker)) : []
+    const idle = Array.isArray(messages) ? messages.filter(row => row.type === 'idle' &&
+      row.outcome === 'succeeded') : []
+    const state = await host.sessions.get({ sessionID: original.id })
+    if (users.length !== 1 || assistants.length !== 1 || idle.length !== 1 ||
+        state?.outcome !== 'succeeded')
+      throw Error('TEST_embedded_model_transcript_mismatch')
+    receipt.modelTurn = { modelCalls, delivered: 1, terminals: 1,
+      loggedEvents: events.length, originalInputBound: true,
+      assistantPresent: true, idlePresent: true }
+    receipt.steps.push('TEST_embedded_durable_model_terminal_qualified')
+    const frozenIDs = events.map(event => event.id)
+    const beforeColdCalls = modelCalls
+    await host.close()
+    host = undefined
+    host = await OpenCode.create(options)
+    const recovered = await host.sessions.get({ sessionID: original.id })
+    const restoredLog = await readLog(host, original.id)
+    const replayed = restoredLog.filter(event => event.type !== 'log.synced')
+    const restoredMessages = (await host.message.list({ sessionID: original.id, limit: 200 }))?.data
+    if (recovered?.id !== original.id || recovered?.outcome !== 'succeeded' ||
+        JSON.stringify(replayed.map(event => event.id)) !== JSON.stringify(frozenIDs) ||
+        !Array.isArray(restoredMessages) ||
+        restoredMessages.filter(row => row.id === inputID && row.type === 'user').length !== 1 ||
+        restoredMessages.filter(row => row.type === 'assistant' &&
+          JSON.stringify(row).includes(marker)).length !== 1 ||
+        modelCalls !== beforeColdCalls)
+      throw Error('TEST_embedded_model_cold_lineage_or_no_replay_failed')
+    receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
+    await host.sessions.remove({ sessionID: original.id })
+  }
   await host.sessions.remove({ sessionID: session.id })
   receipt.steps.push('TEST_embedded_session_removed')
 } catch (error) {
@@ -110,10 +246,16 @@ try {
       failed = true; receipt.hostCleanupFailure = String(error)
     }
   }
+  if (fake) {
+    try {
+      fake.closeAllConnections()
+      await new Promise((ok, reject) => fake.close(error => error ? reject(error) : ok()))
+    } catch (error) { failed = true; receipt.fakeCleanupFailure = String(error) }
+  }
   try { rmSync(root, { recursive: true, force: true }) } catch (error) {
     failed = true; receipt.testDirectoryCleanupFailure = String(error)
   }
-  receipt.cleanup = !receipt.hostCleanupFailure && !receipt.testDirectoryCleanupFailure
+  receipt.cleanup = !receipt.hostCleanupFailure && !receipt.fakeCleanupFailure && !receipt.testDirectoryCleanupFailure
   receipt.completed = !failed && receipt.cleanup
   writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
   console.log(JSON.stringify({ completed: receipt.completed, steps: receipt.steps,
