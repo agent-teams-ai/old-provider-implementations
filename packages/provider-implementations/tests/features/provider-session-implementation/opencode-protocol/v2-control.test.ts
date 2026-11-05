@@ -137,6 +137,28 @@ test('V2 durable always-approval is refused even via raw control wire without na
   }
 })
 
+test('raw V2 instruction PUT enforces the durable value byte budget before credentials or native effects', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close)
+    let credentials = 0
+    const raw = createV2ControlWire({ endpoint: host.endpoint, directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+      readPassword: () => { credentials++; return 'TEST-private' } })
+    t.after(raw.dispose)
+    const entries = version === '2.0.0' ? '/api/session/ses_A/instructions/entries'
+      : '/api/experimental/session/ses_A/instructions/entries'
+    await assert.rejects(raw.request(entries + '/test.role', {
+      method: 'PUT', body: JSON.stringify({ value: 'X'.repeat(256 * 1024 + 1) }),
+    }), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+      return true
+    })
+    assert.equal(credentials, 0)
+    assert.equal(host.calls(), 0)
+    assert.deepEqual(host.effects, [])
+  }
+})
+
 test('invalid untyped permission decision is refused before any native read or mutation', async t => {
   const host = await peer(); t.after(host.close)
   const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original', version: '2.0.21',

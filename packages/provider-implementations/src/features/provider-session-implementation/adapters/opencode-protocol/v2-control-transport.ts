@@ -1,5 +1,6 @@
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
+import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
 import { checkOpenCodeReadJson } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
@@ -38,6 +39,11 @@ function validateControlBody(body: string, routes: ControlRoutes, version: strin
   const fields = record(JSON.parse(body) as unknown)
   const key = routes.putInstruction ? 'value' : version === '2.0.0' ? 'reply' : 'decision'
   executionAssert(fields !== null && Object.keys(fields).length === 1 && Object.hasOwn(fields, key), 'unsupported_input')
+  if (routes.putInstruction) {
+    // The raw control wire is not allowed to bypass the typed instruction API's
+    // bounded durable-value policy before credentials or native side effects.
+    executionAssert(Buffer.byteLength(canonicalExecutionJSON(fields[key])) <= 256 * 1024, 'body_limit')
+  }
   if (routes.reply) {
     // V2 "always" persists a project-scoped allow pattern. This raw transport
     // must not provide a bypass around the Host's not-yet-qualified policy gate.
