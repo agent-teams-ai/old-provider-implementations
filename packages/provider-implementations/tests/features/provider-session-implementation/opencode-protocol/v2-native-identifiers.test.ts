@@ -9,11 +9,13 @@ test('native session and message identifiers preserve safe OpenCode V2 URL-segme
   }
 })
 test('native identifiers reject foreign URL delimiters, empty segments, controls and unbounded captures', () => {
-  for (const invalid of ['', 'foreign', 'test/path', 'test?x=1', 'test#fragment', 'test%2Fescape',
+  for (const invalid of ['', 'test/path', 'test?x=1', 'test#fragment', 'test%2Fescape',
     'test\\\\backslash', 'test space', 'A'.repeat(257)]) {
     assert.equal(safeV2SessionID('ses_' + invalid), false, invalid)
     assert.equal(safeV2MessageID('msg_' + invalid), false, invalid)
   }
+  assert.equal(safeV2SessionID('foreign'), false)
+  assert.equal(safeV2MessageID('foreign'), false)
   assert.equal(safeV2SessionID('msg_TEST'), false)
   assert.equal(safeV2MessageID('ses_TEST'), false)
   assert.equal(safeV2SessionID(null), false)
