@@ -28,6 +28,7 @@ let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
 let toolExecutorCalls = 0, toolAuthorizedCalls = 0
+let toolPluginSetupCalls = 0, toolRegisteredNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
@@ -110,6 +111,7 @@ try {
     options.plugins = [{
       id: 'TEST-v2-owned-native-tool',
       setup: async (ctx) => {
+        toolPluginSetupCalls++
         await ctx.tool.transform(editor => {
           editor.add({
             name: 'read',
@@ -128,6 +130,9 @@ try {
             },
           })
         })
+        toolRegisteredNames = (await ctx.tool.list())
+          .map(tool => tool.id).filter(name => typeof name === 'string')
+          .slice(0, 64).map(name => name.slice(0, 80))
       },
     }]
     receipt.steps.push('TEST_embedded_v2_native_tool_plugin_configured')
@@ -542,7 +547,8 @@ try {
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests,
         advertisedReadTool, advertisedToolNames, assistantPartTypes, toolOutcomes,
-        toolEventTypes, toolExecutorCalls, toolAuthorizedCalls,
+        toolEventTypes, toolPluginSetupCalls, toolRegisteredNames,
+        toolExecutorCalls, toolAuthorizedCalls,
         toolEffectObserved, policyDenialUnverified: true,
         terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
         canaryLeak: false, qualified: false,
