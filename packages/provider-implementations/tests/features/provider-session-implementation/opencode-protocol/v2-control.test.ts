@@ -7,14 +7,15 @@ import { createV2ControlWire } from '../../../../src/features/provider-session-i
 
 async function peer() {
   const effects: Array<{ path: string; body: unknown }> = []
-  let foreign = false, loseReceipt = false, flatPermissions = false, flatInstructions = false, invalidPermissionId = false, calls = 0
+  let foreign = false, loseReceipt = false, flatPermissions = false, flatInstructions = false, invalidPermissionId = false, malformedPermissionSource = false, calls = 0
   const server = createServer((req, res) => {
     calls++
     const url = new URL(req.url!, 'http://TEST.invalid')
     const sessionID = url.pathname.includes('ses_A') ? 'ses_A' : 'ses_B'
     res.setHeader('content-type', 'application/json')
     if (req.method === 'GET') {
-      const permission = { id: (invalidPermissionId ? 'request_' : 'per_') + sessionID, sessionID: foreign ? 'ses_foreign' : sessionID, action: 'TEST.tool', resources: ['TEST-resource'] }
+      const permission = { id: (invalidPermissionId ? 'request_' : 'per_') + sessionID, sessionID: foreign ? 'ses_foreign' : sessionID, action: 'TEST.tool', resources: ['TEST-resource'],
+        ...(malformedPermissionSource ? { source: { type: 'tool', messageID: 'msg_BAD%2froute', id: 'TEST-tool-call' } } : {}) }
       if (url.pathname.endsWith('/permission')) {res.end(JSON.stringify(flatPermissions ? [permission] : { data: [permission] }))}
       else if (url.pathname.includes('/permission/')) {res.end(JSON.stringify(flatPermissions ? permission : { data: permission }))}
       else {res.end(JSON.stringify(flatInstructions ? [] : { data: [] }))}
@@ -33,7 +34,8 @@ async function peer() {
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const address = server.address(); assert(address && typeof address !== 'string')
   return { endpoint: `http://127.0.0.1:${address.port}`, effects,
-    setForeign: () => { foreign = true }, loseReceipt: () => { loseReceipt = true }, flatPermissions: () => { flatPermissions = true }, flatInstructions: () => { flatInstructions = true }, invalidPermissionId: () => { invalidPermissionId = true }, calls: () => calls,
+    setForeign: () => { foreign = true }, loseReceipt: () => { loseReceipt = true }, flatPermissions: () => { flatPermissions = true }, flatInstructions: () => { flatInstructions = true }, invalidPermissionId: () => { invalidPermissionId = true },
+    malformedPermissionSource: () => { malformedPermissionSource = true }, calls: () => calls,
     close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) }) },
   }
 }
@@ -205,4 +207,23 @@ test('malformed V2 control identifiers cannot reach a native route or mutate ano
   }
   assert.equal(host.calls(), 0)
   assert.deepEqual(host.effects, [])
+})
+
+
+test('malformed native permission source message ID never permits a control grant', async t => {
+  // Tool-origin permissions must carry a real bounded V2 msg_ ID, not a URL
+  // escape that could be confused with another resource or an old V1 ID.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close); host.malformedPermissionSource()
+    const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint,
+      directory: '/TEST/original', version, deadline: Date.now() + 10_000,
+      nativeSessionId: 'ses_A', readPassword: () => 'TEST-private' })
+    t.after(control.dispose)
+    await assert.rejects(control.pendingPermissions(), /invalid_native_permission_source/)
+    await assert.rejects(control.replyPermission('per_ses_A', 'once'), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+      return true
+    })
+    assert.deepEqual(host.effects, [], 'malformed source cannot produce a native POST')
+  }
 })
