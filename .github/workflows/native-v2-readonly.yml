@@ -41,7 +41,7 @@ jobs:
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
       - name: Read-only TEST native executable, auth, version, digest and OpenAPI
         env:
-          OPENCODE_V2_TEST_BIN: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/.bin/opencode
+          OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
         run: node scripts/native-v2-readonly-proof.mjs
       - name: Upload actual runner receipt (even for failed native checks)
