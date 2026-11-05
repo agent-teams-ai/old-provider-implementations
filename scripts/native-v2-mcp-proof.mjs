@@ -46,7 +46,7 @@ if (process.argv[2] === '--mcp-child') {
   for (const name of ['workspace', 'neighbor', 'home', 'config', 'cache', 'data', 'state', 'temp'])
     mkdirSync(join(root, name))
   const workspace = join(root, 'workspace'), marker = join(root, 'mcp-boot.json')
-  let host, failed = false, childPid
+  let host, failed = false, childPid, hostClosePid
   const originalPath = process.env.PATH ?? process.env.Path ?? ''
   // No ambient CI credentials or user config can reach the embedded engine.
   for (const name of Object.keys(process.env)) {
@@ -66,6 +66,10 @@ if (process.argv[2] === '--mcp-child') {
   const childPresent = pid => {
     try { process.kill(pid, 0); return true }
     catch (error) { if (error.code === 'ESRCH') return false; throw error }
+  }
+  const waitGone = async pid => {
+    for (let attempt = 0; attempt < 40 && childPresent(pid); attempt++) await delay(100)
+    return !childPresent(pid)
   }
   try {
     if (expectedPlatform !== `${process.platform}-${process.arch}`)
@@ -90,10 +94,11 @@ if (process.argv[2] === '--mcp-child') {
     // Only the immutable TEST script and its local temporary workspace may spawn.
     const script = realpathSync(new URL(import.meta.url).pathname)
     const server = 'TEST-owned-mcp'
-    await host.mcp.add({ server, location: { directory: workspace },
-      config: { type: 'local', command: [process.execPath, script, '--mcp-child'],
-        cwd: workspace, environment: { TEST_MCP_CHILD_MARKER: marker },
-        protocol: 'legacy', timeout: { startup: 6000, catalog: 6000, execution: 6000 } } })
+    const localMcp = target => ({ type: 'local',
+      command: [process.execPath, script, '--mcp-child'],
+      cwd: workspace, environment: { TEST_MCP_CHILD_MARKER: target },
+      protocol: 'legacy', timeout: { startup: 6000, catalog: 6000, execution: 6000 } })
+    await host.mcp.add({ server, location: { directory: workspace }, config: localMcp(marker) })
     receipt.steps.push('TEST_real_MCP_server_registered')
     let status
     for (let attempt = 0; attempt < 35; attempt++) {
@@ -122,16 +127,40 @@ if (process.argv[2] === '--mcp-child') {
       throw Error('TEST_MCP_foreign_workspace_server_disclosed')
     receipt.steps.push('TEST_MCP_native_resource_discovery_and_workspace_isolation')
     await host.mcp.disconnect({ server, location: { directory: workspace } })
-    receipt.steps.push('TEST_MCP_disconnect_accepted')
+    const disabled = await host.mcp.list({ location: { directory: workspace } })
+    if (disabled?.data?.find(row => row.name === server)?.status?.status !== 'disabled' ||
+        !(await waitGone(childPid)))
+      throw Error('TEST_MCP_disconnect_did_not_stop_own_child')
+    receipt.steps.push('TEST_MCP_disconnect_stopped_child')
     await host.mcp.remove({ server, location: { directory: workspace } })
     const after = await host.mcp.list({ location: { directory: workspace } })
     if (Array.isArray(after?.data) && after.data.some(row => row.name === server))
       throw Error('TEST_MCP_removed_server_still_listed')
     receipt.steps.push('TEST_MCP_server_removed')
+    // Different live TEST child: verify closing an owning embedded Host itself
+    // performs teardown, not simply a prior explicit disconnect/remove.
+    const secondServer = 'TEST-owned-mcp-host-close'
+    const secondMarker = join(root, 'hostclose-boot.json')
+    await host.mcp.add({ server: secondServer, location: { directory: workspace },
+      config: localMcp(secondMarker) })
+    let secondConnected = false
+    for (let attempt = 0; attempt < 35; attempt++) {
+      const list = await host.mcp.list({ location: { directory: workspace } })
+      if (list?.data?.some(row => row.name === secondServer && row.status?.status === 'connected')) {
+        secondConnected = true; break
+      }
+      await delay(200)
+    }
+    if (!secondConnected) throw Error('TEST_MCP_host_close_child_not_connected')
+    const secondBoot = JSON.parse(readFileSync(secondMarker, 'utf8'))
+    if (!Number.isSafeInteger(secondBoot.pid) || secondBoot.pid <= 0 ||
+        secondBoot.pid === childPid || !childPresent(secondBoot.pid))
+      throw Error('TEST_MCP_host_close_child_not_owned')
+    hostClosePid = secondBoot.pid
+    receipt.steps.push('TEST_MCP_second_child_active_before_host_close')
     await host.close(); host = undefined
-    for (let attempt = 0; attempt < 40 && childPresent(childPid); attempt++) await delay(100)
-    if (childPresent(childPid)) throw Error('TEST_MCP_child_survived_owned_cleanup')
-    receipt.steps.push('TEST_MCP_child_stopped_after_host_close')
+    if (!(await waitGone(hostClosePid))) throw Error('TEST_MCP_child_survived_host_close')
+    receipt.steps.push('TEST_MCP_host_close_stopped_active_child')
   } catch (error) {
     failed = true
     receipt.failure = String(error instanceof Error ? error.message : error)
@@ -141,8 +170,9 @@ if (process.argv[2] === '--mcp-child') {
         failed = true; receipt.hostCleanupFailure = String(error)
       }
     }
-    if (childPid && childPresent(childPid)) {
-      failed = true; receipt.childCleanupFailure = 'TEST_MCP_child_not_closed'
+    if ((childPid && childPresent(childPid)) ||
+        (hostClosePid && childPresent(hostClosePid))) {
+      failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
     }
     try { rmSync(root, { recursive: true, force: true }) } catch (error) {
       failed = true; receipt.rootCleanupFailure = String(error)
