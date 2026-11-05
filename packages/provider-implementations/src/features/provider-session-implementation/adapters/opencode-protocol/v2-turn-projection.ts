@@ -8,10 +8,12 @@ function logProblem(input: OpenCodeV2NativeTurnCut): string | null {
   let last = -1
   for (const event of input.log.events) {
     if (event.aggregateID !== input.sessionID || event.data.sessionID !== input.sessionID || ids.has(event.id)
-      || !Number.isSafeInteger(event.seq) || event.seq <= last || last >= 0 && event.seq !== last + 1) { return 'foreign_or_incomplete_log' }
+      || !Number.isSafeInteger(event.seq) || event.seq <= last) { return 'foreign_or_incomplete_log' }
     ids.add(event.id); last = event.seq
   }
-  return input.log.watermark !== (input.log.events.at(-1)?.seq ?? null) ? 'incomplete_log_watermark' : null
+  // Session events are filtered from a shared durable bus; valid sequence gaps
+  // and a synced watermark beyond the last emitted event do not imply loss.
+  return input.log.watermark === null || input.log.watermark < last ? 'incomplete_log_watermark' : null
 }
 function cutProblem(input: OpenCodeV2NativeTurnCut): string | null {
   if (record(input.messages)?.previous !== null || record(input.messages)?.next !== null || record(input.log)?.synced !== true) { return 'incomplete_native_cut' }
