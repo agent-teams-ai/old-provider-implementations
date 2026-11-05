@@ -475,6 +475,18 @@ try {
       restoredItems[0]?.id !== inboxID || restoredItems[0]?.payload?.text !== synthetic.text)
     throw Error('native_synthetic_inbox_lost_on_restart')
   receipt.steps.push('native_TEST_synthetic_inbox_survived_cold_restart')
+  // Unauthenticated observers must not inspect or cancel restored queued work.
+  const unauthInboxRead = await request(restoredURL + '/inbox')
+  const unauthInboxDelete = await request(restoredURL + '/inbox/' + encodeURIComponent(inboxID),
+    undefined, { method: 'DELETE' })
+  if (unauthInboxRead.status !== 401 || unauthInboxDelete.status !== 401)
+    throw Error('native_restored_inbox_auth_bypass')
+  const afterUnauth = await request(restoredURL + '/inbox', auth)
+  const afterUnauthRows = afterUnauth.status === 200 ? JSON.parse(afterUnauth.content)?.data : undefined
+  if (!Array.isArray(afterUnauthRows) || afterUnauthRows.length !== 1 ||
+      afterUnauthRows[0]?.id !== inboxID || afterUnauthRows[0]?.payload?.text !== synthetic.text)
+    throw Error('native_unauthorized_inbox_mutation')
+  receipt.steps.push('native_TEST_restored_inbox_authz_denials')
   const replayAfterRestart = await request(restoredURL + '/synthetic', auth, {
     method: 'POST', timeoutMs: 12000, body: { ...synthetic, text: 'TEST-replay-after-cold-restart-ignored' },
   })
@@ -487,6 +499,24 @@ try {
       queueAfterReplay[0]?.id !== inboxID || queueAfterReplay[0]?.payload?.text !== synthetic.text)
     throw Error('native_cold_replay_duplicated_inbox')
   receipt.steps.push('native_TEST_first_writer_retained_after_cold_replay')
+  // A different session must still be unable to adopt this durable ID after restart.
+  const coldOther = await request(restoredEndpoint + '/api/session', auth, { method: 'POST',
+    timeoutMs: 12000, body: { location: { directory }, permissions: testPermissions } })
+  const coldOtherID = coldOther.status === 200 ? JSON.parse(coldOther.content)?.data?.id : undefined
+  if (typeof coldOtherID !== 'string' || !/^ses_[a-zA-Z0-9]+$/.test(coldOtherID) ||
+      coldOtherID === id || coldOtherID === otherID)
+    throw Error('native_cold_foreign_session_identity')
+  const coldOtherURL = restoredEndpoint + '/api/session/' + encodeURIComponent(coldOtherID)
+  const coldCollision = await request(coldOtherURL + '/synthetic', auth, { method: 'POST',
+    timeoutMs: 12000, body: { ...synthetic, text: 'TEST-cold-foreign-collision' } })
+  const coldOtherInbox = await request(coldOtherURL + '/inbox', auth)
+  const coldOtherRows = coldOtherInbox.status === 200 ? JSON.parse(coldOtherInbox.content)?.data : undefined
+  if (coldCollision.status !== 409 || !Array.isArray(coldOtherRows) || coldOtherRows.length !== 0)
+    throw Error('native_cold_cross_session_id_adoption')
+  const coldOtherRemoved = await request(coldOtherURL, auth,
+    { method: 'DELETE', timeoutMs: 12000 })
+  if (coldOtherRemoved.status !== 204) throw Error('native_cold_foreign_cleanup_failed')
+  receipt.steps.push('native_TEST_foreign_id_rejected_after_cold_restart')
   const cancelled = await request(restoredURL + '/inbox/' + encodeURIComponent(inboxID), auth,
     { method: 'DELETE' })
   if (cancelled.status !== 204) throw Error('native_synthetic_inbox_cancel_failed')
