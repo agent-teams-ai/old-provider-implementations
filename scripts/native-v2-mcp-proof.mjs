@@ -1,4 +1,4 @@
-// Isolated TEST-only MCP local process lifecycle against pinned embedded V2.0.21.
+// Isolated TEST-only MCP local process lifecycle on exact pinned V2.0.21/V2.1.4.
 // No product Host, provider inference, user files, or production credentials.
 import { pathToFileURL } from 'node:url'
 import { createInterface } from 'node:readline'
@@ -7,6 +7,7 @@ import { isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 
+const pinnedVersion = process.env.OPENCODE_V2_MCP_VERSION ?? '2.0.21'
 if (process.argv[2] === '--mcp-child') {
   // MCP stdio 2025-11-25 legacy framing is one JSON-RPC message per line.
   // This process has no tools that read files, run shell commands or use a model.
@@ -40,7 +41,8 @@ if (process.argv[2] === '--mcp-child') {
   const receiptPath = resolve(process.env.OPENCODE_V2_MCP_RECEIPT || 'native-v2-embedded-mcp-proof.json')
   const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
   const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
-  const receipt = { kind: 'TEST_V2_EMBEDDED_MCP_LIFECYCLE_ONLY', version: '2.0.21',
+  if (!['2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_MCP_unqualified_version')
+  const receipt = { kind: 'TEST_V2_EMBEDDED_MCP_LIFECYCLE_ONLY', version: pinnedVersion,
     qualified: false, steps: [], cleanup: false, completed: false }
   const root = mkdtempSync(join(tmpdir(), 'TEST-opencode-mcp-'))
   for (const name of ['workspace', 'neighbor', 'home', 'config', 'cache', 'data', 'state', 'temp'])
@@ -77,7 +79,7 @@ if (process.argv[2] === '--mcp-child') {
     if (!prefix || !isAbsolute(prefix)) throw Error('TEST_MCP_prefix_missing')
     const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
     const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-    if (manifest.name !== '@opencode/sdk' || manifest.version !== '2.0.21')
+    if (manifest.name !== '@opencode/sdk' || manifest.version !== pinnedVersion)
       throw Error('TEST_MCP_unpinned_sdk')
     const target = manifest.exports?.['.']?.import?.default ?? manifest.exports?.['.']?.import
     if (typeof target !== 'string' || !target.startsWith('./'))
@@ -85,7 +87,7 @@ if (process.argv[2] === '--mcp-child') {
     const entry = realpathSync(join(packageRoot, target))
     if (!entry.startsWith(packageRoot + sep)) throw Error('TEST_MCP_escape_export')
     const { OpenCode } = await import(pathToFileURL(entry).href)
-    const options = { app: { name: 'TEST-embedded-MCP', version: '2.0.21' },
+    const options = { app: { name: 'TEST-embedded-MCP', version: pinnedVersion },
       database: { path: join(root, 'data', 'mcp.sqlite') }, events: { persist: true },
       models: { fetch: false }, config: { directory: join(root, 'config'), project: false },
       fs: { filewatcher: false, fff: false } }
