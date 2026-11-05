@@ -1,6 +1,6 @@
 // Isolated TEST-only MCP local process lifecycle on exact pinned V2.0.21/V2.1.4.
 // No product Host, provider inference, user files, or production credentials.
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve, sep } from 'node:path'
@@ -94,7 +94,7 @@ if (process.argv[2] === '--mcp-child') {
     host = await OpenCode.create(options)
     receipt.steps.push('TEST_pinned_embedded_SDK_started')
     // Only the immutable TEST script and its local temporary workspace may spawn.
-    const script = realpathSync(new URL(import.meta.url).pathname)
+    const script = realpathSync(fileURLToPath(import.meta.url))
     const server = 'TEST-owned-mcp'
     const localMcp = target => ({ type: 'local',
       command: [process.execPath, script, '--mcp-child'],
