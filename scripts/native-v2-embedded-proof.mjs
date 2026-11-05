@@ -571,6 +571,16 @@ try {
         ['succeeded', 'failed', 'interrupted'].some(t => e.type.endsWith('.' + t)))
       const delivery = ledger.filter(e => e.type === 'session.inbox.delivered' &&
         e.data?.inboxID === input)
+      // A durable terminal may commit just ahead of the HTTP socket close.
+      // Wait for the transport-owned stream to settle before judging cleanup.
+      for (let attempt = 0; attempt < 30 && !interruptStream.destroyed; attempt++)
+        await delay(100)
+      receipt.interruptObservations = {
+        terminalTypes: terminal.map(e => e.type).slice(0, 8),
+        reason: terminal[0]?.data?.reason ?? null, delivered: delivery.length,
+        modelRequests: modelCalls - beforeInterruptCalls,
+        socketClosed: interruptStream.destroyed,
+      }
       if (terminal.length !== 1 || terminal[0].type !== 'session.execution.interrupted' ||
           terminal[0].data?.reason !== 'user' || delivery.length !== 1 ||
           modelCalls !== beforeInterruptCalls + 1 || !interruptStream.destroyed)
