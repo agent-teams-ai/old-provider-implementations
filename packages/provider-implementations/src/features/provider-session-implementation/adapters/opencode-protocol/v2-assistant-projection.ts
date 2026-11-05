@@ -13,6 +13,14 @@ function toolCallEvents(related: readonly OpenCodeV2NativeLogEvent[], toolId: st
     || sequence(started, Infinity) >= sequence(called, -1)) { return null }
   return { called, successes: events.filter(event => event.type === 'session.tool.success'), failures: events.filter(event => event.type === 'session.tool.failed') }
 }
+// The native projector accumulates physical execution evidence across Called and
+// terminal events using logical OR. A terminal snapshot must never erase an
+// already executed call, nor invent execution absent from both durable events.
+function validExecutedSnapshot(part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], outcome: readonly OpenCodeV2NativeLogEvent[]): boolean {
+  const before = called.at(0)?.data.executed, after = outcome.at(0)?.data.executed
+  return typeof part.executed === 'boolean' && typeof before === 'boolean'
+    && typeof after === 'boolean' && part.executed === (before || after)
+}
 function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2NativeLogEvent[], assistantId: string, ended: boolean): OpenCodeV2NativeToolFact | UnknownProjection {
   const toolId = string(part.id), name = string(part.name), state = record(part.state)
   if (toolId === null || name === null || state === null) { return reject('invalid_tool_snapshot') }
@@ -27,7 +35,7 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
   const executed = typeof part.executed === 'boolean' ? part.executed : null, metadata = state.metadata ?? null
   if (state.status === 'error') {
     if (failures.length !== 1 || successes.length !== 0 || !same(failures.at(0)?.data.error, state.error)
-      || sequence(called, Infinity) >= sequence(failures, -1)) { return reject('tool_failure_snapshot_mismatch') }
+      || sequence(called, Infinity) >= sequence(failures, -1) || !validExecutedSnapshot(part, called, failures)) { return reject('tool_failure_snapshot_mismatch') }
     return { ...base, status: 'error', executed, content: null, error: state.error, metadata }
   }
   if (!validToolSuccess(state, part, called, successes, failures)) { return reject('tool_success_snapshot_mismatch') }
@@ -35,7 +43,7 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
 }
 function validToolSuccess(state: Record<string, unknown>, part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], successes: readonly OpenCodeV2NativeLogEvent[], failures: readonly OpenCodeV2NativeLogEvent[]): state is Record<string, unknown> & { content: readonly unknown[] } {
   return state.status === 'completed' && successes.length === 1 && failures.length === 0 && Array.isArray(state.content)
-    && state.content.length > 0 && same(successes.at(0)?.data.content, state.content) && successes.at(0)?.data.executed === part.executed
+    && state.content.length > 0 && same(successes.at(0)?.data.content, state.content) && validExecutedSnapshot(part, called, successes)
     && sequence(called, Infinity) < sequence(successes, -1)
 }
 function assistantProblem(message: OpenCodeV2NativeTurnCut['messages']['data'][number], related: readonly OpenCodeV2NativeLogEvent[], ended: boolean): string | null {
