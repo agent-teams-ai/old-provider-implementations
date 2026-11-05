@@ -422,8 +422,11 @@ try {
     frameCount: logFrames.length, syncedType: syncedLog?.type ?? null,
     syncedOwnerMatches: syncedLog?.aggregateID === id,
     firstType: nativeEvents[0]?.type ?? null }
+  // Real native v2.0.21 has only an owned log.synced frame before any model
+  // execution; session creation does not guarantee session.created in this log.
+  // Accept that as TEST-only discovery, not as a readable turn/native history.
   if (syncedLog?.type !== 'log.synced' || syncedLog.aggregateID !== id ||
-      nativeEvents.length === 0 || nativeEvents[0]?.type !== 'session.created')
+      (nativeEvents.length > 0 && nativeEvents[0]?.type !== 'session.created'))
     throw Error('native_session_log_missing_prefix_or_sync')
   let lastVisibleSeq = -1
   let observedGaps = 0
@@ -440,7 +443,9 @@ try {
     throw Error('native_session_log_invalid_sync_watermark')
   receipt.nativeSessionLog = { visibleEvents: nativeEvents.length, lastVisibleSeq,
     syncedWatermark: syncedLog.seq, observedFilteredGaps: observedGaps }
-  receipt.steps.push('native_TEST_pinned_SSE_session_log_verified')
+  receipt.steps.push(nativeEvents.length === 0
+    ? 'native_TEST_preexecution_empty_SSE_with_owned_sync'
+    : 'native_TEST_pinned_SSE_session_log_verified')
   // Synthetic input with resume:false is a durable inbox record, not a model
   // turn. The official Inbox admits repeated identical IDs without a second row.
   const inboxID = 'msg_TESTnativeQueued'
