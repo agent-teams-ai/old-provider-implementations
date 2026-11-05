@@ -193,14 +193,18 @@ try {
         pending[0]?.sessionID !== policy.id)
       throw Error('TEST_embedded_owned_permission_ask_failed')
     const neighbor = await host.sessions.create({ location: { directory: workspace }, agent: 'build' })
+    // The generated SDK throws the declared 404 error by _tag/name; a transport
+    // error, missing method or malformed response must NOT count as auth denial.
+    const missingPermission = error => error instanceof Error &&
+      error.name === 'PermissionNotFoundError' && error.requestID === asked.id
     let foreignRejected = false, staleRejected = false
     try { await host.permission.reply({ sessionID: neighbor.id, requestID: asked.id, decision: 'once' }) }
-    catch { foreignRejected = true }
+    catch (error) { foreignRejected = missingPermission(error) }
     if (!foreignRejected || (await host.permission.list({ sessionID: policy.id })).length !== 1)
       throw Error('TEST_embedded_foreign_permission_reply_applied')
     await host.permission.reply({ sessionID: policy.id, requestID: asked.id, decision: 'reject' })
     try { await host.permission.reply({ sessionID: policy.id, requestID: asked.id, decision: 'once' }) }
-    catch { staleRejected = true }
+    catch (error) { staleRejected = missingPermission(error) }
     if (!staleRejected || (await host.permission.list({ sessionID: policy.id })).length !== 0)
       throw Error('TEST_embedded_stale_permission_reply_applied')
     await host.sessions.remove({ sessionID: neighbor.id })
