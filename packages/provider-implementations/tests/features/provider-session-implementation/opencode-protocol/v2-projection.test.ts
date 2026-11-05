@@ -8,7 +8,7 @@ import { cut, sessionID, assistantID, content, toolInput } from './v2-cut-fixtur
 function assistant(value: OpenCodeV2NativeTurnCut) { return value.messages.data.find(row => row.id === assistantID)! }
 
 test('both native dialects retain exact input, text and raw tool facts without inferring product completion', () => {
-  for (const pin of ['2.0.0', '2.0.21'] as const) {
+  for (const pin of ['2.0.0', '2.0.21', '2.1.4'] as const) {
     const projected = projectOpenCodeV2NativeTurn(cut(pin))
     assert.equal(projected.state, 'succeeded')
     assert.equal(projected.text, 'TEST reply')
@@ -19,6 +19,13 @@ test('both native dialects retain exact input, text and raw tool facts without i
     assert.equal('visibleReplies' in projected, false)
     assert.equal('kind' in projected.tools[0]!, false)
   }
+})
+
+test('2.1.4 requires a native idle snapshot matching the durable execution terminal', () => {
+  const missing = cut('2.1.4')
+  missing.messages.data = missing.messages.data.filter(item => item.type !== 'idle')
+  assert.equal(projectOpenCodeV2NativeTurn(missing).state, 'unknown')
+  assert.equal(projectOpenCodeV2NativeTurn(missing).reason, 'terminal_snapshot_mismatch')
 })
 
 test('completed step/tool does not imply native execution terminal', () => {
