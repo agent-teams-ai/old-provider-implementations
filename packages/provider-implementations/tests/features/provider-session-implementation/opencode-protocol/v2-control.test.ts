@@ -63,6 +63,25 @@ test('bound native control translates both dialects without touching neighboring
   }
 })
 
+test('V2 control uses the same bounded session ID alphabet as its native driver', async t => {
+  const host = await peer(); t.after(host.close)
+  for (const nativeSessionId of ['ses_A-1', 'ses_A_1']) {
+    const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original',
+      version: '2.0.21', deadline: Date.now() + 10_000, nativeSessionId,
+      readPassword: () => 'TEST-private' })
+    t.after(control.dispose)
+    assert.deepEqual(await control.interrupt(), { interrupted: true })
+    assert.equal(host.effects.at(-1)?.path, '/api/session/' + nativeSessionId + '/interrupt?resume=false')
+  }
+  const before = host.calls()
+  for (const nativeSessionId of ['ses_A/foreign', 'ses_A%2Fforeign', 'ses_' + 'x'.repeat(257)]) {
+    assert.throws(() => createOpenCodeV2SessionControl({ endpoint: host.endpoint,
+      directory: '/TEST/original', version: '2.0.21', deadline: Date.now() + 10_000,
+      nativeSessionId, readPassword: () => 'TEST-private' }))
+  }
+  assert.equal(host.calls(), before)
+})
+
 test('native permission effect with lost response remains unknown and is not replayed', async t => {
   const host = await peer(); t.after(host.close); host.loseReceipt()
   const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original', version: '2.0.21',
