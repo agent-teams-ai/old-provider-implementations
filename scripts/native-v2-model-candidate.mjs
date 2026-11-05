@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { spawn, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
+import { createServer as createNetServer } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -316,13 +317,64 @@ try {
   receipt.modelTurn.sessionLog = { status: logResponse.status,
     visibleTypes: events.map(item => item?.type ?? null).slice(0, 40),
     watermark: sync?.seq ?? null, synced: sync?.type === 'log.synced' }
-  if (logResponse.status !== 200 || sync?.aggregateID !== session.id ||
-      !events.some(event => event?.type === 'session.execution.succeeded'))
-    throw Error('TEST_native_model_terminal_event_not_qualified')
-  receipt.steps.push('TEST_native_model_execution_terminal_verified')
-  const removed = await request(url, auth, { method: 'DELETE', timeoutMs: 12000 })
+  const nativeTerminalVisible = logResponse.status === 200 &&
+    sync?.aggregateID === session.id &&
+    events.some(event => event?.type === 'session.execution.succeeded')
+  // Preserve the exact TEST session and model history through a real process
+  // replacement, even when the native SSE terminal remains unqualified.
+  const priorAssistantID = assistant.id
+  const modelCallsBeforeCold = modelCalls
+  await closeNative()
+  if (!receipt.cleanup) throw Error('TEST_native_model_cold_stop_unconfirmed')
+  receipt.steps.push('TEST_native_model_cold_stop_confirmed')
+  const testPort = createNetServer()
+  await new Promise((ok, fail) => testPort.once('error', fail).listen(0, '127.0.0.1', ok))
+  const testAddress = testPort.address()
+  if (!testAddress || typeof testAddress === 'string') throw Error('TEST_model_restart_port_unavailable')
+  const coldPort = testAddress.port
+  await new Promise((ok, fail) => testPort.close(error => error ? fail(error) : ok()))
+  receipt.cleanup = false
+  native = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(coldPort)], {
+    cwd: directory, env, detached: true, stdio: ['ignore', 'ignore', 'ignore'],
+  })
+  if (!native.pid) throw Error('TEST_model_restart_spawn_failed')
+  await once(native, 'spawn')
+  if (sha256(readFileSync('/proc/' + native.pid + '/exe')) !== expectedDigest)
+    throw Error('TEST_model_restart_executable_digest_mismatch')
+  const coldEndpoint = 'http://127.0.0.1:' + coldPort
+  let coldReady = false
+  for (let i = 0; i < 60; i++) {
+    try {
+      const info = await request(coldEndpoint + '/api/info', auth, { timeoutMs: 2500 })
+      if (info.status === 200 && info.json?.version === version &&
+          info.json?.pid === native.pid) { coldReady = true; break }
+    } catch { /* new TEST process readiness only */ }
+    await delay(250)
+  }
+  if (!coldReady) throw Error('TEST_native_model_cold_restart_not_ready')
+  const coldURL = coldEndpoint + '/api/session/' + encodeURIComponent(session.id)
+  const coldSession = await request(coldURL, auth)
+  const coldPage = await request(coldURL + '/message?limit=200', auth)
+  const coldMessages = coldPage.json?.data
+  const originalUserRows = Array.isArray(coldMessages)
+    ? coldMessages.filter(item => item?.id === inputID && item?.type === 'user') : []
+  const preservedAssistants = Array.isArray(coldMessages)
+    ? coldMessages.filter(item => item?.id === priorAssistantID && item?.type === 'assistant' &&
+        JSON.stringify(item).includes(fakeMarker)) : []
+  receipt.coldModelTurn = { sessionRead: coldSession.status,
+    messageRead: coldPage.status, userRecords: originalUserRows.length,
+    preservedAssistantRecords: preservedAssistants.length,
+    modelCallsBeforeCold, modelCallsAfterCold: modelCalls }
+  if (coldSession.status !== 200 || coldSession.json?.data?.id !== session.id ||
+      coldPage.status !== 200 || originalUserRows.length !== 1 ||
+      preservedAssistants.length !== 1 || modelCalls !== modelCallsBeforeCold)
+    throw Error('TEST_native_model_cold_history_or_no_replay_failed')
+  receipt.steps.push('TEST_native_model_cold_history_retained_without_replay')
+  const removed = await request(coldURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('TEST_native_model_session_delete_failed')
   receipt.steps.push('TEST_native_model_session_removed')
+  if (!nativeTerminalVisible) throw Error('TEST_native_model_terminal_event_not_qualified')
+  receipt.steps.push('TEST_native_model_execution_terminal_verified')
 } catch (error) {
   failed = true
   receipt.failure = error instanceof Error ? error.message : String(error)
