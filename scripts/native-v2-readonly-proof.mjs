@@ -2,6 +2,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { createServer as createHttpServer } from 'node:http'
 import { createServer } from 'node:net'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -70,6 +71,52 @@ async function request(url, authorization, operation = {}) {
   const content = await response.text()
   if (Buffer.byteLength(content) > 2 * 1024 * 1024) throw Error('unbounded_server_response')
   return { status: response.status, content, contentType: response.headers.get('content-type') }
+}
+/** Drop only the HTTP acknowledgement after the native TEST server committed one
+ * synthetic input. The consumer must reconcile by ID and must not resubmit. */
+async function submitWithLostAck(nativeURL, authorization, payload) {
+  let forwarded = 0
+  let accepted = false
+  let proxyFailure
+  const proxy = createHttpServer((req, res) => {
+    if (req.method !== 'POST' || req.url !== '/TEST-drop-ack' || ++forwarded !== 1) {
+      res.writeHead(404).end()
+      return
+    }
+    req.resume()
+    void (async () => {
+      const response = await request(nativeURL, authorization, {
+        method: 'POST', body: payload, timeoutMs: 12000,
+      })
+      const data = response.status === 200 ? JSON.parse(response.content)?.data : undefined
+      if (data?.id !== payload.id) throw Error('native_lost_ack_input_not_admitted')
+      accepted = true
+      // Drop only this one client's acknowledgement; never kill the native owner.
+      res.destroy()
+    })().catch(error => {
+      proxyFailure = error instanceof Error ? error.message : String(error)
+      res.destroy()
+    })
+  })
+  await new Promise((ok, reject) =>
+    proxy.once('error', reject).listen(0, '127.0.0.1', ok))
+  let clientLost = false
+  try {
+    const address = proxy.address()
+    if (!address || typeof address === 'string') throw Error('lost_ack_proxy_not_bound')
+    try {
+      await request(`http://127.0.0.1:${address.port}/TEST-drop-ack`, undefined,
+        { method: 'POST', body: { receipt: 'TEST-only' }, timeoutMs: 15000 })
+    } catch {
+      clientLost = true
+    }
+  } finally {
+    proxy.closeAllConnections()
+    await new Promise((ok, reject) => proxy.close(error => error ? reject(error) : ok()))
+  }
+  if (!clientLost || !accepted || forwarded !== 1 || proxyFailure)
+    throw Error('native_lost_ack_injection_not_proved')
+  return { clientLost, nativePOSTCount: forwarded, nativeAccepted: accepted }
 }
 async function readNativeServerInfo(endpoint, authorization, expectedPid) {
   let response
@@ -308,6 +355,27 @@ try {
       queued[0]?.payload?.text !== synthetic.text || queued[0]?.delivery !== 'queue')
     throw Error('native_synthetic_inbox_not_single')
   receipt.steps.push('native_TEST_durable_synthetic_inbox_single')
+  // The native server admits this exact TEST ID, but a loopback proxy drops
+  // the response after the native 200. Reconcile by readback, NOT by retry.
+  const lostID = 'msg_TESTlostNativeAck'
+  const lostAck = await submitWithLostAck(syntheticURL, auth, {
+    id: lostID, text: 'TEST-once-after-lost-ack', delivery: 'queue', resume: false,
+  })
+  const inboxAfterLoss = await request(url + '/inbox', auth)
+  const rowsAfterLoss = inboxAfterLoss.status === 200 ? JSON.parse(inboxAfterLoss.content)?.data : undefined
+  if (!Array.isArray(rowsAfterLoss) || rowsAfterLoss.length !== 2 ||
+      rowsAfterLoss.filter(item => item.id === lostID && item.payload?.text === 'TEST-once-after-lost-ack').length !== 1)
+    throw Error('native_lost_ack_not_reconciled_by_original_id')
+  const cancelLost = await request(url + '/inbox/' + encodeURIComponent(lostID), auth,
+    { method: 'DELETE' })
+  if (cancelLost.status !== 204) throw Error('native_lost_ack_inbox_cleanup_failed')
+  const queueAfterLoss = await request(url + '/inbox', auth)
+  const originalOnly = queueAfterLoss.status === 200 ? JSON.parse(queueAfterLoss.content)?.data : undefined
+  if (!Array.isArray(originalOnly) || originalOnly.length !== 1 || originalOnly[0]?.id !== inboxID)
+    throw Error('native_lost_ack_cleanup_mutated_original')
+  receipt.lostAcknowledgement = { ...lostAck, readbackCount: 1, retryPOSTCount: 0,
+    cancelled: cancelLost.status }
+  receipt.steps.push('native_TEST_lost_ack_readback_without_replay')
   // Close the first TEST-owned process while preserving its private HOME/XDG store.
   await closeOwnServer()
   if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
