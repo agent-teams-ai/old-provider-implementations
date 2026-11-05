@@ -159,6 +159,28 @@ test('raw V2 instruction PUT enforces the durable value byte budget before crede
   }
 })
 
+test('typed V2 instruction preflight is not-submitted for over-budget and non-JSON values', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await peer(); t.after(host.close)
+    let credentialReads = 0
+    const control = createOpenCodeV2SessionControl({
+      endpoint: host.endpoint, directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+      readPassword: () => { credentialReads++; return 'TEST-private' },
+    })
+    t.after(control.dispose)
+    for (const value of ['X'.repeat(256 * 1024 + 1), undefined, Number.POSITIVE_INFINITY]) {
+      await assert.rejects(control.putInstruction('test.role', value), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      })
+    }
+    assert.equal(credentialReads, 0)
+    assert.equal(host.calls(), 0)
+    assert.deepEqual(host.effects, [])
+  }
+})
+
 test('invalid untyped permission decision is refused before any native read or mutation', async t => {
   const host = await peer(); t.after(host.close)
   const control = createOpenCodeV2SessionControl({ endpoint: host.endpoint, directory: '/TEST/original', version: '2.0.21',
