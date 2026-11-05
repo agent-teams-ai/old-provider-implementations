@@ -569,11 +569,16 @@ try {
           executed: event.data?.executed === true, toolName: typeof event.data?.name === 'string'
             ? event.data.name.slice(0, 80) : null,
         }))
-      const toolEffectObserved = toolOutcomes.some(part =>
-        part.name === 'read' && part.status === 'error') &&
+      const toolEffectObserved = toolOutcomes.length === 1 && toolOutcomes.some(part =>
+        part.name === 'read' && part.status === 'error' && part.errorType === 'permission.rejected' &&
+        part.executed === false) &&
         toolEventTypes.includes('session.tool.called') &&
         toolEventFailures.length === 1 &&
-        toolPermissionRejections.length === 1 && toolPermissionRejections[0].policyDenied === true &&
+        toolEventFailures[0].errorType === 'permission.rejected' &&
+        toolEventFailures[0].executed === false &&
+        toolPermissionRejections.length === 1 &&
+        toolPermissionRejections[0].name === 'Tool.Error' &&
+        toolPermissionRejections[0].policyDenied === true &&
         toolExecutorCalls === 1 && toolAuthorizedCalls === 0
       const assistantPartTypes = [...new Set(toolMessages
         .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
