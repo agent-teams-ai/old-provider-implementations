@@ -71,6 +71,24 @@ async function request(url, authorization, operation = {}) {
   if (Buffer.byteLength(content) > 2 * 1024 * 1024) throw Error('unbounded_server_response')
   return { status: response.status, content, contentType: response.headers.get('content-type') }
 }
+async function readNativeServerInfo(endpoint, authorization, expectedPid) {
+  let response
+  for (let i = 0; i < 80; i++) {
+    try {
+      const candidate = await request(endpoint + '/api/info', authorization)
+      if (candidate.status === 200) { response = candidate; break }
+    } catch {
+      // Readiness may lag spawn, but only an exact 200 API response is admitted.
+    }
+    await delay(250)
+  }
+  if (!response) throw Error('native_info_unavailable')
+  const value = JSON.parse(response.content)
+  if (value.version !== version || value.pid !== expectedPid ||
+      !Array.isArray(value.urls) || typeof value.paths?.tmp !== 'string')
+    throw Error('native_info_identity_mismatch')
+  return value
+}
 async function closeOwnServer() {
   if (!child?.pid) return
   // detached=true made an exclusive process group. No process owned by another user is targeted.
@@ -129,21 +147,7 @@ try {
   // Exact v2.0.21 contract from packages/protocol/src/groups/server.ts:
   // GET /api/info -> {version,pid,urls,paths}; OpenAPI lives at /openapi.json.
   // Legacy /global/health and /doc fall through to the HTML web app in V2.
-  let info
-  for (let i = 0; i < 80; i++) {
-    try {
-      const candidate = await request(endpoint + '/api/info', auth)
-      if (candidate.status === 200) { info = candidate; break }
-    } catch {
-      // Native readiness can lag the process-spawn event.
-    }
-    await delay(250)
-  }
-  if (!info) throw Error('native_info_unavailable')
-  const value = JSON.parse(info.content)
-  if (value.version !== version || value.pid !== child.pid ||
-      !Array.isArray(value.urls) || typeof value.paths?.tmp !== 'string')
-    throw Error('native_info_identity_mismatch')
+  const value = await readNativeServerInfo(endpoint, auth, child.pid)
   receipt.serverInfo = { version: value.version, pidMatchesOwnedProcess: true }
   receipt.steps.push('authenticated_loopback_native_info')
   const denied = await request(endpoint + '/api/info')
@@ -173,13 +177,42 @@ try {
   if (readData?.id !== id || readData?.location?.directory !== directory)
     throw Error('native_session_read_identity')
   receipt.steps.push('native_TEST_session_readback')
-  const removed = await request(url, auth, { method: 'DELETE', timeoutMs: 12000 })
+  // Close the first TEST-owned process while preserving its private HOME/XDG store.
+  await closeOwnServer()
+  if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
+  child = undefined
+  receipt.steps.push('native_TEST_cold_stop_confirmed')
+
+  // One replacement native process, new loopback port, same private persistence.
+  receipt.cleanup = false
+  const restartPort = await freePort()
+  child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(restartPort)], {
+    cwd: directory, env, detached: true, stdio: ['ignore', 'ignore', 'ignore'],
+  })
+  if (!child.pid) throw Error('native_restart_process_not_started')
+  await once(child, 'spawn')
+  const restartedDigest = hash(readFileSync(`/proc/${child.pid}/exe`))
+  if (restartedDigest !== receipt.binarySha256) throw Error('native_restart_executable_digest_mismatch')
+  const restoredEndpoint = `http://127.0.0.1:${restartPort}`
+  await readNativeServerInfo(restoredEndpoint, auth, child.pid)
+  receipt.restart = { executableSha256: restartedDigest, version, pidMatchesNewProcess: true }
+  receipt.steps.push('native_TEST_cold_restart_identity')
+
+  const restoredURL = restoredEndpoint + '/api/session/' + encodeURIComponent(id)
+  const restored = await request(restoredURL, auth)
+  if (restored.status !== 200) throw Error('native_cold_session_not_restored_' + restored.status)
+  const restoredData = JSON.parse(restored.content)?.data
+  if (restoredData?.id !== id || restoredData?.location?.directory !== directory)
+    throw Error('native_cold_session_identity_mismatch')
+  receipt.steps.push('native_TEST_session_survived_cold_restart')
+
+  const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
   receipt.steps.push('native_TEST_session_removed')
-  const missing = await request(url, auth)
+  const missing = await request(restoredURL, auth)
   if (missing.status !== 404) throw Error('native_session_post_delete_visible')
   receipt.sessionLifecycle = { created: created.status, read: read.status,
-    deleted: removed.status, absent: missing.status, idPrefix: 'ses_' }
+    restored: restored.status, deleted: removed.status, absent: missing.status, idPrefix: 'ses_' }
   receipt.steps.push('native_TEST_session_absence_verified')
   // No provider prompt, external files, model credentials, permission grant, or production admission.
 } catch (error) {
