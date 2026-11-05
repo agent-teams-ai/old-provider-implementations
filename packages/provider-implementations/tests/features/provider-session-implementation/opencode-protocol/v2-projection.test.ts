@@ -94,12 +94,75 @@ test('native tool running and failure remain technical observations', () => {
   assistant(failed).data = { ...assistant(failed).data, content: [{ type: 'tool', id: 'TEST-tool', name: 'agent-teams_task_done', executed: false,
     state: { status: 'error', input: toolInput, error } }] }
   failed.log.events[6]!.type = 'session.tool.failed'
-  failed.log.events[6]!.data = { sessionID, assistantMessageID: assistantID, id: 'TEST-tool', error }
+  failed.log.events[6]!.data = { sessionID, assistantMessageID: assistantID, id: 'TEST-tool', error, executed: false }
   const projected = projectOpenCodeV2NativeTurn(failed)
   assert.equal(projected.state, 'succeeded')
   assert.equal(projected.tools[0]?.status, 'error')
 })
 
+
+test('tool execution evidence combines durable called and terminal flags without losing effects', () => {
+  for (const pin of ['2.0.0', '2.0.21', '2.1.4'] as const) {
+    // Native message-updater cumulatively ORs executed bits. If Called says
+    // executed=true, a later false terminal cannot erase that evidence.
+    const calledExecuted = cut(pin)
+    calledExecuted.log.events[5]!.data.executed = true
+    const parts = assistant(calledExecuted).data.content as Record<string, unknown>[]
+    const tool = parts.find(part => part.type === 'tool')!
+    tool.executed = true
+    const accepted = projectOpenCodeV2NativeTurn(calledExecuted)
+    assert.equal(accepted.state, 'succeeded')
+    assert.equal(accepted.tools[0]?.executed, true)
+
+    // Both log and projected message must agree with the OR of the durable
+    // Called/Success bits; a false tool snapshot must not claim no execution.
+    const falseSnapshot = structuredClone(calledExecuted)
+    const falseParts = assistant(falseSnapshot).data.content as Record<string, unknown>[]
+    falseParts.find(part => part.type === 'tool')!.executed = false
+    const inconsistent = projectOpenCodeV2NativeTurn(falseSnapshot)
+    assert.equal(inconsistent.state, 'unknown')
+    assert.equal(inconsistent.reason, 'tool_success_snapshot_mismatch')
+    assert.deepEqual(inconsistent.tools, [])
+
+    const terminalExecuted = cut(pin)
+    terminalExecuted.log.events[6]!.data.executed = true
+    const contradicted = projectOpenCodeV2NativeTurn(terminalExecuted)
+    assert.equal(contradicted.state, 'unknown')
+    assert.equal(contradicted.reason, 'tool_success_snapshot_mismatch')
+  }
+})
+
+test('failed native tool cannot erase actual execution from durable events', () => {
+  const makeFailure = () => {
+    const value = cut()
+    const error = { type: 'TEST failed', message: 'TEST rejected result' }
+    assistant(value).data = { ...assistant(value).data, content: [{
+      type: 'tool', id: 'TEST-tool', name: 'agent-teams_task_done', executed: false,
+      state: { status: 'error', input: toolInput, error },
+    }] }
+    value.log.events[6]!.type = 'session.tool.failed'
+    value.log.events[6]!.data = { sessionID, assistantMessageID: assistantID, id: 'TEST-tool',
+      error, executed: false }
+    return value
+  }
+  const base = makeFailure()
+  assert.equal(projectOpenCodeV2NativeTurn(base).tools[0]?.executed, false)
+  for (const index of [5, 6]) {
+    const inconsistent = makeFailure()
+    inconsistent.log.events[index]!.data.executed = true
+    const projected = projectOpenCodeV2NativeTurn(inconsistent)
+    assert.equal(projected.state, 'unknown')
+    assert.equal(projected.reason, 'tool_failure_snapshot_mismatch')
+    assert.deepEqual(projected.tools, [])
+  }
+  const cumulative = makeFailure()
+  cumulative.log.events[5]!.data.executed = true
+  ;(assistant(cumulative).data.content as Record<string, unknown>[])[0]!.executed = true
+  const projected = projectOpenCodeV2NativeTurn(cumulative)
+  assert.equal(projected.state, 'succeeded')
+  assert.equal(projected.tools[0]?.status, 'error')
+  assert.equal(projected.tools[0]?.executed, true)
+})
 
 test('trimmed or absent native history cannot become input-not-delivered pending', () => {
   const value = cut()
