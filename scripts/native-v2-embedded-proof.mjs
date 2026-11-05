@@ -231,9 +231,20 @@ try {
     const projection = await import('../packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-turn-projection.ts')
     const encodedFrames = terminalLog.map(event => 'data: ' + JSON.stringify(event) + '\n\n').join('')
     const decodedLog = codecs.decodeV2Log(encodedFrames, original.id, workspace)
-    const decodedMessages = codecs.decodeV2MessagePage({
-      data: messages, cursor: { previous: null, next: null },
-    }, original.id)
+    // Use real SDK HTTP pagination metadata, not a synthetic cursor fixture.
+    // The V2 API returns next/previous on every nonempty page; consuming the
+    // final next cursor must yield an empty page without more cursors.
+    const decodedMessages = codecs.decodeV2MessagePage(transcript, original.id)
+    if (decodedMessages.data.length !== messages.length ||
+        decodedMessages.next === null || decodedMessages.previous === null)
+      throw Error('TEST_embedded_native_first_page_cursor_invalid')
+    const terminalPage = codecs.decodeV2MessagePage(await host.message.list({
+      sessionID: original.id, limit: 200, cursor: decodedMessages.next,
+    }), original.id)
+    if (terminalPage.data.length !== 0 || terminalPage.next !== null ||
+        terminalPage.previous !== null)
+      throw Error('TEST_embedded_native_pagination_not_exhausted')
+    receipt.steps.push('TEST_embedded_native_message_pagination_verified')
     const projected = projection.projectOpenCodeV2NativeTurn({
       pin: '2.0.21', sessionID: original.id, nativeInputID: inputID,
       originalText: inputText, beforeCursor: 0,
