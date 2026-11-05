@@ -287,6 +287,34 @@ try {
       loggedEvents: events.length, originalInputBound: true,
       assistantPresent: true, idlePresent: idleRows.length === 1 }
     receipt.steps.push('TEST_embedded_durable_model_terminal_qualified')
+    // A committed input ID is scoped to its original session, including on
+    // this embedded durable server. A second TEST session cannot adopt it or
+    // trigger another model request after the original terminal.
+    const foreignSession = await host.sessions.create({ location: { directory: workspace } })
+    if (typeof foreignSession?.id !== 'string' || foreignSession.id === original.id)
+      throw Error('TEST_embedded_foreign_session_identity')
+    const beforeForeignCalls = modelCalls
+    let refusedID = false
+    try {
+      await host.sessions.prompt({ sessionID: foreignSession.id, id: inputID,
+        text: 'TEST foreign reuse forbidden', delivery: 'queue', resume: false })
+    } catch (error) {
+      if (error?._tag !== 'ConflictError' || error?.resource !== inputID)
+        throw Error('TEST_embedded_foreign_collision_wrong_failure')
+      refusedID = true
+    }
+    const foreignInbox = await host.sessions.inbox.list({ sessionID: foreignSession.id })
+    const foreignMessages = (await host.message.list({
+      sessionID: foreignSession.id, limit: 200,
+    }))?.data
+    if (!refusedID || !Array.isArray(foreignInbox) || foreignInbox.length !== 0 ||
+        !Array.isArray(foreignMessages) || foreignMessages.length !== 0 ||
+        modelCalls !== beforeForeignCalls)
+      throw Error('TEST_embedded_foreign_input_adopted_or_effect')
+    await host.sessions.remove({ sessionID: foreignSession.id })
+    receipt.crossSessionIdempotency = { conflict: 'ConflictError', foreignInbox: 0,
+      foreignMessages: 0, extraModelCalls: 0 }
+    receipt.steps.push('TEST_embedded_foreign_input_id_denied_without_model')
     const frozenIDs = events.map(event => event.id)
     const beforeColdCalls = modelCalls
     await host.close()
