@@ -102,7 +102,8 @@ try {
   receipt.steps.push('native_ELF_and_SHA256_recorded')
   const reported = execFileSync(binary, ['--version'], { cwd: directory, env, encoding: 'utf8', timeout: 12000 }).trim()
   receipt.reportedVersion = reported
-  if (reported !== version) throw Error('native_version_mismatch')
+  // Exact observed official CLI prefix; never use substring or semver-coercion matching.
+  if (reported !== `opencode v${version}`) throw Error('native_version_mismatch')
   receipt.steps.push('exact_native_version')
   const port = await freePort()
   child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
