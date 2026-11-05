@@ -27,6 +27,7 @@ const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedd
 let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
+let toolCallIssued = false, toolRequestProfiles = []
 let toolExecutorCalls = 0, toolAuthorizedCalls = 0
 let toolPluginSetupCalls = 0, toolRegisteredNames = []
 let toolContextCalls = 0, toolContextNames = []
@@ -200,13 +201,23 @@ try {
             model: modelID, created: 1 }
           const chunk = (delta, finish_reason = null) => ({ ...base,
             choices: [{ index: 0, delta, finish_reason }] })
-          const toolRequest = toolPhase && ++toolModelRequests === 1
-          if (toolRequest) {
-            // Capture only bounded tool names, never prompts, args, credentials or canary text.
-            advertisedToolNames = Array.isArray(value.tools) ? value.tools
+          let toolRequest = false
+          if (toolPhase) {
+            toolModelRequests++
+            // Auxiliary title or summary generations can race the primary turn:
+            // never send a tool-call-shaped response without an advertised tool.
+            const names = Array.isArray(value.tools) ? value.tools
               .map(tool => tool?.function?.name ?? tool?.name)
               .filter(name => typeof name === 'string')
               .slice(0, 64).map(name => name.slice(0, 80)) : []
+            if (toolRequestProfiles.length < 12) toolRequestProfiles.push({
+              ordinal: toolModelRequests, tools: names,
+              messageCount: Array.isArray(value.messages) ? value.messages.length : null,
+              toolChoice: typeof value.tool_choice === 'string' ? value.tool_choice : null,
+            })
+            if (names.includes('read')) advertisedToolNames = names
+            toolRequest = names.includes('read') && !toolCallIssued
+            if (toolRequest) toolCallIssued = true
           }
           const frames = (toolRequest ? [
             chunk({ role: 'assistant' }),
@@ -555,7 +566,8 @@ try {
       const advertisedReadTool = advertisedToolNames.includes('read')
       receipt.toolPolicyDiscovery = {
         attemptedModelTool: true, modelRequests: toolModelRequests,
-        advertisedReadTool, advertisedToolNames, assistantPartTypes, toolOutcomes,
+        advertisedReadTool, advertisedToolNames, toolRequestProfiles, toolCallIssued,
+        assistantPartTypes, toolOutcomes,
         toolEventTypes, toolPluginSetupCalls, toolRegisteredNames,
         toolContextCalls, toolContextNames, toolExecutorCalls, toolAuthorizedCalls,
         toolEffectObserved, policyDenialUnverified: true,
