@@ -7,6 +7,7 @@ on:
       - scripts/native-v2-model-candidate.mjs
       - scripts/verify-native-v2-cli-hold.mjs
       - scripts/native-v2-embedded-proof.mjs
+      - scripts/verify-native-v2-embedded-floor-hold.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
@@ -30,13 +31,16 @@ jobs:
           - { os: ubuntu-24.04, proof: embedded }
           - { os: ubuntu-24.04, proof: embedded-model }
           - { os: ubuntu-24.04, proof: embedded-floor }
-          - { os: ubuntu-24.04, proof: embedded-floor-model }
+          - { os: ubuntu-24.04, proof: embedded-target }
+          - { os: ubuntu-24.04, proof: embedded-target-model }
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
           - { os: macos-15-arm64, proof: embedded }
           - { os: macos-15-arm64, proof: embedded-model }
           - { os: windows-2022, proof: embedded }
           - { os: windows-2022, proof: embedded-model }
+          - { os: windows-2022, proof: embedded-target }
+          - { os: windows-2022, proof: embedded-target-model }
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -52,6 +56,7 @@ jobs:
           node --check scripts/native-v2-model-candidate.mjs
           node --check scripts/verify-native-v2-cli-hold.mjs
           node --check scripts/native-v2-embedded-proof.mjs
+          node --check scripts/verify-native-v2-embedded-floor-hold.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
         shell: bash
@@ -75,7 +80,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/opencode-v2-embedded"
           npm install --prefix "$RUNNER_TEMP/opencode-v2-embedded" --no-save \
-            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || '2.0.21' }}
+            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-embedded" --depth=0 @opencode/sdk
       - name: TEST native binary, authenticated API and disposable session lifecycle
         if: matrix.proof == 'lifecycle'
@@ -99,13 +104,31 @@ jobs:
             exit 1
           fi
           node scripts/verify-native-v2-cli-hold.mjs
+      - name: Assert published SDK 2.0.0 Node ESM HOLD (expected negative control)
+        if: matrix.proof == 'embedded-floor'
+        shell: bash
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-floor-proof.json
+          OPENCODE_V2_EMBEDDED_VERSION: '2.0.0'
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: '0'
+        run: |
+          set +e
+          node scripts/native-v2-embedded-proof.mjs
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Published floor SDK behavior changed; requalify before any adoption"
+            exit 1
+          fi
+          node scripts/verify-native-v2-embedded-floor-hold.mjs
       - name: TEST embedded V2 persistent event log through cold host restart
-        if: startsWith(matrix.proof, 'embedded')
+        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor'
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
           OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ endsWith(matrix.proof, '-model') && '1' || '0' }}
-          OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || '2.0.21' }}
+          OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
         run: node scripts/native-v2-embedded-proof.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
@@ -120,6 +143,7 @@ jobs:
             native-v2-embedded-proof.json
             native-v2-embedded-model-proof.json
             native-v2-embedded-floor-proof.json
-            native-v2-embedded-floor-model-proof.json
+            native-v2-embedded-target-proof.json
+            native-v2-embedded-target-model-proof.json
             ${{ runner.temp }}/opencode-v2-embedded/package-lock.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
