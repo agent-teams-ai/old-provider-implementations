@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { createServer } from 'node:http'
 import { setTimeout as delay } from 'node:timers/promises'
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
@@ -20,10 +20,13 @@ let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
+// Preserve only the executable lookup path (case-insensitive on Windows) and locale.
+const safePath = process.env.PATH ?? process.env.Path ?? ''
 for (const key of Object.keys(process.env)) {
-  if (!['PATH', 'LANG', 'TZ'].includes(key)) delete process.env[key]
+  if (!['LANG', 'TZ'].includes(key)) delete process.env[key]
 }
 Object.assign(process.env, {
+  PATH: safePath,
   HOME: join(root, 'home'),
   XDG_CONFIG_HOME: join(root, 'config'),
   XDG_CACHE_HOME: join(root, 'cache'),
@@ -58,7 +61,7 @@ async function readLog(sdk, sessionID) {
   return events
 }
 try {
-  if (!prefix?.startsWith('/')) throw Error('TEST_embedded_prefix_not_absolute')
+  if (typeof prefix !== 'string' || !isAbsolute(prefix)) throw Error('TEST_embedded_prefix_not_absolute')
   const packageRoot = realpathSync(join(prefix, 'node_modules', '@opencode', 'sdk'))
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
   if (manifest.name !== '@opencode/sdk' || manifest.version !== '2.0.21')
