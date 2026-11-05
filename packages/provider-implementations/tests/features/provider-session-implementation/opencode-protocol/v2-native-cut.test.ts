@@ -148,3 +148,36 @@ test('native finite cut accepts 4096 events plus synced frame and rejects a 4097
     } else {await assert.rejects(work, /frame_limit/)}
   }
 })
+
+test('direct read-cut rejects malformed binding before any native fetch', async () => {
+  // Unlike DriverConfig, this public read-only cut accepts an injected
+  // transport. Invalid serialized profile data must not reach that transport.
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    const valid = { endpoint: 'http://127.0.0.1:12345', directory: '/TEST/native-cut', sessionID, pin }
+    const malformed: readonly Record<string, unknown>[] = [
+      { endpoint: ['http://127.0.0.1:12345'] },
+      { endpoint: 'http://127.0.0.1:65536' },
+      { endpoint: 'http://127.0.0.1:12345678901234567890' },
+      { endpoint: 'http://127.0.0.1:00080' },
+      { endpoint: 12345 },
+      { directory: ['/TEST/native-cut'] },
+      { directory: 42 },
+      { directory: 'x'.repeat(8193) },
+    ]
+    for (const overrides of malformed) {
+      let requests = 0
+      const transport = {
+        check() { throw new Error('transport_should_not_be_checked') },
+        async fetch(_request: RequestInfo | URL, _init?: RequestInit): Promise<Response> {
+          requests++
+          throw new Error('native_fetch_must_not_run')
+        },
+      }
+      await assert.rejects(readOpenCodeV2NativeCut(transport,
+        { ...valid, ...overrides } as unknown as Parameters<typeof readOpenCodeV2NativeCut>[1],
+        { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+      /invalid_native_read_binding/)
+      assert.equal(requests, 0)
+    }
+  }
+})
