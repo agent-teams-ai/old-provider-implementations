@@ -10,9 +10,12 @@ import { tmpdir } from 'node:os'
 const receiptPath = resolve(process.env.OPENCODE_V2_EMBEDDED_RECEIPT || 'native-v2-embedded-proof.json')
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const modelMode = process.env.OPENCODE_V2_EMBEDDED_MODEL_PROOF === '1'
+const toolMode = process.env.OPENCODE_V2_EMBEDDED_TOOL_PROOF === '1'
 const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
 const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
 if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
+// Only published V2.1.4 defines the hard-deny `policies` contract.
+if (toolMode && (!modelMode || pinnedVersion !== '2.1.4')) throw Error('TEST_tool_policy_requires_V2_1_4_model')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
   qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
@@ -22,6 +25,8 @@ for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'tem
 const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedded.sqlite')
 let host, fake
 let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
+let toolPhase = false, toolModelRequests = 0
+const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
 // Preserve only the executable lookup path (case-insensitive on Windows) and locale.
@@ -145,11 +150,16 @@ try {
             model: modelID, created: 1 }
           const chunk = (delta, finish_reason = null) => ({ ...base,
             choices: [{ index: 0, delta, finish_reason }] })
-          const frames = [
+          const toolRequest = toolPhase && ++toolModelRequests === 1
+          const frames = (toolRequest ? [
+            chunk({ role: 'assistant' }),
+            chunk({ tool_calls: [{ index: 0, id: 'call_TEST_external_read', type: 'function',
+              function: { name: 'read', arguments: JSON.stringify({ filePath: join(root, 'outside-canary.txt') }) } }] }),
+            chunk({}, 'tool_calls'),
+          ] : [
             chunk({ role: 'assistant' }), chunk({ content: marker }), chunk({}, 'stop'),
-            { ...base, choices: [], usage: { prompt_tokens: 20,
-              completion_tokens: 8, total_tokens: 28 } },
-          ].map(value => 'data: ' + JSON.stringify(value))
+          ]).concat([{ ...base, choices: [], usage: { prompt_tokens: 20,
+            completion_tokens: 8, total_tokens: 28 } }]).map(value => 'data: ' + JSON.stringify(value))
           response.writeHead(200, { 'content-type': 'text/event-stream' })
           response.end([...frames, 'data: [DONE]'].join('\n\n') + '\n\n')
         } catch (error) {
@@ -169,10 +179,13 @@ try {
           settings: { baseURL: 'http://127.0.0.1:' + address.port + '/v1',
             apiKey: 'TEST-non-secret' },
           models: { [modelID]: { name: 'TEST local only',
-            capabilities: { tools: false, input: ['text'], output: ['text'] },
+            capabilities: { tools: toolMode, input: ['text'], output: ['text'] },
             limit: { context: 8192, output: 1024 } } },
         },
       },
+      // The V2.1.4 policy must win over deliberately permissive session rules;
+      // older pinned V2.0.21 cannot be treated as supporting this contract.
+      ...(toolMode ? { policies: [{ action: 'tool.use', resource: '*', effect: 'deny' }] } : {}),
     })
     receipt.steps.push('TEST_embedded_loopback_model_configured')
   }
@@ -420,6 +433,48 @@ try {
         modelCalls !== beforeColdCalls)
       throw Error('TEST_embedded_model_cold_lineage_or_no_replay_failed')
     receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
+    if (toolMode) {
+      // Native V2.1.4 TEST only: a local model attempts an actual read outside
+      // workspace while the session grants it, but the hard policy denies all
+      // tool.use. Never read or expose the canary through this harness.
+      writeFileSync(join(root, 'outside-canary.txt'), toolCanary, { mode: 0o600 })
+      const toolSession = await host.sessions.create({
+        location: { directory: workspace }, agent: 'build',
+        model: { providerID: 'test-native', id: 'TEST-native-model' },
+        permissions: [
+          { action: 'external_directory', resource: '*', effect: 'allow' },
+          { action: 'read', resource: '*', effect: 'allow' },
+        ],
+      })
+      toolPhase = true
+      const admittedTool = await host.sessions.prompt({
+        sessionID: toolSession.id, id: 'msg_TESTpolicyTool',
+        text: 'TEST ask to read the outside canary', delivery: 'queue', resume: true,
+      })
+      if (admittedTool?.id !== 'msg_TESTpolicyTool')
+        throw Error('TEST_policy_tool_prompt_not_admitted')
+      let toolLog
+      for (let attempt = 0; attempt < 80; attempt++) {
+        toolLog = await readLog(host, toolSession.id)
+        if (toolLog.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type))) break
+        await delay(250)
+      }
+      const toolMessages = (await host.message.list({ sessionID: toolSession.id, limit: 200 }))?.data
+      const toolHistory = JSON.stringify({ toolLog, toolMessages })
+      if (toolModelRequests < 1 || !toolLog?.some(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)) ||
+          !Array.isArray(toolMessages) || toolHistory.includes(toolCanary))
+        throw Error('TEST_policy_tool_not_executed_or_canary_leaked')
+      // These receipts are discovery, not a Host permission certificate: inspect
+      // the concrete tool/permission outcomes before marking a tool DENY PASS.
+      receipt.toolPolicyDiscovery = {
+        attemptedModelTool: true, modelRequests: toolModelRequests,
+        terminal: toolLog.filter(event => /^session\.execution\.(?:failed|succeeded)$/.test(event.type)).map(event => event.type),
+        canaryLeak: false, qualified: false,
+      }
+      receipt.steps.push('TEST_embedded_tool_policy_discovery_no_canary_leak')
+      await host.sessions.remove({ sessionID: toolSession.id })
+      toolPhase = false
+    }
     await host.sessions.remove({ sessionID: original.id })
   }
   await host.sessions.remove({ sessionID: session.id })
