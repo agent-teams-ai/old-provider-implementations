@@ -3,6 +3,10 @@ name: OpenCode V2 native E2E qualification (TEST only)
 on:
   pull_request:
     paths:
+      # Source changes to the private V2 wire, decoder or projection must
+      # invalidate the native contract proof, not only harness edits.
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-*.ts'
+      - 'packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-*.ts'
       - scripts/native-v2-readonly-proof.mjs
       - scripts/native-v2-model-candidate.mjs
       - scripts/verify-native-v2-cli-hold.mjs
