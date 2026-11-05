@@ -229,6 +229,25 @@ try {
       requests[0]?.id !== askedData.id || requests[0]?.sessionID !== id)
     throw Error('native_pending_permission_not_session_scoped')
   receipt.steps.push('native_TEST_permission_ask_pending_owned')
+  // A foreign TEST session may not inspect or grant this pending request.
+  const otherSession = await request(endpoint + '/api/session', auth, { method: 'POST',
+    timeoutMs: 12000, body: { location: { directory }, permissions: testPermissions } })
+  const otherID = otherSession.status === 200 ? JSON.parse(otherSession.content)?.data?.id : undefined
+  if (typeof otherID !== 'string' || otherID === id || !otherID.startsWith('ses_'))
+    throw Error('native_second_TEST_session_not_distinct')
+  const otherURL = endpoint + '/api/session/' + encodeURIComponent(otherID)
+  const foreignPermissionURL = otherURL + '/permission/' + encodeURIComponent(askedData.id)
+  const foreignPermissionRead = await request(foreignPermissionURL, auth)
+  if (foreignPermissionRead.status !== 404) throw Error('native_foreign_permission_exposed')
+  const foreignPermissionReply = await request(foreignPermissionURL + '/reply', auth, {
+    method: 'POST', body: { decision: 'always' },
+  })
+  if (foreignPermissionReply.status !== 404) throw Error('native_foreign_permission_grant_accepted')
+  const ownedAfterForeign = await request(pendingURL, auth)
+  const retained = ownedAfterForeign.status === 200 ? JSON.parse(ownedAfterForeign.content)?.data : undefined
+  if (!Array.isArray(retained) || retained.length !== 1 || retained[0]?.id !== askedData.id)
+    throw Error('native_foreign_permission_changed_owner')
+  receipt.steps.push('native_TEST_foreign_permission_read_and_grant_rejected')
   const replyURL = pendingURL + '/' + encodeURIComponent(askedData.id) + '/reply'
   const rejected = await request(replyURL, auth, { method: 'POST', body: { decision: 'reject' } })
   if (rejected.status !== 204) throw Error('native_permission_reject_failed')
@@ -268,12 +287,6 @@ try {
 
   // An inbox ID belongs to exactly one session. Never allow a foreign session
   // to adopt the first session's durable input after a retry or restore.
-  const otherSession = await request(endpoint + '/api/session', auth, { method: 'POST',
-    timeoutMs: 12000, body: { location: { directory }, permissions: testPermissions } })
-  const otherID = otherSession.status === 200 ? JSON.parse(otherSession.content)?.data?.id : undefined
-  if (typeof otherID !== 'string' || otherID === id || !otherID.startsWith('ses_'))
-    throw Error('native_second_TEST_session_not_distinct')
-  const otherURL = endpoint + '/api/session/' + encodeURIComponent(otherID)
   const foreign = await request(otherURL + '/synthetic', auth, { method: 'POST',
     timeoutMs: 12000, body: { ...synthetic, text: 'TEST-foreign-owner-collision' } })
   if (foreign.status !== 409) throw Error('native_cross_session_inbox_id_accepted')
@@ -285,6 +298,8 @@ try {
   if (removedOther.status !== 204) throw Error('native_second_TEST_session_cleanup_failed')
   receipt.crossSessionIdempotency = { changedDuplicate: changedDuplicate.status,
     preservedFirstWriter: true, foreignCollision: foreign.status, foreignInboxItems: 0,
+    foreignPermissionRead: foreignPermissionRead.status,
+    foreignPermissionReply: foreignPermissionReply.status,
     foreignSessionCleanup: removedOther.status }
   receipt.steps.push('native_TEST_first_writer_wins_and_foreign_collision_denied')
   const queue = await request(url + '/inbox', auth)
@@ -337,6 +352,18 @@ try {
       restoredItems[0]?.id !== inboxID || restoredItems[0]?.payload?.text !== synthetic.text)
     throw Error('native_synthetic_inbox_lost_on_restart')
   receipt.steps.push('native_TEST_synthetic_inbox_survived_cold_restart')
+  const replayAfterRestart = await request(restoredURL + '/synthetic', auth, {
+    method: 'POST', timeoutMs: 12000, body: { ...synthetic, text: 'TEST-replay-after-cold-restart-ignored' },
+  })
+  const restoredFirstWriter = replayAfterRestart.status === 200 ? JSON.parse(replayAfterRestart.content)?.data : undefined
+  if (restoredFirstWriter?.id !== inboxID || restoredFirstWriter?.payload?.text !== synthetic.text)
+    throw Error('native_cold_replay_replaced_admitted_input')
+  const checkQueueAfterReplay = await request(restoredURL + '/inbox', auth)
+  const queueAfterReplay = checkQueueAfterReplay.status === 200 ? JSON.parse(checkQueueAfterReplay.content)?.data : undefined
+  if (!Array.isArray(queueAfterReplay) || queueAfterReplay.length !== 1 ||
+      queueAfterReplay[0]?.id !== inboxID || queueAfterReplay[0]?.payload?.text !== synthetic.text)
+    throw Error('native_cold_replay_duplicated_inbox')
+  receipt.steps.push('native_TEST_first_writer_retained_after_cold_replay')
   const cancelled = await request(restoredURL + '/inbox/' + encodeURIComponent(inboxID), auth,
     { method: 'DELETE' })
   if (cancelled.status !== 204) throw Error('native_synthetic_inbox_cancel_failed')
@@ -345,6 +372,7 @@ try {
       JSON.parse(empty.content).data.length !== 0)
     throw Error('native_synthetic_inbox_not_cleared')
   receipt.syntheticInbox = { created: admitted.status, idempotentRepeat: repeated.status,
+    changedReplay: changedDuplicate.status, replayAfterRestart: replayAfterRestart.status,
     persistedItems: 1, cancel: cancelled.status, remaining: 0 }
   receipt.steps.push('native_TEST_synthetic_inbox_cancelled')
 
