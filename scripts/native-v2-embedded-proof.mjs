@@ -15,8 +15,10 @@ const toolMode = process.env.OPENCODE_V2_EMBEDDED_TOOL_PROOF === '1'
 const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
 const pinnedVersion = process.env.OPENCODE_V2_EMBEDDED_VERSION || '2.0.21'
 if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unqualified_embedded_version')
-// Only published V2.1.4 defines the hard-deny `policies` contract.
-if (toolMode && (!modelMode || pinnedVersion !== '2.1.4')) throw Error('TEST_tool_policy_requires_V2_1_4_model')
+// V2.0.21 exercises explicit session deny. Only V2.1.4 has top-level
+// hard-deny `policies`; these are separate tests, never a fallback.
+if (toolMode && (!modelMode || !['2.0.21', '2.1.4'].includes(pinnedVersion)))
+  throw Error('TEST_tool_policy_requires_supported_embedded_model')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
   qualified: false, steps: [], cleanup: false }
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
@@ -133,7 +135,8 @@ try {
                 toolPermissionRejections.push({
                   name: typeof error?.name === 'string' ? error.name.slice(0, 80) : null,
                   policyDenied: typeof error?.message === 'string' &&
-                    error.message.includes('Blocked by configuration policy'),
+                    error.message.includes(pinnedVersion === '2.1.4'
+                      ? 'Blocked by configuration policy' : 'Permission denied: external_directory'),
                 })
                 throw error
               }
@@ -514,15 +517,16 @@ try {
       throw Error('TEST_embedded_model_cold_lineage_or_no_replay_failed')
     receipt.steps.push('TEST_embedded_model_durable_lineage_survived_cold_restart')
     if (toolMode) {
-      // Native V2.1.4 TEST only: a local model attempts an actual read outside
-      // workspace while session rules grant it, but the hard policy denies
-      // external_directory. Never read or expose the canary through this harness.
+      // TEST-only: the model requests an outside-workspace read which never
+      // opens the canary. V2.0.21 must deny via explicit session rules;
+      // V2.1.4 deliberately allows those rules and relies on hard policy.
       writeFileSync(join(root, 'outside-canary.txt'), toolCanary, { mode: 0o600 })
       const toolSession = await host.sessions.create({
         location: { directory: workspace }, agent: 'build',
         model: { providerID: 'test-native', id: 'TEST-native-model' },
         permissions: [
-          { action: 'external_directory', resource: '*', effect: 'allow' },
+          { action: 'external_directory', resource: '*',
+            effect: pinnedVersion === '2.1.4' ? 'allow' : 'deny' },
           { action: 'read', resource: '*', effect: 'allow' },
         ],
       })
@@ -587,7 +591,9 @@ try {
         .filter(type => typeof type === 'string'))].slice(0, 16)
       const advertisedReadTool = advertisedToolNames.includes('read')
       receipt.toolPolicyDiscovery = {
-        attemptedModelTool: true, modelRequests: toolModelRequests,
+        attemptedModelTool: true,
+        enforcementSource: pinnedVersion === '2.1.4' ? 'hard-config-policy' : 'session-explicit-deny',
+        modelRequests: toolModelRequests,
         advertisedReadTool, advertisedToolNames, toolRequestProfiles, toolCallIssued,
         assistantPartTypes, toolOutcomes,
         toolEventTypes, toolEventFailures, toolPluginSetupCalls, toolRegisteredNames,
