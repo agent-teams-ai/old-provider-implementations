@@ -53,9 +53,9 @@ function ownedStartTicks(pid) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error }
   const commandEnd = stat.lastIndexOf(') ')
   if (commandEnd < 0) throw Error('TEST_invalid_native_process_stat')
-  const fields = stat.slice(commandEnd + 2).trim().split(/\\s+/)
+  const fields = stat.slice(commandEnd + 2).trim().split(/\s+/)
   const ticks = fields[19]
-  if (!/^\\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid ||
+  if (!/^\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid ||
       Number(fields[3]) !== pid)
     throw Error('TEST_native_process_group_not_owned')
   return ticks
