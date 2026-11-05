@@ -402,6 +402,39 @@ try {
   }
   receipt.nativeRuleOrdering = nativeRuleResults
   receipt.steps.push('native_TEST_last_matching_rule_allow_deny_ask_evaluated')
+  // Pinned V2.0.21 Session.log is an SSE read of session events filtered from
+  // a shared durable bus; never require contiguous visible sequence numbers.
+  const nativeLogPath = '/api/experimental/session/' + encodeURIComponent(id) + '/log?follow=false'
+  const logResponse = await request(endpoint + nativeLogPath, auth, { timeoutMs: 12000 })
+  if (logResponse.status !== 200 || !logResponse.contentType?.startsWith('text/event-stream'))
+    throw Error('native_session_log_unavailable')
+  const logFrames = logResponse.content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .split('\n\n').flatMap(frame => {
+      const data = frame.split('\n').filter(line => line.startsWith('data:'))
+        .map(line => line.slice(5).trimStart()).join('\n')
+      return data ? [JSON.parse(data)] : []
+    })
+  const syncedLog = logFrames.at(-1)
+  const nativeEvents = logFrames.slice(0, -1)
+  if (syncedLog?.type !== 'log.synced' || syncedLog.aggregateID !== id ||
+      nativeEvents.length === 0 || nativeEvents[0]?.type !== 'session.created')
+    throw Error('native_session_log_missing_prefix_or_sync')
+  let lastVisibleSeq = -1
+  let observedGaps = 0
+  for (const event of nativeEvents) {
+    const seq = event?.durable?.seq
+    if (event?.durable?.aggregateID !== id || typeof event?.type !== 'string' ||
+        !event.type.startsWith('session.') || !Number.isSafeInteger(seq) ||
+        seq <= lastVisibleSeq || event?.data?.sessionID !== id)
+      throw Error('native_session_log_invalid_event_identity')
+    if (lastVisibleSeq >= 0 && seq > lastVisibleSeq + 1) observedGaps++
+    lastVisibleSeq = seq
+  }
+  if (!Number.isSafeInteger(syncedLog.seq) || syncedLog.seq < lastVisibleSeq)
+    throw Error('native_session_log_invalid_sync_watermark')
+  receipt.nativeSessionLog = { visibleEvents: nativeEvents.length, lastVisibleSeq,
+    syncedWatermark: syncedLog.seq, observedFilteredGaps: observedGaps }
+  receipt.steps.push('native_TEST_pinned_SSE_session_log_verified')
   // Synthetic input with resume:false is a durable inbox record, not a model
   // turn. The official Inbox admits repeated identical IDs without a second row.
   const inboxID = 'msg_TESTnativeQueued'
