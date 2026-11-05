@@ -241,6 +241,28 @@ try {
   receipt.nativePermissionEvaluation = { externalDirectory: 'deny', shell: 'ask',
     ownedPending: 1, reject: rejected.status, replay: duplicate.status, remaining: 0 }
   receipt.steps.push('native_TEST_permission_rejected_and_not_replayable')
+  // Synthetic input with resume:false is a durable inbox record, not a model
+  // turn. The official Inbox admits repeated identical IDs without a second row.
+  const inboxID = 'msg_TESTnativeQueued'
+  const synthetic = { id: inboxID, text: 'TEST-native-durable-inbox-no-model',
+    description: 'isolated native E2E', delivery: 'queue', resume: false }
+  const syntheticURL = url + '/synthetic'
+  const admitted = await request(syntheticURL, auth, { method: 'POST',
+    timeoutMs: 12000, body: synthetic })
+  const admittedData = admitted.status === 200 ? JSON.parse(admitted.content)?.data : undefined
+  if (!admittedData || admittedData.id !== inboxID || admittedData.sessionID !== id ||
+      admittedData.type !== 'synthetic' || admittedData.payload?.text !== synthetic.text)
+    throw Error('native_synthetic_admission_mismatch')
+  const repeated = await request(syntheticURL, auth, { method: 'POST',
+    timeoutMs: 12000, body: synthetic })
+  if (repeated.status !== 200 || JSON.parse(repeated.content)?.data?.id !== inboxID)
+    throw Error('native_synthetic_idempotent_readback_failed')
+  const queue = await request(url + '/inbox', auth)
+  const queued = queue.status === 200 ? JSON.parse(queue.content)?.data : undefined
+  if (!Array.isArray(queued) || queued.length !== 1 || queued[0]?.id !== inboxID ||
+      queued[0]?.payload?.text !== synthetic.text || queued[0]?.delivery !== 'queue')
+    throw Error('native_synthetic_inbox_not_single')
+  receipt.steps.push('native_TEST_durable_synthetic_inbox_single')
   // Close the first TEST-owned process while preserving its private HOME/XDG store.
   await closeOwnServer()
   if (!receipt.cleanup) throw Error('native_pre_restart_stop_unconfirmed')
@@ -279,6 +301,22 @@ try {
   receipt.permissionRejection = { pendingBefore: 0, staleRead: staleRead.status,
     staleReply: staleReply.status, pendingAfterRestart: 0 }
   receipt.steps.push('native_TEST_no_stale_permission_after_restart')
+  const restoredInbox = await request(restoredURL + '/inbox', auth)
+  const restoredItems = restoredInbox.status === 200 ? JSON.parse(restoredInbox.content)?.data : undefined
+  if (!Array.isArray(restoredItems) || restoredItems.length !== 1 ||
+      restoredItems[0]?.id !== inboxID || restoredItems[0]?.payload?.text !== synthetic.text)
+    throw Error('native_synthetic_inbox_lost_on_restart')
+  receipt.steps.push('native_TEST_synthetic_inbox_survived_cold_restart')
+  const cancelled = await request(restoredURL + '/inbox/' + encodeURIComponent(inboxID), auth,
+    { method: 'DELETE' })
+  if (cancelled.status !== 204) throw Error('native_synthetic_inbox_cancel_failed')
+  const empty = await request(restoredURL + '/inbox', auth)
+  if (empty.status !== 200 || !Array.isArray(JSON.parse(empty.content)?.data) ||
+      JSON.parse(empty.content).data.length !== 0)
+    throw Error('native_synthetic_inbox_not_cleared')
+  receipt.syntheticInbox = { created: admitted.status, idempotentRepeat: repeated.status,
+    persistedItems: 1, cancel: cancelled.status, remaining: 0 }
+  receipt.steps.push('native_TEST_synthetic_inbox_cancelled')
 
   const removed = await request(restoredURL, auth, { method: 'DELETE', timeoutMs: 12000 })
   if (removed.status !== 204) throw Error('native_session_delete_status_' + removed.status)
