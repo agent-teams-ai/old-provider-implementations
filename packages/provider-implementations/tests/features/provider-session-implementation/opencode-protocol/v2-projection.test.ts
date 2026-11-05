@@ -7,6 +7,11 @@ import { cut, sessionID, assistantID, content, toolInput } from './v2-cut-fixtur
 
 function assistant(value: OpenCodeV2NativeTurnCut) { return value.messages.data.find(row => row.id === assistantID)! }
 
+function markLogExecuted(value: OpenCodeV2NativeTurnCut, index: number) {
+  const event = value.log.events[index]!
+  event.data = { ...event.data, executed: true }
+}
+
 test('both native dialects retain exact input, text and raw tool facts without inferring product completion', () => {
   for (const pin of ['2.0.0', '2.0.21', '2.1.4'] as const) {
     const projected = projectOpenCodeV2NativeTurn(cut(pin))
@@ -106,7 +111,7 @@ test('tool execution evidence combines durable called and terminal flags without
     // Native message-updater cumulatively ORs executed bits. If Called says
     // executed=true, a later false terminal cannot erase that evidence.
     const calledExecuted = cut(pin)
-    calledExecuted.log.events[5]!.data.executed = true
+    markLogExecuted(calledExecuted, 5)
     const parts = assistant(calledExecuted).data.content as Record<string, unknown>[]
     const tool = parts.find(part => part.type === 'tool')!
     tool.executed = true
@@ -125,7 +130,7 @@ test('tool execution evidence combines durable called and terminal flags without
     assert.deepEqual(inconsistent.tools, [])
 
     const terminalExecuted = cut(pin)
-    terminalExecuted.log.events[6]!.data.executed = true
+    markLogExecuted(terminalExecuted, 6)
     const contradicted = projectOpenCodeV2NativeTurn(terminalExecuted)
     assert.equal(contradicted.state, 'unknown')
     assert.equal(contradicted.reason, 'tool_success_snapshot_mismatch')
@@ -149,14 +154,14 @@ test('failed native tool cannot erase actual execution from durable events', () 
   assert.equal(projectOpenCodeV2NativeTurn(base).tools[0]?.executed, false)
   for (const index of [5, 6]) {
     const inconsistent = makeFailure()
-    inconsistent.log.events[index]!.data.executed = true
+    markLogExecuted(inconsistent, index)
     const projected = projectOpenCodeV2NativeTurn(inconsistent)
     assert.equal(projected.state, 'unknown')
     assert.equal(projected.reason, 'tool_failure_snapshot_mismatch')
     assert.deepEqual(projected.tools, [])
   }
   const cumulative = makeFailure()
-  cumulative.log.events[5]!.data.executed = true
+  markLogExecuted(cumulative, 5)
   ;(assistant(cumulative).data.content as Record<string, unknown>[])[0]!.executed = true
   const projected = projectOpenCodeV2NativeTurn(cumulative)
   assert.equal(projected.state, 'succeeded')
