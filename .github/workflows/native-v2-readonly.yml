@@ -34,6 +34,7 @@ jobs:
           - { os: ubuntu-24.04, proof: model }
           - { os: ubuntu-24.04, proof: embedded }
           - { os: ubuntu-24.04, proof: embedded-model }
+          - { os: ubuntu-24.04, proof: embedded-interrupt }
           - { os: ubuntu-24.04, proof: embedded-floor }
           - { os: ubuntu-24.04, proof: embedded-target }
           - { os: ubuntu-24.04, proof: embedded-target-model }
@@ -145,7 +146,8 @@ jobs:
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
-          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ (endsWith(matrix.proof, '-model') || endsWith(matrix.proof, '-tool')) && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ (endsWith(matrix.proof, '-model') || endsWith(matrix.proof, '-tool') || endsWith(matrix.proof, '-interrupt')) && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: ${{ endsWith(matrix.proof, '-interrupt') && '1' || '0' }}
           OPENCODE_V2_EMBEDDED_TOOL_PROOF: ${{ endsWith(matrix.proof, '-tool') && '1' || '0' }}
           OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
@@ -162,6 +164,7 @@ jobs:
             native-v2-model-candidate.json
             native-v2-embedded-proof.json
             native-v2-embedded-model-proof.json
+            native-v2-embedded-interrupt-proof.json
             native-v2-embedded-floor-proof.json
             native-v2-embedded-target-proof.json
             native-v2-embedded-target-model-proof.json
