@@ -196,14 +196,38 @@ try {
     // separate TEST session owns all asks; a foreign session cannot grant one.
     const policy = await host.sessions.create({ location: { directory: workspace },
       agent: 'build', permissions: [
-        { action: 'shell', resource: '*', effect: 'ask' },
+        // Native V2 is ordered: these intentionally conflicting broad rules
+        // must resolve to the *last* matching rule, not to the first/default.
+        { action: 'external_directory', resource: '*', effect: 'allow' },
         { action: 'external_directory', resource: '*', effect: 'deny' },
+        { action: 'shell', resource: '*', effect: 'deny' },
+        { action: 'shell', resource: '*', effect: 'ask' },
       ] })
     const denied = await host.permission.create({ sessionID: policy.id,
       action: 'external_directory', resources: [join(root, 'outside')], agent: 'build' })
     const deniedPending = await host.permission.list({ sessionID: policy.id })
     if (denied?.effect !== 'deny' || !Array.isArray(deniedPending) || deniedPending.length !== 0)
       throw Error('TEST_embedded_policy_external_directory_deny_failed')
+    // The reverse ordering must produce ask, not default V2 allow. Keep the
+    // request owned by another disposable native session and explicitly reject.
+    const askPolicy = await host.sessions.create({ location: { directory: workspace },
+      agent: 'build', permissions: [
+        { action: 'external_directory', resource: '*', effect: 'deny' },
+        { action: 'external_directory', resource: '*', effect: 'ask' },
+      ] })
+    const externalAsk = await host.permission.create({ sessionID: askPolicy.id,
+      action: 'external_directory', resources: [join(root, 'outside-ask')], agent: 'build' })
+    const externalPending = await host.permission.list({ sessionID: askPolicy.id })
+    if (externalAsk?.effect !== 'ask' || !/^per[A-Za-z0-9_-]+$/.test(externalAsk?.id ?? '') ||
+        !Array.isArray(externalPending) || externalPending.length !== 1 ||
+        externalPending[0]?.id !== externalAsk.id || externalPending[0]?.sessionID !== askPolicy.id)
+      throw Error('TEST_embedded_ordered_external_directory_ask_failed')
+    await host.permission.reply({ sessionID: askPolicy.id,
+      requestID: externalAsk.id, decision: 'reject' })
+    if ((await host.permission.list({ sessionID: askPolicy.id })).length !== 0)
+      throw Error('TEST_embedded_ordered_external_ask_not_cleared')
+    await host.sessions.remove({ sessionID: askPolicy.id })
+    receipt.steps.push('TEST_embedded_ordered_external_deny_and_ask_verified')
     const asked = await host.permission.create({ sessionID: policy.id,
       action: 'shell', resources: ['TEST-no-execution'], agent: 'build' })
     const pending = await host.permission.list({ sessionID: policy.id })
@@ -231,6 +255,7 @@ try {
     if (modelCalls !== 0 || earlyModelRequests !== 0)
       throw Error('TEST_embedded_permission_discovery_started_model')
     receipt.permissionPolicy = { denied: true, asked: true, rejected: true,
+      orderedExternalDirectoryDenyAndAsk: true, orderedShellAsk: true,
       foreignReplyDenied: true, staleReplyDenied: true, modelCalls: 0 }
     receipt.steps.push('TEST_embedded_permission_policy_and_session_isolation_verified')
   }
