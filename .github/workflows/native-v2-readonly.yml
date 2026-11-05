@@ -6,6 +6,13 @@ on:
       # Source changes to the private V2 wire, decoder or projection must
       # invalidate the native contract proof, not only harness edits.
       - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-*.ts'
+      # The V2 driver also runs through this shared Session SPI engine and
+      # bounded I/O. Changes here must invalidate native V2 receipts as well.
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-protocol.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/input-window-capture.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/provider-session-io/io.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/provider-session-io/attachments.ts'
       - 'packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-*.ts'
       - scripts/native-v2-readonly-proof.mjs
       - scripts/native-v2-model-candidate.mjs
