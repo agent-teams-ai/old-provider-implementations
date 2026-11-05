@@ -5,6 +5,7 @@ on:
     paths:
       - scripts/native-v2-readonly-proof.mjs
       - scripts/native-v2-model-candidate.mjs
+      - scripts/verify-native-v2-cli-hold.mjs
       - scripts/native-v2-embedded-proof.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
@@ -47,6 +48,7 @@ jobs:
         run: |
           node --check scripts/native-v2-readonly-proof.mjs
           node --check scripts/native-v2-model-candidate.mjs
+          node --check scripts/verify-native-v2-cli-hold.mjs
           node --check scripts/native-v2-embedded-proof.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
@@ -79,12 +81,22 @@ jobs:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
         run: node scripts/native-v2-readonly-proof.mjs
-      - name: TEST native local model turn and durable terminal qualification
+      - name: Assert stock CLI native model terminal HOLD (expected negative control)
         if: matrix.proof == 'model'
+        shell: bash
         env:
           OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
           OPENCODE_V2_TEST_MODEL_RECEIPT: ${{ github.workspace }}/native-v2-model-candidate.json
-        run: node scripts/native-v2-model-candidate.mjs
+        run: |
+          set +e
+          node scripts/native-v2-model-candidate.mjs
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Stock CLI changed behavior or did not execute; review native evidence before qualification"
+            exit 1
+          fi
+          node scripts/verify-native-v2-cli-hold.mjs
       - name: TEST embedded V2 persistent event log through cold host restart
         if: startsWith(matrix.proof, 'embedded')
         env:
