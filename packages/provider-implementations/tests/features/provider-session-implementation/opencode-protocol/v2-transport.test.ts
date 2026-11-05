@@ -189,3 +189,36 @@ test('V2 credential callback cannot reopen execution after synchronously abortin
   }
   assert.equal(nativeCalls, 0)
 })
+
+test('V2 Session SPI refuses all direct native creates until Host proves effective permissions', async t => {
+  let nativeCalls = 0
+  const host = await peer((_req, res) => {
+    nativeCalls++
+    res.writeHead(201, { 'content-type': 'application/json' })
+    res.end('{"data":{"id":"ses_unsafe"}}')
+  })
+  t.after(host.close)
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const transport = createOpenCodeV2ExecutionTransport(config(host.endpoint, version))
+    t.after(() => transport.dispose())
+    // V2 defaults external_directory to allow. Even an apparently restrictive
+    // payload is insufficient without captured Host policy and native custody.
+    for (const body of [
+      { location: { directory: '/TEST/original' } },
+      { location: { directory: '/TEST/original' },
+        permissions: [{ action: 'external_directory', resource: '*', effect: 'allow' }] },
+      { location: { directory: '/TEST/original' },
+        permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' }] },
+      { location: { directory: '/TEST/original' },
+        permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' },
+          { action: 'external_directory', resource: '*', effect: 'ask' }] },
+      { location: { directory: '/TEST/original' }, plugins: ['V1-plugin'] },
+    ]) {
+      const error = await captureFailure(transport.fetch(host.endpoint + '/api/session', {
+        method: 'POST', body: JSON.stringify(body),
+      }))
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true, JSON.stringify(body))
+    }
+  }
+  assert.equal(nativeCalls, 0)
+})
