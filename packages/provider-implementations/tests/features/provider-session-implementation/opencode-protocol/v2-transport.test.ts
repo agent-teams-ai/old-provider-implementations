@@ -96,6 +96,25 @@ test('V2 unsupported route, workspace and create binding reject before native fe
   } as unknown as ReturnType<typeof config>), /authority_mismatch/)
 })
 
+test('V2 direct execution wire rejects overflow and noncanonical loopback ports before credentials or fetch', () => {
+  let credentials = 0, fetches = 0
+  for (const endpoint of [
+    'http://127.0.0.1:65536',
+    'http://127.0.0.1:99999',
+    'http://127.0.0.1:123456',
+    'http://127.0.0.1:00001',
+    'http://127.0.0.1:0',
+  ]) {
+    assert.throws(() => createOpenCodeV2ExecutionTransport({
+      ...config(endpoint),
+      readPassword: () => { credentials++; return 'TEST_PRIVATE_PASSWORD' },
+      fetchImpl: async () => { fetches++; return new Response('{}') },
+    }), /authority_mismatch/, endpoint)
+  }
+  assert.equal(credentials, 0)
+  assert.equal(fetches, 0)
+})
+
 test('V2 transport cleanup cancels only its requests on a shared host; neighboring transport remains usable', async t => {
   let signalStarted!: () => void
   const started = new Promise<void>(resolve => { signalStarted = resolve })
