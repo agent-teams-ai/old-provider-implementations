@@ -17,7 +17,7 @@ for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'tem
 }
 const workspace = join(root, 'workspace'), database = join(root, 'data', 'embedded.sqlite')
 let host, fake
-let modelCalls = 0, fakeFailure = null
+let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelRequests = 0
 let failed = false
 // The embedded module must never see user/runner credentials, provider keys or ambient config.
 for (const key of Object.keys(process.env)) {
@@ -79,6 +79,15 @@ try {
     const modelID = 'TEST-native-model', providerID = 'test-native'
     const marker = 'TEST_V2_EMBEDDED_LOCAL_REPLY'
     fake = createServer((request, response) => {
+      // No inference, including loopback-only inference, is admitted until the
+      // exact TEST model and owned session have been positively selected.
+      if (!allowInference) {
+        earlyModelRequests++
+        fakeFailure = 'TEST_inference_before_explicit_admission'
+        response.writeHead(503, { 'content-type': 'application/json' })
+        response.end('{"error":"TEST_not_admitted"}')
+        return
+      }
       if (request.method !== 'POST' || request.url !== '/v1/chat/completions') {
         fakeFailure = 'unexpected_TEST_model_route'
         response.writeHead(404).end()
@@ -176,6 +185,9 @@ try {
       agent: 'build', model: { providerID, id: modelID },
       permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' },
         { action: 'shell', resource: '*', effect: 'deny' }] })
+    if (earlyModelRequests !== 0 || modelCalls !== 0 || fakeFailure)
+      throw Error('TEST_embedded_model_used_before_owner_admission')
+    allowInference = true
     const inputID = 'msg_TESTembeddedModelTurn'
     const admitted = await host.sessions.prompt({ sessionID: original.id,
       id: inputID, text: 'TEST return the local marker',
@@ -211,7 +223,7 @@ try {
     if (users.length !== 1 || assistants.length !== 1 || idle.length !== 1 ||
         state?.outcome !== 'succeeded')
       throw Error('TEST_embedded_model_transcript_mismatch')
-    receipt.modelTurn = { modelCalls, delivered: 1, terminals: 1,
+    receipt.modelTurn = { modelCalls, earlyModelRequests, delivered: 1, terminals: 1,
       loggedEvents: events.length, originalInputBound: true,
       assistantPresent: true, idlePresent: true }
     receipt.steps.push('TEST_embedded_durable_model_terminal_qualified')
