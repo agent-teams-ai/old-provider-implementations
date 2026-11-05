@@ -172,6 +172,45 @@ try {
   receipt.firstLog = { event: before[0].type, sequence: before[0].durable.seq,
     syncedWatermark: before.at(-1).seq }
   receipt.steps.push('TEST_embedded_durable_event_persisted')
+  if (modelMode) {
+    // Exercise actual embedded permission APIs, but never run a tool. The
+    // separate TEST session owns all asks; a foreign session cannot grant one.
+    const policy = await host.sessions.create({ location: { directory: workspace },
+      agent: 'build', permissions: [
+        { action: 'shell', resource: '*', effect: 'ask' },
+        { action: 'external_directory', resource: '*', effect: 'deny' },
+      ] })
+    const denied = await host.permission.create({ sessionID: policy.id,
+      action: 'external_directory', resources: [join(root, 'outside')], agent: 'build' })
+    const deniedPending = await host.permission.list({ sessionID: policy.id })
+    if (denied?.effect !== 'deny' || !Array.isArray(deniedPending) || deniedPending.length !== 0)
+      throw Error('TEST_embedded_policy_external_directory_deny_failed')
+    const asked = await host.permission.create({ sessionID: policy.id,
+      action: 'shell', resources: ['TEST-no-execution'], agent: 'build' })
+    const pending = await host.permission.list({ sessionID: policy.id })
+    if (asked?.effect !== 'ask' || !/^per[A-Za-z0-9_-]+$/.test(asked?.id ?? '') ||
+        !Array.isArray(pending) || pending.length !== 1 || pending[0]?.id !== asked.id ||
+        pending[0]?.sessionID !== policy.id)
+      throw Error('TEST_embedded_owned_permission_ask_failed')
+    const neighbor = await host.sessions.create({ location: { directory: workspace }, agent: 'build' })
+    let foreignRejected = false, staleRejected = false
+    try { await host.permission.reply({ sessionID: neighbor.id, requestID: asked.id, decision: 'once' }) }
+    catch { foreignRejected = true }
+    if (!foreignRejected || (await host.permission.list({ sessionID: policy.id })).length !== 1)
+      throw Error('TEST_embedded_foreign_permission_reply_applied')
+    await host.permission.reply({ sessionID: policy.id, requestID: asked.id, decision: 'reject' })
+    try { await host.permission.reply({ sessionID: policy.id, requestID: asked.id, decision: 'once' }) }
+    catch { staleRejected = true }
+    if (!staleRejected || (await host.permission.list({ sessionID: policy.id })).length !== 0)
+      throw Error('TEST_embedded_stale_permission_reply_applied')
+    await host.sessions.remove({ sessionID: neighbor.id })
+    await host.sessions.remove({ sessionID: policy.id })
+    if (modelCalls !== 0 || earlyModelRequests !== 0)
+      throw Error('TEST_embedded_permission_discovery_started_model')
+    receipt.permissionPolicy = { denied: true, asked: true, rejected: true,
+      foreignReplyDenied: true, staleReplyDenied: true, modelCalls: 0 }
+    receipt.steps.push('TEST_embedded_permission_policy_and_session_isolation_verified')
+  }
   await host.close()
   host = undefined
   receipt.steps.push('TEST_embedded_host_closed_before_restart')
