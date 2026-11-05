@@ -56,12 +56,14 @@ test('V2 rejects blank Host authority and invalid loopback ports before any nati
     { endpoint: 'http://127.0.0.1:00080' },
     { endpoint: 'http://127.0.0.1:65536' },
     { endpoint: 'http://127.0.0.1:99999' },
+    // Regex.exec would coerce a one-element JSON array to an approved URL.
+    { endpoint: [baseline.endpoint] },
     { directory: 'relative/TEST' },
   ]
   for (const invalid of cases) {
     const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
       resolveConfiguration: async () => ({ ...baseline, ...invalid,
-        probe: async () => { probes++; return true } }), readCheckpoint: async () => {} })
+        probe: async () => { probes++; return true } } as unknown as ReturnType<typeof nativeConfig>), readCheckpoint: async () => {} })
     await assert.rejects(factory.open(request), /opencode.driver.invalid-config/, JSON.stringify(invalid))
   }
   assert.equal(probes, 0)
