@@ -38,7 +38,11 @@ function validateControlBody(body: string, routes: ControlRoutes, version: strin
   const fields = record(JSON.parse(body) as unknown)
   const key = routes.putInstruction ? 'value' : version === '2.0.0' ? 'reply' : 'decision'
   executionAssert(fields !== null && Object.keys(fields).length === 1 && Object.hasOwn(fields, key), 'unsupported_input')
-  if (routes.reply) { executionAssert(typeof fields[key] === 'string' && ['once', 'always', 'reject'].includes(fields[key]), 'invalid_input') }
+  if (routes.reply) {
+    // V2 "always" persists a project-scoped allow pattern. This raw transport
+    // must not provide a bypass around the Host's not-yet-qualified policy gate.
+    executionAssert(fields[key] === 'once' || fields[key] === 'reject', 'invalid_input')
+  }
 }
 function controlResponse(response: Response, body: string, routes: ControlRoutes): Response {
   if (routes.putInstruction || routes.cancelInbox || routes.reply) {
