@@ -84,8 +84,11 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
     putInstruction: async (key: string, value: unknown) => {
       // URL encoding does not escape '.' or '..'; reject non-canonical keys before PUT.
       if (!/^[a-z0-9][a-z0-9._-]{0,255}$/.test(key)) denyUnsubmitted()
-      const encoded = canonicalExecutionJSON(value)
-      if (Buffer.byteLength(encoded) > 256 * 1024) {throw new Error('native_instruction_byte_budget')}
+      // These validations precede any native write, so a caller must not
+      // mistake a local validation failure for an UNKNOWN submission.
+      let encoded: string
+      try { encoded = canonicalExecutionJSON(value) } catch { denyUnsubmitted() }
+      if (Buffer.byteLength(encoded) > 256 * 1024) denyUnsubmitted()
       await wire.request(entries + '/' + encodeURIComponent(key), { method: 'PUT', body: '{"value":' + encoded + '}' })
     },
     instructions: async () => {
