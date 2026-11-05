@@ -45,6 +45,28 @@ test('native factory validates full runtime generation binding and explicit chec
   assert.equal(host.counts().submitted, 0)
 })
 
+test('V2 rejects blank Host authority and invalid loopback ports before any native probe', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  let probes = 0
+  const baseline = nativeConfig(host)
+  const cases = [
+    { trustedBinding: ' \t ' }, { accountBinding: '   ' },
+    { endpoint: 'http://127.0.0.1:0' },
+    { endpoint: 'http://127.0.0.1:00080' },
+    { endpoint: 'http://127.0.0.1:65536' },
+    { endpoint: 'http://127.0.0.1:99999' },
+    { directory: 'relative/TEST' },
+  ]
+  for (const invalid of cases) {
+    const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
+      resolveConfiguration: async () => ({ ...baseline, ...invalid,
+        probe: async () => { probes++; return true } }), readCheckpoint: async () => {} })
+    await assert.rejects(factory.open(request), /opencode.driver.invalid-config/, JSON.stringify(invalid))
+  }
+  assert.equal(probes, 0)
+  assert.equal(host.counts().submitted, 0)
+})
+
 test('private Host failures never project credential/configuration details into public open errors', async () => {
   const factory: DriverFactory = createOpenCodeV2DriverFactory({ capabilities: ['text'], resolveConfiguration: async () => { throw new Error('TEST-private-credential') },
     readCheckpoint: async () => {} })
