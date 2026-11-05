@@ -29,6 +29,8 @@ jobs:
           - { os: ubuntu-24.04, proof: model }
           - { os: ubuntu-24.04, proof: embedded }
           - { os: ubuntu-24.04, proof: embedded-model }
+          - { os: ubuntu-24.04, proof: embedded-floor }
+          - { os: ubuntu-24.04, proof: embedded-floor-model }
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
           - { os: macos-15-arm64, proof: embedded }
@@ -73,7 +75,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/opencode-v2-embedded"
           npm install --prefix "$RUNNER_TEMP/opencode-v2-embedded" --no-save \
-            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@2.0.21
+            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || '2.0.21' }}
           npm ls --prefix "$RUNNER_TEMP/opencode-v2-embedded" --depth=0 @opencode/sdk
       - name: TEST native binary, authenticated API and disposable session lifecycle
         if: matrix.proof == 'lifecycle'
@@ -102,7 +104,8 @@ jobs:
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
-          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ matrix.proof == 'embedded-model' && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ endsWith(matrix.proof, '-model') && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || '2.0.21' }}
         run: node scripts/native-v2-embedded-proof.mjs
       - name: Upload actual runner receipt (even for failed native checks)
         if: always()
@@ -116,5 +119,7 @@ jobs:
             native-v2-model-candidate.json
             native-v2-embedded-proof.json
             native-v2-embedded-model-proof.json
+            native-v2-embedded-floor-proof.json
+            native-v2-embedded-floor-model-proof.json
             ${{ runner.temp }}/opencode-v2-embedded/package-lock.json
             ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json
