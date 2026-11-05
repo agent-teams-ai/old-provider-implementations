@@ -34,7 +34,9 @@ let modelCalls = 0, fakeFailure = null, allowInference = false, earlyModelReques
 let toolPhase = false, toolModelRequests = 0, advertisedToolNames = []
 let toolCallIssued = false, toolRequestProfiles = []
 let toolExecutorCalls = 0, toolAuthorizedCalls = 0, toolPermissionRejections = []
+const interruptedUserText = 'TEST interrupt the pending local stream'
 let interruptArmed = false, interruptStream, notifyInterruptStream
+let trackInterrupt = false, interruptTargetCalls = 0, interruptRequestProfiles = []
 let toolPluginSetupCalls = 0, toolRegisteredNames = []
 let toolContextCalls = 0, toolContextNames = []
 const toolCanary = 'TEST_DO_NOT_READ_OUTSIDE_' + process.pid
@@ -223,9 +225,22 @@ try {
             model: modelID, created: 1 }
           const chunk = (delta, finish_reason = null) => ({ ...base,
             choices: [{ index: 0, delta, finish_reason }] })
-          if (interruptArmed) {
-            // Keep only this TEST-owned local response in-flight. The real
-            // embedded engine must abort it; the fixture never completes it.
+          const messages = Array.isArray(value.messages) ? value.messages : []
+          const hasInterruptedUser = messages.some(row => row?.role === 'user' &&
+            JSON.stringify(row.content ?? null).includes(interruptedUserText))
+          if (trackInterrupt) {
+            if (interruptRequestProfiles.length < 12) interruptRequestProfiles.push({
+              roles: messages.map(row => row?.role).slice(0, 10),
+              targetUser: hasInterruptedUser,
+              targetAnywhere: JSON.stringify(messages).includes(interruptedUserText),
+              model: value.model,
+            })
+            if (hasInterruptedUser) interruptTargetCalls++
+          }
+          if (interruptArmed && hasInterruptedUser) {
+            // Keep only the explicitly identified session's own user turn in
+            // flight. Background title or summary inference is not evidence
+            // for interrupting this session's provider request.
             interruptArmed = false
             response.writeHead(200, { 'content-type': 'text/event-stream' })
             response.write('data: ' + JSON.stringify(chunk({ role: 'assistant' })) + '\n\n')
@@ -543,16 +558,18 @@ try {
       // pre-cancelled or allowed to complete. Leave the TEST fake model stream
       // pending until the embedded runtime cancels its HTTP request.
       const interrupted = await host.sessions.create({ location: { directory: workspace },
+        title: 'TEST already named in-flight interrupt session',
         agent: 'build', model: { providerID: 'test-native', id: 'TEST-native-model' },
         permissions: [{ action: 'shell', resource: '*', effect: 'deny' }] })
       const input = 'msg_TESTinFlightInterrupt'
       let signalStarted
       const started = new Promise(resolve => { signalStarted = resolve })
       notifyInterruptStream = signalStarted
+      trackInterrupt = true
       interruptArmed = true
       const beforeInterruptCalls = modelCalls
       const admitted = await host.sessions.prompt({ sessionID: interrupted.id, id: input,
-        text: 'TEST interrupt the pending local stream', delivery: 'queue', resume: true })
+        text: interruptedUserText, delivery: 'queue', resume: true })
       if (admitted?.id !== input || admitted?.sessionID !== interrupted.id)
         throw Error('TEST_active_interrupt_prompt_not_admitted')
       await Promise.race([started, delay(12_000).then(() => { throw Error('TEST_active_interrupt_stream_not_started') })])
@@ -579,16 +596,19 @@ try {
         terminalTypes: terminal.map(e => e.type).slice(0, 8),
         reason: terminal[0]?.data?.reason ?? null, delivered: delivery.length,
         modelRequests: modelCalls - beforeInterruptCalls,
+        targetModelRequests: interruptTargetCalls,
+        requestProfiles: interruptRequestProfiles,
         socketClosed: interruptStream.destroyed,
       }
       if (terminal.length !== 1 || terminal[0].type !== 'session.execution.interrupted' ||
           terminal[0].data?.reason !== 'user' || delivery.length !== 1 ||
-          modelCalls < beforeInterruptCalls + 1)
+          modelCalls < beforeInterruptCalls + 1 || interruptTargetCalls !== 1)
         throw Error('TEST_active_interrupt_durable_terminal_unqualified')
       // Do not call the native interrupt a complete transport cancellation if
       // the provider HTTP stream remains open. Still prove the independently
       // valuable cold-restoration/no-replay invariant before recording HOLD.
       const socketClosedOnInterrupt = interruptStream.destroyed
+      trackInterrupt = false
       const originalIDs = ledger.map(e => e.id)
       const callsAtInterrupt = modelCalls
       await host.close(); host = undefined
@@ -602,6 +622,7 @@ try {
       await host.sessions.remove({ sessionID: interrupted.id })
       receipt.nativeInterrupt = { active: true, interrupted: true,
         reason: 'user', delivered: 1, observedModelRequests: modelCalls - beforeInterruptCalls,
+        observedTargetModelRequests: interruptTargetCalls,
         extraAfterRestart: 0, streamCancelledOnInterrupt: socketClosedOnInterrupt,
         streamCancelledAfterHostClose: interruptStream.destroyed,
         durableTerminalCount: 1, qualified: false }
