@@ -3,6 +3,13 @@ name: OpenCode V2 native E2E qualification (TEST only)
 on:
   pull_request:
     paths:
+      # The pinned dependency graph and shared Session SPI define the
+      # effective native driver contract just as much as its V2 codec does.
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'packages/provider-implementations/package.json'
+      - 'packages/provider-session-contracts/package.json'
+      - 'packages/provider-session-contracts/src/**'
       # Source changes to the private V2 wire, decoder or projection must
       # invalidate the native contract proof, not only harness edits.
       - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-*.ts'
