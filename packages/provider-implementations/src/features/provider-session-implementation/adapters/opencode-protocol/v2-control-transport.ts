@@ -1,3 +1,4 @@
+import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
 import { checkOpenCodeReadJson } from './v2-json-budget.ts'
@@ -53,7 +54,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   const config = { ...supplied }, controllers = new Set<AbortController>(), pending = new Set<Promise<unknown>>()
   let closed = false
   executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(config.endpoint)
-    && /^ses_[a-zA-Z0-9]+$/.test(config.nativeSessionId), 'authority_mismatch')
+    && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)
     && Date.now() < config.deadline && config.signal?.aborted !== true, 'authority_or_deadline'); }
