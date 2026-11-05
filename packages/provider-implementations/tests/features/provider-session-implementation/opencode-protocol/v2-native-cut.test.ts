@@ -5,7 +5,8 @@ import { test } from 'node:test'
 import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
-async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat') {
+async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
+  'gapped' | 'backwards' | 'stale-sync') {
   const value = cut(), directory = '/TEST/native-cut'
   let logs = 0, pages = 0, requests = 0
   const server = createServer((req, res) => {
@@ -17,12 +18,17 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
         durable: { aggregateID: row.aggregateID, seq: row.seq }, data: row.data, location: { directory } }))
       if (mode === 'changing' && logs === 2) {rows.push({ id: 'evt_changed', type: 'session.updated',
         durable: { aggregateID: sessionID, seq: 10 }, data: { sessionID }, location: { directory } })}
+      // Both pinned V2 versions filter the shared durable bus: session log seq may gap.
+      if (mode === 'gapped') for (const [i, row] of rows.entries()) {
+        if (i >= 4) row.durable.seq += 2
+      }
+      if (mode === 'backwards') rows[5]!.durable.seq = rows[4]!.durable.seq
       if (mode === 'max' || mode === 'overmax') {
         const count = mode === 'max' ? 4096 : 4097
         while (rows.length < count) { const seq = rows.length; rows.push({ id: `evt_max${seq}`, type: 'session.updated',
           durable: { aggregateID: sessionID, seq }, data: { sessionID }, location: { directory } }) }
       }
-      const watermark = rows.at(-1)!.durable.seq
+      const watermark = rows.at(-1)!.durable.seq + (mode === 'gapped' ? 2 : mode === 'stale-sync' ? -1 : 0)
       res.setHeader('content-type', 'text/event-stream')
       res.end([...rows, { type: 'log.synced', aggregateID: sessionID, seq: watermark }]
         .map(row => `data: ${JSON.stringify(row)}\n\n`).join(''))
@@ -84,6 +90,25 @@ test('native cut read rejects changing history, pagination cycles and original w
   }
 })
 
+
+test('pinned native durable log accepts filtered bus gaps but rejects non-monotonic events and stale sync', async t => {
+  for (const mode of ['gapped', 'backwards', 'stale-sync'] as const) {
+    const host = await fixture(mode); t.after(host.close)
+    const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+      version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
+    t.after(() => transport.dispose())
+    const work = readOpenCodeV2NativeCut(transport,
+      { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+    if (mode === 'gapped') {
+      const snapshot = await work
+      assert.equal(snapshot.log.events[4]?.seq, 6)
+      assert.equal(snapshot.log.events.at(-1)?.seq, 11)
+      assert.equal(snapshot.log.watermark, 13)
+      assert.equal(projectOpenCodeV2NativeTurn(snapshot).state, 'succeeded')
+    } else { await assert.rejects(work, /incomplete_native_log/) }
+  }
+})
 
 test('native finite cut accepts 4096 events plus synced frame and rejects a 4097th event', async t => {
   for (const mode of ['max', 'overmax'] as const) {
