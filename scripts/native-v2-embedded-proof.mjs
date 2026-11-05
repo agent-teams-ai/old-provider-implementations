@@ -262,25 +262,24 @@ try {
         terminalPage.previous !== null)
       throw Error('TEST_embedded_native_pagination_not_exhausted')
     receipt.steps.push('TEST_embedded_native_message_pagination_verified')
-    if (pinnedVersion === '2.1.4') {
-      // This is only an upstream SDK target check; the private driver has not
-      // qualified this protocol version. Do not coerce 2.1.4 to a 2.0.21 pin.
-      receipt.driverProjection = { state: 'not_qualified', reason: 'driver_version_unverified' }
-      receipt.steps.push('TEST_embedded_target_native_only_driver_held')
-    } else {
-      const projected = projection.projectOpenCodeV2NativeTurn({
-        pin: pinnedVersion, sessionID: original.id, nativeInputID: inputID,
-        originalText: inputText, beforeCursor: 0,
-        messages: { data: decodedMessages.data, previous: null, next: null },
-        log: decodedLog,
-      })
-      receipt.driverProjection = { state: projected.state, reason: projected.reason,
-        assistantLineage: projected.assistantMessageIds.length }
-      if (projected.state !== 'succeeded' || projected.assistantMessageIds.length !== 1 ||
-          !projected.text.includes(marker))
-        throw Error('TEST_embedded_production_driver_projection_' + projected.reason)
-      receipt.steps.push('TEST_embedded_production_driver_projection_verified')
-    }
+    // Only the private projection contract is being qualified here. The
+    // selected runtime/driver backend stays HOLD for 2.1.4 pending its own
+    // versioned Host/process and effective-permissions E2E.
+    const projected = projection.projectOpenCodeV2NativeTurn({
+      pin: pinnedVersion, sessionID: original.id, nativeInputID: inputID,
+      originalText: inputText, beforeCursor: 0,
+      messages: { data: decodedMessages.data, previous: null, next: null },
+      log: decodedLog,
+    })
+    receipt.driverProjection = { state: projected.state, reason: projected.reason,
+      assistantLineage: projected.assistantMessageIds.length,
+      backendAdmitted: false }
+    if (projected.state !== 'succeeded' || projected.assistantMessageIds.length !== 1 ||
+        !projected.text.includes(marker))
+      throw Error('TEST_embedded_production_driver_projection_' + projected.reason)
+    receipt.steps.push('TEST_embedded_production_driver_projection_verified')
+    if (pinnedVersion === '2.1.4')
+      receipt.steps.push('TEST_embedded_target_backend_not_admitted')
     receipt.modelTurn = { modelCalls, earlyModelRequests, delivered: 1, terminals: 1,
       loggedEvents: events.length, originalInputBound: true,
       assistantPresent: true, idlePresent: idleRows.length === 1 }
