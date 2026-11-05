@@ -103,7 +103,7 @@ try {
   if (!entry.startsWith(packageRoot + sep)) throw Error('TEST_embedded_SDK_export_outside_package')
   const { OpenCode } = await import(pathToFileURL(entry).href)
   if (typeof OpenCode?.create !== 'function') throw Error('TEST_embedded_api_unavailable')
-  if (toolMode) {
+  if (toolMode && pinnedVersion === '2.1.4') {
     // V2-native Promise plugin API only, not a renamed V1 plugin. This
     // disposable tool never reads a file; its real native permission assert
     // must deny the external path before the synthetic executor can return.
@@ -159,6 +159,10 @@ try {
       },
     }]
     receipt.steps.push('TEST_embedded_v2_native_tool_plugin_configured')
+  } else if (toolMode) {
+    // 2.0.21 has no Promise ctx.permission.assert. Use its actual built-in
+    // read tool, whose FileAccess.authorizeRead checks session permissions.
+    receipt.steps.push('TEST_embedded_pinned_builtin_read_selected')
   }
   receipt.steps.push('pinned_embedded_SDK_module_resolved')
   if (pinnedVersion === '2.0.21') {
@@ -235,7 +239,9 @@ try {
           const frames = (toolRequest ? [
             chunk({ role: 'assistant' }),
             chunk({ tool_calls: [{ index: 0, id: 'call_TEST_external_read', type: 'function',
-              function: { name: 'read', arguments: JSON.stringify({ filePath: join(root, 'outside-canary.txt') }) } }] }),
+              function: { name: 'read', arguments: JSON.stringify(pinnedVersion === '2.1.4'
+                ? { filePath: join(root, 'outside-canary.txt') }
+                : { path: join(root, 'outside-canary.txt') }) } }] }),
             chunk({}, 'tool_calls'),
           ] : [
             chunk({ role: 'assistant' }), chunk({ content: marker }), chunk({}, 'stop'),
@@ -268,7 +274,7 @@ try {
       // model discovery. A blanket tool.use deny can prevent tool advertising,
       // leaving a fake-model tool call with no actual native tool invocation.
       // Older V2.0.21 cannot be treated as supporting this policy contract.
-      ...(toolMode ? { policies: [{ action: 'tool.use', resource: 'external_directory:*', effect: 'deny' }] } : {}),
+      ...(toolMode && pinnedVersion === '2.1.4' ? { policies: [{ action: 'tool.use', resource: 'external_directory:*', effect: 'deny' }] } : {}),
     })
     receipt.steps.push('TEST_embedded_loopback_model_configured')
   }
@@ -573,17 +579,21 @@ try {
           executed: event.data?.executed === true, toolName: typeof event.data?.name === 'string'
             ? event.data.name.slice(0, 80) : null,
         }))
-      const toolEffectObserved = toolOutcomes.length === 1 && toolOutcomes.some(part =>
+      const typedDenial = toolOutcomes.length === 1 && toolOutcomes.some(part =>
         part.name === 'read' && part.status === 'error' && part.errorType === 'permission.rejected' &&
         part.executed === false) &&
         toolEventTypes.includes('session.tool.called') &&
         toolEventFailures.length === 1 &&
         toolEventFailures[0].errorType === 'permission.rejected' &&
-        toolEventFailures[0].executed === false &&
-        toolPermissionRejections.length === 1 &&
-        toolPermissionRejections[0].name === 'Tool.Error' &&
-        toolPermissionRejections[0].policyDenied === true &&
-        toolExecutorCalls === 1 && toolAuthorizedCalls === 0
+        toolEventFailures[0].executed === false
+      const executorQualified = pinnedVersion === '2.1.4'
+        ? toolPermissionRejections.length === 1 &&
+          toolPermissionRejections[0].name === 'Tool.Error' &&
+          toolPermissionRejections[0].policyDenied === true &&
+          toolExecutorCalls === 1 && toolAuthorizedCalls === 0
+        : toolPluginSetupCalls === 0 && toolExecutorCalls === 0 &&
+          toolAuthorizedCalls === 0 && toolPermissionRejections.length === 0
+      const toolEffectObserved = typedDenial && executorQualified
       const assistantPartTypes = [...new Set(toolMessages
         .filter(message => message?.type === 'assistant' && Array.isArray(message.content))
         .flatMap(message => message.content)
