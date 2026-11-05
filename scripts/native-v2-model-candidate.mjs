@@ -26,7 +26,7 @@ const env = {
   OPENCODE_SERVER_USERNAME: 'opencode',
   CI: 'true', NO_COLOR: '1',
 }
-let native, fake
+let native, fake, nativeStartTicks
 let failed = false
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 const version = '2.0.21'
@@ -44,24 +44,58 @@ async function request(url, authorization, operation = {}) {
   if (Buffer.byteLength(body) > 2 * 1024 * 1024) throw Error('TEST_response_too_large')
   return { status: response.status, json: body ? JSON.parse(body) : null }
 }
+// A detached TEST-owned native group must be fenced by its leader's Linux
+// process start identity before any signal, not only by a recyclable PID.
+function ownedStartTicks(pid) {
+  let stat
+  try { stat = readFileSync('/proc/' + pid + '/stat', 'utf8') }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error }
+  const commandEnd = stat.lastIndexOf(') ')
+  if (commandEnd < 0) throw Error('TEST_invalid_native_process_stat')
+  const fields = stat.slice(commandEnd + 2).trim().split(/\\s+/)
+  const ticks = fields[19]
+  if (!/^\\d+$/.test(ticks ?? '') || Number(fields[2]) !== pid ||
+      Number(fields[3]) !== pid)
+    throw Error('TEST_native_process_group_not_owned')
+  return ticks
+}
+function processPresent(pid) {
+  try { process.kill(pid, 0); return true }
+  catch (error) { if (error.code === 'ESRCH') return false; throw error }
+}
 async function closeNative() {
   if (!native?.pid) return
-  try { process.kill(-native.pid, 'SIGTERM') } catch (error) {
-    if (error.code !== 'ESRCH') throw error
+  const pid = native.pid
+  const currentTicks = ownedStartTicks(pid)
+  if (!currentTicks || currentTicks !== nativeStartTicks) {
+    if (currentTicks === null && !processPresent(pid) && !processPresent(-pid)) {
+      receipt.cleanup = true
+      return
+    }
+    throw Error('TEST_native_process_identity_changed_before_stop')
   }
+  try { process.kill(-pid, 'SIGTERM') }
+  catch (error) { if (error.code !== 'ESRCH') throw error }
   for (let i = 0; i < 30; i++) {
-    try { process.kill(native.pid, 0) } catch (error) {
-      if (error.code === 'ESRCH') { receipt.cleanup = true; return }
-      throw error
+    if (!processPresent(pid) && !processPresent(-pid)) {
+      receipt.cleanup = true
+      return
     }
     await delay(100)
   }
-  try { process.kill(-native.pid, 'SIGKILL') } catch (error) {
-    if (error.code !== 'ESRCH') throw error
+  // Never target an orphan process group or a recycled leader PID.
+  if (!processPresent(pid) || ownedStartTicks(pid) !== nativeStartTicks)
+    throw Error('TEST_native_group_outlived_owned_leader')
+  try { process.kill(-pid, 'SIGKILL') }
+  catch (error) { if (error.code !== 'ESRCH') throw error }
+  for (let i = 0; i < 10; i++) {
+    if (!processPresent(pid) && !processPresent(-pid)) {
+      receipt.cleanup = true
+      return
+    }
+    await delay(100)
   }
-  await delay(150)
-  try { process.kill(native.pid, 0); receipt.cleanup = false }
-  catch (error) { if (error.code === 'ESRCH') receipt.cleanup = true; else throw error }
+  throw Error('TEST_native_process_group_cleanup_unconfirmed')
 }
 try {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw Error('unsupported_TEST_runner')
@@ -170,6 +204,9 @@ try {
   })
   if (!native.pid) throw Error('TEST_native_spawn_failed')
   await once(native, 'spawn')
+  nativeStartTicks = ownedStartTicks(native.pid)
+  if (!nativeStartTicks) throw Error('TEST_native_owned_process_start_unavailable')
+  receipt.ownedProcessStartTicks = nativeStartTicks
   if (sha256(readFileSync('/proc/' + native.pid + '/exe')) !== expectedDigest)
     throw Error('TEST_native_process_digest_mismatch')
   const endpoint = 'http://127.0.0.1:' + port
