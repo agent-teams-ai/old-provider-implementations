@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { parse, sep } from 'node:path'
 import type { DriverFactory, OpenConfig } from '@agent-teams/provider-session-contracts'
 import { createOpenCodeV2DriverFactory } from '../../../../src/opencode.ts'
 import { nativeConfig } from './v2-driver-support.ts'
@@ -61,6 +62,32 @@ test('V2 rejects blank Host authority and invalid loopback ports before any nati
     const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
       resolveConfiguration: async () => ({ ...baseline, ...invalid,
         probe: async () => { probes++; return true } }), readCheckpoint: async () => {} })
+    await assert.rejects(factory.open(request), /opencode.driver.invalid-config/, JSON.stringify(invalid))
+  }
+  assert.equal(probes, 0)
+  assert.equal(host.counts().submitted, 0)
+})
+
+test('V2 rejects root, noncanonical directories and corrupted nested Host bindings before probe', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  const baseline = nativeConfig(host)
+  let probes = 0
+  const cases = [
+    { directory: parse(baseline.directory).root },
+    { directory: baseline.directory + sep + '..' + sep + 'TEST-neighbor' },
+    { directory: baseline.directory + sep + sep + 'TEST-duplicate' },
+    { directory: baseline.directory + sep },
+    { binding: null },
+    { limits: null },
+  ]
+  for (const invalid of cases) {
+    const factory = createOpenCodeV2DriverFactory({
+      capabilities: ['text'],
+      resolveConfiguration: async () => ({
+        ...baseline, ...invalid, probe: async () => { probes++; return true },
+      } as unknown as ReturnType<typeof nativeConfig>),
+      readCheckpoint: async () => {},
+    })
     await assert.rejects(factory.open(request), /opencode.driver.invalid-config/, JSON.stringify(invalid))
   }
   assert.equal(probes, 0)
