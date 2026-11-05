@@ -307,6 +307,61 @@ try {
   receipt.nativePermissionEvaluation = { externalDirectory: 'deny', shell: 'ask',
     ownedPending: 1, reject: rejected.status, replay: duplicate.status, remaining: 0 }
   receipt.steps.push('native_TEST_permission_rejected_and_not_replayable')
+  // V2 permission rules use last-match-wins, unlike V1's grouped permission
+  // object. Exercise the *native* resolver with opposite rule orders; merely
+  // reading back a stored array is not proof that the engine enforces it.
+  // All resources and sessions live in this isolated TEST prefix. These direct
+  // Permission.Service calls do not execute tools or send a model prompt.
+  const nativeRuleResults = []
+  const testExternalResource = join(root, 'temp', 'TEST-external-resource')
+  for (const scenario of [
+    { name: 'allow_then_deny', first: 'allow', last: 'deny', expected: 'deny' },
+    { name: 'deny_then_allow', first: 'deny', last: 'allow', expected: 'allow' },
+    { name: 'allow_then_ask', first: 'allow', last: 'ask', expected: 'ask' },
+  ]) {
+    const orderedRules = [
+      { action: 'external_directory', resource: '*', effect: scenario.first },
+      { action: 'external_directory', resource: '*', effect: scenario.last },
+    ]
+    const made = await request(endpoint + '/api/session', auth, {
+      method: 'POST', timeoutMs: 12000,
+      body: { location: { directory }, permissions: orderedRules },
+    })
+    const data = made.status === 200 ? JSON.parse(made.content)?.data : undefined
+    if (typeof data?.id !== 'string' || !/^ses_[A-Za-z0-9]+$/.test(data.id) ||
+        JSON.stringify(data.permissions) !== JSON.stringify(orderedRules))
+      throw Error('native_ordered_rule_session_not_preserved_' + scenario.name)
+    const ruleURL = endpoint + '/api/session/' + encodeURIComponent(data.id)
+    const evaluation = await request(ruleURL + '/permission', auth, {
+      method: 'POST', body: { action: 'external_directory', resources: [testExternalResource] },
+    })
+    const evaluated = evaluation.status === 200 ? JSON.parse(evaluation.content)?.data : undefined
+    if (evaluated?.effect !== scenario.expected)
+      throw Error('native_last_matching_rule_not_effective_' + scenario.name)
+    const pendingResponse = await request(ruleURL + '/permission', auth)
+    const pendingRules = pendingResponse.status === 200 ? JSON.parse(pendingResponse.content)?.data : undefined
+    if (!Array.isArray(pendingRules) ||
+        pendingRules.length !== (scenario.expected === 'ask' ? 1 : 0))
+      throw Error('native_ordered_rule_pending_mismatch_' + scenario.name)
+    if (scenario.expected === 'ask') {
+      const pendingId = pendingRules[0]?.id
+      if (typeof pendingId !== 'string' || !/^per[A-Za-z0-9_-]+$/.test(pendingId) ||
+          pendingRules[0]?.sessionID !== data.id || evaluated?.id !== pendingId)
+        throw Error('native_ordered_rule_ask_identity_mismatch')
+      const rejectedRule = await request(ruleURL + '/permission/' + encodeURIComponent(pendingId) + '/reply',
+        auth, { method: 'POST', body: { decision: 'reject' } })
+      if (rejectedRule.status !== 204)
+        throw Error('native_ordered_rule_ask_reject_failed')
+      const afterReject = await request(ruleURL + '/permission', auth)
+      if (afterReject.status !== 200 || JSON.parse(afterReject.content)?.data?.length !== 0)
+        throw Error('native_ordered_rule_ask_not_cleared')
+    }
+    const deletedRule = await request(ruleURL, auth, { method: 'DELETE' })
+    if (deletedRule.status !== 204) throw Error('native_ordered_rule_session_not_deleted')
+    nativeRuleResults.push({ order: scenario.name, result: scenario.expected, pendingClean: true })
+  }
+  receipt.nativeRuleOrdering = nativeRuleResults
+  receipt.steps.push('native_TEST_last_matching_rule_allow_deny_ask_evaluated')
   // Synthetic input with resume:false is a durable inbox record, not a model
   // turn. The official Inbox admits repeated identical IDs without a second row.
   const inboxID = 'msg_TESTnativeQueued'
