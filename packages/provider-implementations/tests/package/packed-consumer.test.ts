@@ -10,7 +10,7 @@ test('packed consumer imports codecs and declarations without donor checkout or 
   const root = process.cwd()
   const sandbox = await mkdtemp(join(tmpdir(), 'TEST-provider-packed-'))
   t.after(() => rm(sandbox, { recursive: true, force: true }))
-  const { archive, packageDir } = await installPackedConsumer(root, sandbox)
+  const { archive, contractArchive, packageDir } = await installPackedConsumer(root, sandbox)
   const files = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' })
   assert.ok(!files.split('\n').some(path => /^package\/(?:src|tests|node_modules)\//u.test(path)))
   const consumer = `import { CodexAppServerClient, createCodexDriverFactory, mapCodexNativeExecLine } from '@agent-teams/provider-implementations/codex';
@@ -119,5 +119,13 @@ try {
   assert.equal(manifest.peerDependencies, undefined)
   const lock = await readFile(join(sandbox, 'pnpm-lock.yaml'), 'utf8')
   assert.ok(!lock.includes('link:'))
-  if (process.env.AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR) {console.log(JSON.stringify(await retainCheckedArchive(archive, process.env.AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR)))}
+  if (process.env.AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR) {
+    const destination = process.env.AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR
+    // Retain exactly the two archives installed and tested by this consumer.
+    // A separate repack could produce different bytes despite a green test.
+    const provider = await retainCheckedArchive(archive, destination)
+    const contracts = await retainCheckedArchive(contractArchive, destination)
+    assert.notEqual(provider.archiveSha256, contracts.archiveSha256)
+    console.log(JSON.stringify({ checkedProvider: provider, checkedSessionSPI: contracts }))
+  }
 })
