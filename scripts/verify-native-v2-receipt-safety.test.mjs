@@ -93,3 +93,16 @@ test('does not reject safe Session authority assertion metadata', () => {
     }),
   }), 0)
 })
+
+test('accepts native lifecycle credential-read counter but not a string payload', () => {
+  assert.equal(check('lifecycle', {
+    'native-v2-readonly-proof.json': JSON.stringify({
+      qualified: false, nativeIdleInterrupt: { ownCredentialReads: 1 },
+    }),
+  }), 0)
+  assert.equal(check('lifecycle', {
+    'native-v2-readonly-proof.json': JSON.stringify({
+      qualified: false, nativeIdleInterrupt: { ownCredentialReads: 'redacted' },
+    }),
+  }), 1)
+})

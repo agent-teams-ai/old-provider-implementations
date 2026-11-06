@@ -34,7 +34,10 @@ function inspect(value) {
     value.forEach(inspect)
   } else if (value && typeof value === 'object') {
     for (const [key, entry] of Object.entries(value)) {
-      if (unsafeKeys.has(key.toLowerCase()) || unsafeKeyPattern.test(key)) unsafe++
+      // The existing lifecycle receipt reports a bounded *count*, never a secret.
+      const safeCredentialCounter = key === 'ownCredentialReads' &&
+        Number.isSafeInteger(entry) && entry >= 0
+      if (!safeCredentialCounter && (unsafeKeys.has(key.toLowerCase()) || unsafeKeyPattern.test(key))) unsafe++
       inspect(entry)
     }
   }
