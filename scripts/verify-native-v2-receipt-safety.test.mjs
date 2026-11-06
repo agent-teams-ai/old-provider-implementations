@@ -67,3 +67,29 @@ test('rejects unqualified or unsafe native error receipts', () => {
     }),
   }), 1)
 })
+
+// A native SDK upgrade must not turn newly named fields or recognizable
+// provider tokens into public evidence, even if older receipts were safe.
+test('rejects nested credential-like keys and recognizable token values', () => {
+  for (const data of [
+    { access_token: 'redacted' },
+    { clientSecret: 'redacted' },
+    { nested: { refreshToken: 'redacted' } },
+    { credentials: { arbitrary: 'redacted' } },
+    { sessionAuthorization: { verified: true }, trace: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
+    { trace: 'github_pat_abcdefghijklmnopqrstuvwxyz0123456789' },
+    { trace: 'AKIA0123456789ABCDEF' },
+  ]) {
+    assert.equal(check('embedded', {
+      'native-v2-embedded-proof.json': JSON.stringify({ qualified: false, ...data }),
+    }), 1)
+  }
+})
+
+test('does not reject safe Session authority assertion metadata', () => {
+  assert.equal(check('embedded', {
+    'native-v2-embedded-proof.json': JSON.stringify({
+      qualified: false, sessionAuthorization: { verified: true },
+    }),
+  }), 0)
+})
