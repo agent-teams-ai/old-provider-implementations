@@ -1,0 +1,69 @@
+// Focused fail-closed tests for public native TEST artifact admission.
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import test from 'node:test'
+
+const script = fileURLToPath(new URL('./verify-native-v2-receipt-safety.mjs', import.meta.url))
+const valid = JSON.stringify({ qualified: false, completed: true, cleanup: true })
+
+function check(proof, files) {
+  const cwd = mkdtempSync(join(tmpdir(), 'v2-receipt-safety-'))
+  try {
+    for (const [name, contents] of Object.entries(files)) {
+      writeFileSync(join(cwd, name), contents)
+    }
+    const result = spawnSync(process.execPath, [script], {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, OPENCODE_V2_EXPECTED_TEST_PROOF: proof },
+    })
+    assert.equal(result.error, undefined)
+    return result.status
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+}
+
+test('accepts one clean receipt for the selected matrix proof', () => {
+  assert.equal(check('embedded-target-mcp', {
+    'native-v2-embedded-target-mcp-proof.json': valid,
+  }), 0)
+  assert.equal(check('lifecycle', {
+    'native-v2-readonly-proof.json': valid,
+  }), 0)
+})
+
+test('rejects absent, mismatched or extra receipts', () => {
+  assert.equal(check('embedded-target-mcp', {}), 1)
+  assert.equal(check('embedded-target-mcp', {
+    'native-v2-embedded-proof.json': valid,
+  }), 1)
+  assert.equal(check('embedded-target-mcp', {
+    'native-v2-embedded-target-mcp-proof.json': valid,
+    'native-v2-embedded-proof.json': valid,
+  }), 1)
+})
+
+test('rejects unsupported matrix proof and missing proof selector', () => {
+  assert.equal(check('unknown', {
+    'native-v2-unknown-proof.json': valid,
+  }), 1)
+  assert.equal(check('', {
+    'native-v2-embedded-proof.json': valid,
+  }), 1)
+})
+
+test('rejects unqualified or unsafe native error receipts', () => {
+  assert.equal(check('embedded', {
+    'native-v2-embedded-proof.json': JSON.stringify({ qualified: true }),
+  }), 1)
+  assert.equal(check('embedded', {
+    'native-v2-embedded-proof.json': JSON.stringify({
+      qualified: false, failure: 'Error: /home/runner/private-key',
+    }),
+  }), 1)
+})
