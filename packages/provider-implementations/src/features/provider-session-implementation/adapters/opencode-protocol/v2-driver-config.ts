@@ -1,3 +1,4 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
@@ -24,15 +25,13 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
   }
   // RegExp.exec coerces a one-element JSON array into a string; never let an
   // untyped Host capture masquerade as a qualified loopback endpoint.
-  const loopbackPort = typeof config.endpoint === 'string'
-    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
-    : undefined
+
   if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
     || !safeV2SessionID(config.nativeSessionId) || typeof config.directory !== 'string'
     || !isAbsolute(config.directory) || config.directory.endsWith(sep)
     || normalize(config.directory) !== config.directory
     || parse(config.directory).root === config.directory
-    || loopbackPort === undefined || Number(loopbackPort) > 65535
+    || !isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
     || !['2.0.0', '2.0.21'].includes(config.version)
     || typeof config.readPassword !== 'function' || typeof config.probe !== 'function' || typeof config.confirmStopped !== 'function'
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = config.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })

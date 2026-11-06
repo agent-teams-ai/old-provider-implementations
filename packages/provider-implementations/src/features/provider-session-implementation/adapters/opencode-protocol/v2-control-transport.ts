@@ -1,3 +1,4 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
@@ -65,10 +66,8 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   let closed = false
   // Raw control-wire callers bypass the DriverConfig snapshot. Never let
   // RegExp.exec coerce an untyped JSON array into a trusted loopback endpoint.
-  const port = typeof config.endpoint === 'string'
-    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(config.endpoint)?.[1]
-    : undefined
-  executionAssert(port !== undefined && Number(port) <= 65535
+
+  executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
     && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)

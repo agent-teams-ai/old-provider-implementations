@@ -1,3 +1,4 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { checkExecutionSse, checkOpenCodeReadJson } from './v2-json-budget.ts'
@@ -63,10 +64,8 @@ class OpenCodeV2ExecutionFetch {
     this.readPassword = config.readPassword
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
-    const port = typeof this.endpoint === 'string'
-      ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(this.endpoint)?.[1]
-      : undefined
-    executionAssert(port !== undefined && Number(port) <= 65535, 'authority_mismatch')
+
+    executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
     executionAssert(safeV2SessionID(this.nativeSessionId), 'authority_mismatch')
     executionAssert(Number.isFinite(this.context.deadline) && typeof this.directory === 'string' && this.directory.length > 0, 'deadline')

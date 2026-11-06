@@ -1,3 +1,4 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
@@ -31,10 +32,8 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
   // Direct public read-cut callers can bypass the DriverConfig snapshot. A
   // one-element JSON array coerces to a matching string under RegExp.test;
   // reject that, overflow ports and malformed workspace values BEFORE fetch.
-  const port = typeof binding.endpoint === 'string'
-    ? /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(binding.endpoint)?.[1]
-    : undefined
-  if (port === undefined || Number(port) > 65535
+
+  if (!isCanonicalOpenCodeV2LoopbackEndpoint(binding.endpoint)
     || typeof binding.directory !== 'string' || binding.directory.length === 0 || binding.directory.length > 8192
     || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
     || !['2.0.0', '2.0.21'].includes(binding.pin)
