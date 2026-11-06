@@ -204,6 +204,8 @@ jobs:
       - name: Refuse unsafe native TEST receipts before artifact publication
         id: receipt_safety
         if: always()
+        env:
+          OPENCODE_V2_EXPECTED_TEST_PROOF: ${{ matrix.proof }}
         run: node scripts/verify-native-v2-receipt-safety.mjs
       - name: Upload actual runner receipt (including safe failed checks)
         if: always() && steps.receipt_safety.outcome == 'success'
