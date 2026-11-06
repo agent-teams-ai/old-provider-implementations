@@ -100,7 +100,7 @@ async function submitWithLostAck(nativeURL, authorization, payload) {
       // Drop only this one client's acknowledgement; never kill the native owner.
       res.destroy()
     })().catch(error => {
-      proxyFailure = error instanceof Error ? error.message : String(error)
+      proxyFailure = 'TEST_native_lost_ack_proxy_failed'
       res.destroy()
     })
   })
@@ -803,16 +803,17 @@ try {
   // No provider prompt, external files, model credentials, permission grant, or production admission.
 } catch (error) {
   failed = true
-  receipt.failure = String(error instanceof Error ? error.message : error)
+  receipt.failure = error instanceof Error && /^(?:TEST_|native_)[A-Za-z0-9_]{1,96}$/u.test(error.message)
+    ? error.message : 'TEST_native_lifecycle_failure'
 } finally {
-  try { await closeOwnServer() } catch (error) {
-    failed = true; receipt.cleanupFailure = String(error instanceof Error ? error.message : error)
+  try { await closeOwnServer() } catch {
+    failed = true; receipt.cleanupFailure = 'TEST_native_server_cleanup_failed'
   }
-  try { rmSync(root, { recursive: true, force: true }) } catch (error) {
-    failed = true; receipt.testDirectoryCleanupFailure = String(error instanceof Error ? error.message : error)
+  try { rmSync(root, { recursive: true, force: true }) } catch {
+    failed = true; receipt.testDirectoryCleanupFailure = 'TEST_native_directory_cleanup_failed'
   }
   receipt.completed = !failed && receipt.cleanup
   writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
-  console.log(JSON.stringify({ receiptPath, completed: receipt.completed, steps: receipt.steps, failure: receipt.failure, cleanup: receipt.cleanup }))
+  console.log(JSON.stringify({ completed: receipt.completed, steps: receipt.steps, failure: receipt.failure, cleanup: receipt.cleanup }))
 }
 if (!receipt.completed) process.exitCode = 1
