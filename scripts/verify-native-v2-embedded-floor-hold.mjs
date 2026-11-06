@@ -12,7 +12,7 @@ assert.equal(proof.qualified, false)
 assert.equal(proof.completed, false)
 assert.equal(proof.cleanup, true)
 assert.deepEqual(proof.steps, [])
-assert.match(proof.failure, /Cannot find module .*@opencode[/\\]sdk[/\\]dist[/\\]opencode/)
+assert.equal(proof.failure, 'TEST_embedded_floor_ESM_import_unavailable')
 console.log(JSON.stringify({
   negativeControl: 'sdk_2_0_0_node_esm_artifact_unusable',
   observed: true, qualified: false, cleanup: true,
