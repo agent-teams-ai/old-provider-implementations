@@ -126,7 +126,7 @@ if (process.argv[2] === '--mcp-child') {
         : 'none'
       // Only a closed category and handshake bit are safe for public TEST artifacts.
       // Native error text can contain paths or future upstream diagnostic payloads.
-      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker) }
+      receipt.mcpConnectFailure = { status: ['connected', 'connecting', 'disabled', 'failed', 'error'].includes(status) ? status : 'unknown', category, childHandshakeSeen: existsSync(marker) }
       throw Error('TEST_MCP_native_connection_not_ready')
     }
     const boot = JSON.parse(readFileSync(marker, 'utf8'))
@@ -225,11 +225,14 @@ if (process.argv[2] === '--mcp-child') {
     receipt.steps.push('TEST_MCP_host_close_stopped_active_child')
   } catch (error) {
     failed = true
-    receipt.failure = String(error instanceof Error ? error.message : error)
+    // Never echo native SDK/OS error messages into public CI artifacts or logs.
+    // Preserve only our bounded, fixed-format TEST failure identifiers.
+    receipt.failure = error instanceof Error && /^TEST_MCP_[A-Za-z0-9_]{1,96}$/u.test(error.message)
+      ? error.message : 'TEST_MCP_native_failure'
   } finally {
     if (host) {
-      try { await host.close() } catch (error) {
-        failed = true; receipt.hostCleanupFailure = String(error)
+      try { await host.close() } catch {
+        failed = true; receipt.hostCleanupFailure = 'TEST_MCP_host_cleanup_failed'
       }
     }
     if ((childPid && childPresent(childPid)) ||
@@ -237,8 +240,8 @@ if (process.argv[2] === '--mcp-child') {
         (hostClosePid && childPresent(hostClosePid))) {
       failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
     }
-    try { rmSync(root, { recursive: true, force: true }) } catch (error) {
-      failed = true; receipt.rootCleanupFailure = String(error)
+    try { rmSync(root, { recursive: true, force: true }) } catch {
+      failed = true; receipt.rootCleanupFailure = 'TEST_MCP_root_cleanup_failed'
     }
     receipt.cleanup = !receipt.hostCleanupFailure && !receipt.childCleanupFailure && !receipt.rootCleanupFailure
     receipt.completed = !failed && receipt.cleanup
