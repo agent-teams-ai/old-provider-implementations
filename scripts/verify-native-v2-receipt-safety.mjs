@@ -4,12 +4,26 @@ import { readFileSync, readdirSync } from 'node:fs'
 
 const filenames = readdirSync('.').filter(name =>
   name.startsWith('native-v2-') && name.endsWith('.json'))
+// A job without a receipt is not evidence. Do not publish unrelated files
+// (including package locks) when the native proof crashed before writing JSON.
+const expectedProof = process.env.OPENCODE_V2_EXPECTED_TEST_PROOF
+const acceptedProofs = new Set([
+  'lifecycle', 'model', 'embedded', 'embedded-model', 'embedded-interrupt',
+  'embedded-mcp', 'embedded-target-mcp', 'embedded-floor', 'embedded-target',
+  'embedded-target-model', 'embedded-target-tool', 'embedded-pinned-tool',
+])
+const expectedFilename = expectedProof === 'lifecycle'
+  ? 'native-v2-readonly-proof.json'
+  : expectedProof === 'model'
+    ? 'native-v2-model-candidate.json'
+    : `native-v2-${expectedProof}-proof.json`
 const unsafeKeys = new Set([
   'stack', 'stderr', 'stdout', 'detail', 'message', 'headers', 'authorization',
   'password', 'apikey', 'token', 'raw',
 ])
 const unsafeValue = /(?:\/home\/|\/Users\/|\/tmp\/|\/private\/var\/folders\/|\/var\/folders\/|[A-Za-z]:\\(?:a|Users|Windows)\\|node:internal\/|file:\/\/|\bError:\s|\bBearer\s+\S+|\bBasic\s+[A-Za-z0-9+/=]{16,}|\bsk-[A-Za-z0-9_-]{12,})/i
 let unsafe = 0
+if (!acceptedProofs.has(expectedProof) || filenames.length !== 1 || filenames[0] !== expectedFilename) unsafe++
 function inspect(value) {
   if (typeof value === 'string') {
     if (unsafeValue.test(value)) unsafe++
