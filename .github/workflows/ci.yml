@@ -46,4 +46,45 @@ jobs:
       - name: Install exact dependency graph
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Types, controlled tests and packed consumers
+        env:
+          # Retain the SAME exact bytes installed by the package-consumer test.
+          AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR: ${{ runner.temp }}/checked-v2-spi
         run: pnpm check
+      - name: Record exact-head checked archives (not a Host qualification)
+        if: matrix.node == '24.21.0'
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          const root = join(process.env.RUNNER_TEMP, 'checked-v2-spi')
+          const names = readdirSync(root).filter(name => name.endsWith('.tgz')).sort()
+          if (names.length !== 2 ||
+              names.filter(name => name.startsWith('agent-teams-provider-implementations-')).length !== 1 ||
+              names.filter(name => name.startsWith('agent-teams-provider-session-contracts-')).length !== 1)
+            throw Error('expected_exact_two_consumer_checked_archives')
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          if (head !== process.env.EXPECTED_HEAD) throw Error('unexpected_checkout_head')
+          const packages = names.map(name => {
+            const data = readFileSync(join(root, name))
+            return { file: name, bytes: data.length,
+              sha256: createHash('sha256').update(data).digest('hex') }
+          })
+          const receipt = { schemaVersion: 1, sourceCommit: head, packages,
+            qualification: 'source-and-packed-consumer-only',
+            nativeHostQualified: false, packagedElectronQualified: false }
+          writeFileSync(join(root, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\\n')
+          console.log(JSON.stringify(receipt))
+          NODE
+      - name: Upload TEST-only exact-HEAD checked provider and Session SPI archives
+        if: matrix.node == '24.21.0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-v2-spi-consumer-checked-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/checked-v2-spi/
+          if-no-files-found: error
+          retention-days: 7
