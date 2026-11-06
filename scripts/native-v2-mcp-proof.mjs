@@ -124,11 +124,9 @@ if (process.argv[2] === '--mcp-child') {
       const category = typeof lastStatus?.error === 'string'
         ? lastStatus.error.match(/\b(?:ENOENT|EACCES|EINVAL|EPERM|timeout|handshake|spawn|transport)\b/i)?.[0]?.toLowerCase() ?? 'other'
         : 'none'
-      const detail = typeof lastStatus?.error === 'string'
-        ? lastStatus.error.replaceAll(root, '[TEST_ROOT]').replaceAll(process.execPath, '[NODE]')
-          .replaceAll(script, '[TEST_SCRIPT]').replace(/[\r\n]+/g, ' ').slice(0, 400)
-        : null
-      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker), detail }
+      // Only a closed category and handshake bit are safe for public TEST artifacts.
+      // Native error text can contain paths or future upstream diagnostic payloads.
+      receipt.mcpConnectFailure = { status, category, childHandshakeSeen: existsSync(marker) }
       throw Error('TEST_MCP_native_connection_not_ready')
     }
     const boot = JSON.parse(readFileSync(marker, 'utf8'))
