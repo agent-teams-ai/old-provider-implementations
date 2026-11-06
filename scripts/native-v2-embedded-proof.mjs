@@ -24,6 +24,10 @@ if (interruptMode && (!modelMode || toolMode || pinnedVersion !== '2.0.21'))
   throw Error('TEST_interrupt_requires_pinned_embedded_model')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
   qualified: false, steps: [], cleanup: false }
+// Public TEST receipts must never include upstream SDK/OS exception text.
+const safeFailure = (error, fallback) =>
+  error instanceof Error && /^TEST_[A-Za-z0-9_]{1,96}$/u.test(error.message)
+    ? error.message : fallback
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-embedded-'))
 for (const dir of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) {
   mkdirSync(join(root, dir), { recursive: true })
@@ -281,7 +285,7 @@ try {
           response.writeHead(200, { 'content-type': 'text/event-stream' })
           response.end([...frames, 'data: [DONE]'].join('\n\n') + '\n\n')
         } catch (error) {
-          fakeFailure = String(error instanceof Error ? error.message : error)
+          fakeFailure = 'TEST_embedded_fake_model_handler_failed'
           response.writeHead(400, { 'content-type': 'application/json' })
           response.end('{"error":"TEST_invalid_fake_model_request"}')
         }
@@ -866,11 +870,16 @@ try {
   receipt.steps.push('TEST_embedded_session_removed')
 } catch (error) {
   failed = true
-  receipt.failure = String(error instanceof Error ? error.message : error)
+  const expectedFloorImport = pinnedVersion === '2.0.0' && receipt.steps.length === 0 &&
+    error instanceof Error && error.code === 'ERR_MODULE_NOT_FOUND' &&
+    /Cannot find module .*@opencode[/\\]sdk[/\\]dist[/\\]opencode\b/u.test(error.message)
+  receipt.failure = expectedFloorImport
+    ? 'TEST_embedded_floor_ESM_import_unavailable'
+    : safeFailure(error, 'TEST_embedded_native_failure')
 } finally {
   if (host) {
-    try { await host.close() } catch (error) {
-      failed = true; receipt.hostCleanupFailure = String(error)
+    try { await host.close() } catch {
+      failed = true; receipt.hostCleanupFailure = 'TEST_embedded_host_cleanup_failed'
     }
     if (interruptStream) receipt.interruptAfterHostClose = {
       socketClosed: interruptStream.destroyed,
@@ -880,10 +889,10 @@ try {
     try {
       fake.closeAllConnections()
       await new Promise((ok, reject) => fake.close(error => error ? reject(error) : ok()))
-    } catch (error) { failed = true; receipt.fakeCleanupFailure = String(error) }
+    } catch { failed = true; receipt.fakeCleanupFailure = 'TEST_embedded_fake_cleanup_failed' }
   }
-  try { rmSync(root, { recursive: true, force: true }) } catch (error) {
-    failed = true; receipt.testDirectoryCleanupFailure = String(error)
+  try { rmSync(root, { recursive: true, force: true }) } catch {
+    failed = true; receipt.testDirectoryCleanupFailure = 'TEST_embedded_directory_cleanup_failed'
   }
   receipt.cleanup = !receipt.hostCleanupFailure && !receipt.fakeCleanupFailure && !receipt.testDirectoryCleanupFailure
   receipt.completed = !failed && receipt.cleanup
