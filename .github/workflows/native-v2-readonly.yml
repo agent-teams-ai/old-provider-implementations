@@ -28,6 +28,7 @@ on:
       - scripts/verify-native-v2-embedded-floor-hold.mjs
       - scripts/verify-native-v2-interrupt-proof.mjs
       - scripts/native-v2-mcp-proof.mjs
+      - scripts/verify-native-v2-receipt-safety.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
@@ -102,6 +103,7 @@ jobs:
           node --check scripts/verify-native-v2-embedded-floor-hold.mjs
           node --check scripts/verify-native-v2-interrupt-proof.mjs
           node --check scripts/native-v2-mcp-proof.mjs
+          node --check scripts/verify-native-v2-receipt-safety.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
         shell: bash
@@ -199,8 +201,12 @@ jobs:
           OPENCODE_V2_MCP_VERSION: ${{ matrix.proof == 'embedded-target-mcp' && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
         run: node scripts/native-v2-mcp-proof.mjs
-      - name: Upload actual runner receipt (even for failed native checks)
+      - name: Refuse unsafe native TEST receipts before artifact publication
+        id: receipt_safety
         if: always()
+        run: node scripts/verify-native-v2-receipt-safety.mjs
+      - name: Upload actual runner receipt (including safe failed checks)
+        if: always() && steps.receipt_safety.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: opencode-v2-discovery-${{ matrix.os }}-${{ matrix.proof }}
