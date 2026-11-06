@@ -63,6 +63,7 @@ await import('@agent-teams/provider-implementations/src/features/codex-protocol/
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { CodexAppServerClient, createCodexDriverFactory } from '@agent-teams/provider-implementations/codex';
+import { createOpenCodeV2DriverFactory } from '@agent-teams/provider-implementations/opencode';
 import type { CodexAppServerTransport } from '@agent-teams/provider-implementations/codex';
 function native() {
 const child = spawn(process.execPath, [process.argv[2]!], { cwd: process.cwd(), env: { HOME: process.cwd() }, stdio: ['pipe','pipe','pipe','ipc'] });
@@ -110,6 +111,49 @@ try {
   const checkpoint = driver.checkpoint(); assert(checkpoint.ok);
   assert.equal((checkpoint.value as Record<string, unknown>).nativeThreadId, 'thread-1');
 } finally { await driver?.close(); canonical.child.kill('SIGTERM'); }
+// Exercise the EXACT installed V2 Session SPI package across the packed boundary.
+// A serialized product 2.1.4 profile must fail before a native probe or secret read.
+let v2ProbeCalls = 0, v2CredentialReads = 0, v2CheckpointReads = 0;
+const v2Config = (version: '2.0.21' | '2.1.4') => ({
+  binding: { tenantId: request.tenantId, projectId: request.projectId,
+    sessionId: request.sessionId, generation: request.generation },
+  configRevision: request.configRevision,
+  endpoint: 'http://127.0.0.1:19991',
+  // Deliberately cast the untrusted serialized 2.1.4 value through the public
+  // type to exercise the runtime security guard rather than TS assignability.
+  version: version as '2.0.21',
+  directory: process.cwd(), nativeSessionId: 'ses_PACKED001',
+  trustedBinding: 'TEST-packed-host', accountBinding: 'TEST-packed-account',
+  limits: { queuedInputs: 1, inputBytes: 4096, outputBytes: 8192,
+    outputEvents: 20, pendingInteractions: 1, timeoutMs: 2000 },
+  readPassword: () => { v2CredentialReads++; return 'TEST-unused'; },
+  probe: async () => { v2ProbeCalls++; return true; },
+  confirmStopped: async () => true,
+});
+const unsupportedV2 = createOpenCodeV2DriverFactory({
+  capabilities: ['text', 'checkpoint'],
+  async resolveConfiguration() { return v2Config('2.1.4'); },
+  async readCheckpoint() { v2CheckpointReads++; return undefined; },
+});
+await assert.rejects(unsupportedV2.open(request), /opencode\\.driver\\.invalid-config/);
+assert.equal(v2ProbeCalls, 0);
+assert.equal(v2CredentialReads, 0);
+assert.equal(v2CheckpointReads, 0);
+// A captured V1 checkpoint can never silently become a V2 resume, even when
+// the private V2 version is otherwise allowed.
+const incompatibleResume = createOpenCodeV2DriverFactory({
+  capabilities: ['text', 'checkpoint'],
+  async resolveConfiguration() { return v2Config('2.0.21'); },
+  async readCheckpoint() {
+    v2CheckpointReads++;
+    return { version: 1, engine: 'opencode-v1', nativeSessionId: 'ses_PACKED001' };
+  },
+});
+await assert.rejects(incompatibleResume.open({ ...request, checkpointRef: 'TEST-v1-checkpoint' }),
+  /opencode\\.driver\\.checkpoint-incompatible/);
+assert.equal(v2CheckpointReads, 1);
+assert.equal(v2ProbeCalls, 0);
+assert.equal(v2CredentialReads, 0);
 `)
   runConsumer(['exec', 'tsc', '--ignoreConfig', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2024', '--noEmit', '--strict', '--types', 'node', 'types.ts', 'lifecycle.ts'], sandbox)
   execFileSync(process.execPath, ['lifecycle.ts', resolve(root, 'tests/fixtures/codex-app-server.ts')], { cwd: sandbox, stdio: 'pipe', timeout: 10000 })
