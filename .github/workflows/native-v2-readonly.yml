@@ -29,6 +29,7 @@ on:
       - scripts/verify-native-v2-interrupt-proof.mjs
       - scripts/native-v2-mcp-proof.mjs
       - scripts/verify-native-v2-receipt-safety.mjs
+      - scripts/verify-native-v2-receipt-safety.test.mjs
       - .github/workflows/native-v2-readonly.yml
   workflow_dispatch:
 
@@ -104,6 +105,7 @@ jobs:
           node --check scripts/verify-native-v2-interrupt-proof.mjs
           node --check scripts/native-v2-mcp-proof.mjs
           node --check scripts/verify-native-v2-receipt-safety.mjs
+          node --test scripts/verify-native-v2-receipt-safety.test.mjs
       - name: Install exact official V2 CLI into isolated test prefix
         if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
         shell: bash
