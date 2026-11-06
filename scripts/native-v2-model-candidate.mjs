@@ -164,7 +164,7 @@ try {
           'cache-control': 'no-cache' })
         res.end([...frames, 'data: [DONE]'].join('\n\n') + '\n\n')
       } catch (error) {
-        fakeFailure = String(error instanceof Error ? error.message : error)
+        fakeFailure = 'TEST_native_fake_model_handler_failed'
         res.writeHead(400, { 'content-type': 'application/json' })
         res.end('{"error":"TEST_invalid_fake_inference"}')
       }
@@ -425,19 +425,20 @@ try {
   receipt.steps.push('TEST_native_model_execution_terminal_verified')
 } catch (error) {
   failed = true
-  receipt.failure = error instanceof Error ? error.message : String(error)
+  receipt.failure = error instanceof Error && /^TEST_[A-Za-z0-9_]{1,96}$/u.test(error.message)
+    ? error.message : 'TEST_native_model_unexpected_failure'
 } finally {
-  try { await closeNative() } catch (error) {
-    failed = true; receipt.cleanupFailure = String(error)
+  try { await closeNative() } catch {
+    failed = true; receipt.cleanupFailure = 'TEST_native_model_process_cleanup_failed'
   }
   if (fake) {
     try {
       fake.closeAllConnections()
       await new Promise((ok, fail) => fake.close(error => error ? fail(error) : ok()))
-    } catch (error) { failed = true; receipt.fakeCleanupFailure = String(error) }
+    } catch { failed = true; receipt.fakeCleanupFailure = 'TEST_native_model_fake_cleanup_failed' }
   }
   try { rmSync(root, { recursive: true, force: true }) }
-  catch (error) { failed = true; receipt.directoryCleanupFailure = String(error) }
+  catch { failed = true; receipt.directoryCleanupFailure = 'TEST_native_model_directory_cleanup_failed' }
   receipt.completed = !failed && receipt.cleanup
   writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
   console.log(JSON.stringify({ completed: receipt.completed, steps: receipt.steps, failure: receipt.failure }))
