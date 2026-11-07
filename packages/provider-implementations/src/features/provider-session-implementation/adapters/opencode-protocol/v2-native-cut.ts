@@ -1,3 +1,5 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
+import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
@@ -27,8 +29,13 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
   return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
 }
 function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string }>): void {
-  if (!/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(binding.endpoint) || binding.directory.length === 0
-    || !/^ses_[a-zA-Z0-9]+$/.test(binding.sessionID) || !/^msg_[a-zA-Z0-9]+$/.test(input.nativeInputID)
+  // Direct public read-cut callers can bypass the DriverConfig snapshot. A
+  // one-element JSON array coerces to a matching string under RegExp.test;
+  // reject that, overflow ports and malformed workspace values BEFORE fetch.
+
+  if (!isCanonicalOpenCodeV2LoopbackEndpoint(binding.endpoint)
+    || typeof binding.directory !== 'string' || binding.directory.length === 0 || binding.directory.length > 8192
+    || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
     || !['2.0.0', '2.0.21'].includes(binding.pin)
     || !(input.beforeCursor === null || Number.isSafeInteger(input.beforeCursor) && input.beforeCursor >= 0)
     || typeof input.text !== 'string' || Buffer.byteLength(input.text) > 256 * 1024) { throw new Error('invalid_native_read_binding') }

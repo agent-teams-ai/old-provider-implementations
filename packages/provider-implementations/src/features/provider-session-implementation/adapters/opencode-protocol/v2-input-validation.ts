@@ -1,3 +1,4 @@
+import { safeV2MessageID } from './v2-native-identifiers.ts'
 import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 function validateMention(value: unknown, textLength: number): void {
@@ -29,7 +30,7 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
   }
   const fields = parsed as Record<string, unknown>
   executionAssert(Object.keys(fields).every(key => ['id', 'text', 'files', 'agents', 'skills', 'delivery', 'resume'].includes(key))
-    && typeof fields.id === 'string' && /^msg_[A-Za-z0-9]+$/.test(fields.id)
+    && typeof fields.id === 'string' && safeV2MessageID(fields.id)
     && typeof fields.text === 'string' && fields.text.trim().length > 0 && Buffer.byteLength(fields.text) <= 256 * 1024
     && fields.delivery === 'queue' && typeof fields.resume === 'boolean', 'invalid_input')
   for (const key of ['files', 'agents', 'skills']) {
@@ -44,14 +45,22 @@ function executionMethodAllowed(method: string, flags: { session: boolean; list:
   return method === 'GET' && (flags.session || flags.list || flags.log || flags.scoped || flags.identity)
     || method === 'POST' && (flags.create || flags.prompt || flags.activation)
 }
-export function validateExecutionRoute(request: Request, pin: string, directory: string, endpoint: string) {
+export function validateExecutionRoute(request: Request, pin: string, directory: string, endpoint: string, nativeSessionId: string) {
   const url = new URL(request.url)
   executionAssert(url.origin === endpoint && url.username.length === 0 && url.password.length === 0 && url.hash.length === 0, 'authority_mismatch')
-  const session = /^\/api\/session\/[^/]+$/.test(url.pathname), prompt = /^\/api\/session\/[^/]+\/prompt$/.test(url.pathname)
-  const list = /^\/api\/session\/[^/]+\/(?:inbox|message)$/.test(url.pathname), log = /^\/api\/experimental\/session\/[^/]+\/log$/.test(url.pathname)
+  // The private session driver's capability must not apply to another session
+  // on the same loopback server. Exact path binding is enforced before credentials.
+  const sessionPath = `/api/session/${nativeSessionId}`
+  const session = url.pathname === sessionPath, prompt = url.pathname === sessionPath + '/prompt'
+  const list = url.pathname === sessionPath + '/inbox' || url.pathname === sessionPath + '/message'
+  const log = url.pathname === `/api/experimental/session/${nativeSessionId}/log`
   const scoped = /^\/api\/(?:location|agent\/[^/]+|model|integration|config)$/.test(url.pathname)
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   const identity = (pin === '2.0.0' ? ['/api/health', '/api/server'] : ['/api/info']).includes(url.pathname), create = url.pathname === '/api/session'
+  // The V2 Session SPI binds an already owned session. Native creation is a separate
+  // Host-custody operation: this transport cannot prove effective ordered permissions
+  // or prevent V2's default external_directory allow. Deny before any native fetch.
+  executionAssert(!create, 'capabilities_pending')
   executionAssert(executionMethodAllowed(request.method, { session, prompt, list, log, scoped, activation, identity, create }), 'capabilities_pending')
   const allowed = scoped || activation ? ['location[directory]'] : log ? ['after', 'follow'] : url.pathname.endsWith('/message') ? ['cursor', 'limit'] : []
   for (const key of url.searchParams.keys()) { executionAssert(allowed.includes(key) && url.searchParams.getAll(key).length === 1, 'authority_mismatch') }

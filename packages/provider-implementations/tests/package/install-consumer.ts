@@ -56,5 +56,5 @@ export async function installPackedConsumer(root: string, sandbox: string) {
   assert.equal(installed.name, '@agent-teams/provider-session-contracts'); assert.ok(installed.exports['.']);
   const lock = await readFile(join(sandbox, 'pnpm-lock.yaml'), 'utf8');
   for (const forbidden of ['@agent-teams/agent-execution', '@agent-teams/filesystem-custody', 'pg@', 'claude-runtime', 'link:']) {assert.ok(!lock.includes(forbidden), `forbidden consumer closure: ${forbidden}`);}
-  return { archive, packageDir: join(sandbox, 'node_modules/@agent-teams/provider-implementations') };
+  return { archive, contractArchive: canonical, packageDir: join(sandbox, 'node_modules/@agent-teams/provider-implementations') };
 }

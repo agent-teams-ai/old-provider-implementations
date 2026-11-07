@@ -1,5 +1,8 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
+import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
+import { isAbsolute, normalize, parse, sep } from 'node:path'
 import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
@@ -17,9 +20,18 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
   confirmStopped: () => Promise<boolean>
 }
 export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: OpenConfig): OpenCodeV2DriverConfig {
-  if (record(config) === null || config.configRevision !== request.configRevision || !config.trustedBinding || !config.accountBinding
-    || !/^ses_[a-zA-Z0-9]+$/.test(config.nativeSessionId) || !config.directory.startsWith('/')
-    || !/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(config.endpoint)
+  if (record(config) === null || record(config.binding) === null || record(config.limits) === null) {
+    throw new Error('opencode.driver.invalid-config')
+  }
+  // RegExp.exec coerces a one-element JSON array into a string; never let an
+  // untyped Host capture masquerade as a qualified loopback endpoint.
+
+  if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
+    || !safeV2SessionID(config.nativeSessionId) || typeof config.directory !== 'string'
+    || !isAbsolute(config.directory) || config.directory.endsWith(sep)
+    || normalize(config.directory) !== config.directory
+    || parse(config.directory).root === config.directory
+    || !isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
     || !['2.0.0', '2.0.21'].includes(config.version)
     || typeof config.readPassword !== 'function' || typeof config.probe !== 'function' || typeof config.confirmStopped !== 'function'
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = config.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })

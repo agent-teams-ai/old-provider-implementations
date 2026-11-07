@@ -1,0 +1,233 @@
+name: OpenCode V2 native E2E qualification (TEST only)
+
+on:
+  pull_request:
+    paths:
+      # The pinned dependency graph and shared Session SPI define the
+      # effective native driver contract just as much as its V2 codec does.
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'packages/provider-implementations/package.json'
+      - 'packages/provider-session-contracts/package.json'
+      - 'packages/provider-session-contracts/src/**'
+      # Source changes to the private V2 wire, decoder or projection must
+      # invalidate the native contract proof, not only harness edits.
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-*.ts'
+      # The V2 driver also runs through this shared Session SPI engine and
+      # bounded I/O. Changes here must invalidate native V2 receipts as well.
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-protocol.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/input-window-capture.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/provider-session-io/io.ts'
+      - 'packages/provider-implementations/src/features/provider-session-implementation/adapters/provider-session-io/attachments.ts'
+      - 'packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-*.ts'
+      - scripts/native-v2-readonly-proof.mjs
+      - scripts/native-v2-model-candidate.mjs
+      - scripts/verify-native-v2-cli-hold.mjs
+      - scripts/native-v2-embedded-proof.mjs
+      - scripts/verify-native-v2-embedded-floor-hold.mjs
+      - scripts/verify-native-v2-interrupt-proof.mjs
+      - scripts/native-v2-mcp-proof.mjs
+      - scripts/verify-native-v2-receipt-safety.mjs
+      - scripts/verify-native-v2-receipt-safety.test.mjs
+      - .github/workflows/native-v2-readonly.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-v2-discovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-v2-test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, proof: lifecycle }
+          - { os: ubuntu-24.04, proof: model }
+          - { os: ubuntu-24.04, proof: embedded }
+          - { os: ubuntu-24.04, proof: embedded-model }
+          - { os: ubuntu-24.04, proof: embedded-interrupt }
+          - { os: ubuntu-24.04, proof: embedded-mcp }
+          - { os: ubuntu-24.04, proof: embedded-target-mcp }
+          - { os: ubuntu-24.04, proof: embedded-floor }
+          - { os: ubuntu-24.04, proof: embedded-target }
+          - { os: ubuntu-24.04, proof: embedded-target-model }
+          # Discovery only: actual local fake-model tool call, policy hard-deny,
+          # and an outside-workspace canary. Not a Host/production PASS.
+          - { os: ubuntu-24.04, proof: embedded-target-tool }
+          # Actual 2.0.21 private-driver pin: native tool blocked by explicit
+          # session external_directory deny, not the newer config policy.
+          - { os: ubuntu-24.04, proof: embedded-pinned-tool }
+          - { os: macos-15, proof: embedded }
+          - { os: macos-15, proof: embedded-model }
+          - { os: macos-15, proof: embedded-interrupt }
+          - { os: macos-15, proof: embedded-pinned-tool }
+          - { os: macos-15, proof: embedded-target-tool }
+          - { os: macos-15, proof: embedded-target-mcp }
+          # GitHub-hosted macos-15 is Apple Silicon; macos-15-intel is x64.
+          - { os: macos-15-intel, proof: embedded }
+          - { os: macos-15-intel, proof: embedded-model }
+          - { os: macos-15-intel, proof: embedded-interrupt }
+          - { os: macos-15-intel, proof: embedded-pinned-tool }
+          - { os: macos-15-intel, proof: embedded-target-tool }
+          - { os: windows-2022, proof: embedded }
+          - { os: windows-2022, proof: embedded-model }
+          - { os: windows-2022, proof: embedded-interrupt }
+          - { os: windows-2022, proof: embedded-pinned-tool }
+          - { os: windows-2022, proof: embedded-target-tool }
+          - { os: windows-2022, proof: embedded-target-mcp }
+          # Windows 11 ARM64 is a separate native SDK tuple, not Server 2022 x64.
+          - { os: windows-11-arm, proof: embedded-target-mcp }
+          - { os: windows-2022, proof: embedded-target }
+          - { os: windows-2022, proof: embedded-target-model }
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Validate native TEST harness syntax
+        run: |
+          node --check scripts/native-v2-readonly-proof.mjs
+          node --check scripts/native-v2-model-candidate.mjs
+          node --check scripts/verify-native-v2-cli-hold.mjs
+          node --check scripts/native-v2-embedded-proof.mjs
+          node --check scripts/verify-native-v2-embedded-floor-hold.mjs
+          node --check scripts/verify-native-v2-interrupt-proof.mjs
+          node --check scripts/native-v2-mcp-proof.mjs
+          node --check scripts/verify-native-v2-receipt-safety.mjs
+          node --test scripts/verify-native-v2-receipt-safety.test.mjs
+      - name: Install exact official V2 CLI into isolated test prefix
+        if: matrix.proof == 'lifecycle' || matrix.proof == 'model'
+        shell: bash
+        env:
+          npm_config_audit: 'false'
+          npm_config_fund: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/opencode-v2-native/npm" "$RUNNER_TEMP/opencode-v2-native/install-home"
+          HOME="$RUNNER_TEMP/opencode-v2-native/install-home" npm install \
+            --prefix "$RUNNER_TEMP/opencode-v2-native/npm" \
+            --no-save --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/cli@2.0.21
+          npm ls --prefix "$RUNNER_TEMP/opencode-v2-native/npm" --depth=0 @opencode/cli
+      - name: Install exact pinned embedded V2 SDK without install scripts
+        if: startsWith(matrix.proof, 'embedded')
+        shell: bash
+        env:
+          npm_config_audit: 'false'
+          npm_config_fund: 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/opencode-v2-embedded"
+          npm install --prefix "$RUNNER_TEMP/opencode-v2-embedded" --no-save \
+            --package-lock=true --ignore-scripts --no-audit --no-fund @opencode/sdk@${{ startsWith(matrix.proof, 'embedded-floor') && '2.0.0' || startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
+          npm ls --prefix "$RUNNER_TEMP/opencode-v2-embedded" --depth=0 @opencode/sdk
+      - name: TEST native binary, authenticated API and disposable session lifecycle
+        if: matrix.proof == 'lifecycle'
+        env:
+          OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
+          OPENCODE_V2_TEST_RECEIPT: ${{ github.workspace }}/native-v2-readonly-proof.json
+        run: node scripts/native-v2-readonly-proof.mjs
+      - name: Assert stock CLI native model terminal HOLD (expected negative control)
+        if: matrix.proof == 'model'
+        shell: bash
+        env:
+          OPENCODE_V2_TEST_NPM_ROOT: ${{ runner.temp }}/opencode-v2-native/npm/node_modules/@opencode
+          OPENCODE_V2_TEST_MODEL_RECEIPT: ${{ github.workspace }}/native-v2-model-candidate.json
+        run: |
+          set +e
+          node scripts/native-v2-model-candidate.mjs
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Stock CLI changed behavior or did not execute; review native evidence before qualification"
+            exit 1
+          fi
+          node scripts/verify-native-v2-cli-hold.mjs
+      - name: Assert published SDK 2.0.0 Node ESM HOLD (expected negative control)
+        if: matrix.proof == 'embedded-floor'
+        shell: bash
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-floor-proof.json
+          OPENCODE_V2_EMBEDDED_VERSION: '2.0.0'
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: '0'
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: 'linux-x64'
+        run: |
+          set +e
+          node scripts/native-v2-embedded-proof.mjs
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "::error::Published floor SDK behavior changed; requalify before any adoption"
+            exit 1
+          fi
+          node scripts/verify-native-v2-embedded-floor-hold.mjs
+      - name: TEST embedded V2 persistent event log through cold host restart
+        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt' && matrix.proof != 'embedded-mcp' && matrix.proof != 'embedded-target-mcp'
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: ${{ (endsWith(matrix.proof, '-model') || endsWith(matrix.proof, '-tool') || endsWith(matrix.proof, '-interrupt')) && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: ${{ endsWith(matrix.proof, '-interrupt') && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_TOOL_PROOF: ${{ endsWith(matrix.proof, '-tool') && '1' || '0' }}
+          OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
+        run: node scripts/native-v2-embedded-proof.mjs
+      - name: TEST embedded pinned active-interrupt HTTP cancel and cold no-replay
+        if: matrix.proof == 'embedded-interrupt'
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-interrupt-proof.json
+          OPENCODE_V2_EMBEDDED_MODEL_PROOF: '1'
+          OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: '1'
+          OPENCODE_V2_EMBEDDED_VERSION: '2.0.21'
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
+        run: |
+          node scripts/native-v2-embedded-proof.mjs
+          node scripts/verify-native-v2-interrupt-proof.mjs
+      - name: TEST embedded V2 local MCP stdio handshake and owned teardown
+        if: matrix.proof == 'embedded-mcp' || matrix.proof == 'embedded-target-mcp'
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_MCP_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
+          OPENCODE_V2_MCP_VERSION: ${{ matrix.proof == 'embedded-target-mcp' && '2.1.4' || '2.0.21' }}
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
+        run: node scripts/native-v2-mcp-proof.mjs
+      - name: Refuse unsafe native TEST receipts before artifact publication
+        id: receipt_safety
+        if: always()
+        env:
+          OPENCODE_V2_EXPECTED_TEST_PROOF: ${{ matrix.proof }}
+        run: node scripts/verify-native-v2-receipt-safety.mjs
+      - name: Upload actual runner receipt (including safe failed checks)
+        if: always() && steps.receipt_safety.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-v2-discovery-${{ matrix.os }}-${{ matrix.proof }}
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            native-v2-readonly-proof.json
+            native-v2-model-candidate.json
+            native-v2-embedded-proof.json
+            native-v2-embedded-model-proof.json
+            native-v2-embedded-interrupt-proof.json
+            native-v2-embedded-mcp-proof.json
+            native-v2-embedded-target-mcp-proof.json
+            native-v2-embedded-floor-proof.json
+            native-v2-embedded-target-proof.json
+            native-v2-embedded-target-model-proof.json
+            native-v2-embedded-target-tool-proof.json
+            native-v2-embedded-pinned-tool-proof.json
+            ${{ runner.temp }}/opencode-v2-embedded/package-lock.json
+            ${{ runner.temp }}/opencode-v2-native/npm/package-lock.json

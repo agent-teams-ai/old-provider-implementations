@@ -1,4 +1,7 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
+import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
+import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
 import { checkOpenCodeReadJson } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
@@ -37,7 +40,16 @@ function validateControlBody(body: string, routes: ControlRoutes, version: strin
   const fields = record(JSON.parse(body) as unknown)
   const key = routes.putInstruction ? 'value' : version === '2.0.0' ? 'reply' : 'decision'
   executionAssert(fields !== null && Object.keys(fields).length === 1 && Object.hasOwn(fields, key), 'unsupported_input')
-  if (routes.reply) { executionAssert(typeof fields[key] === 'string' && ['once', 'always', 'reject'].includes(fields[key]), 'invalid_input') }
+  if (routes.putInstruction) {
+    // The raw control wire is not allowed to bypass the typed instruction API's
+    // bounded durable-value policy before credentials or native side effects.
+    executionAssert(Buffer.byteLength(canonicalExecutionJSON(fields[key])) <= 256 * 1024, 'body_limit')
+  }
+  if (routes.reply) {
+    // V2 "always" persists a project-scoped allow pattern. This raw transport
+    // must not provide a bypass around the Host's not-yet-qualified policy gate.
+    executionAssert(fields[key] === 'once' || fields[key] === 'reject', 'invalid_input')
+  }
 }
 function controlResponse(response: Response, body: string, routes: ControlRoutes): Response {
   if (routes.putInstruction || routes.cancelInbox || routes.reply) {
@@ -52,8 +64,11 @@ function controlResponse(response: Response, body: string, routes: ControlRoutes
 export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   const config = { ...supplied }, controllers = new Set<AbortController>(), pending = new Set<Promise<unknown>>()
   let closed = false
-  executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(config.endpoint)
-    && /^ses_[a-zA-Z0-9]+$/.test(config.nativeSessionId), 'authority_mismatch')
+  // Raw control-wire callers bypass the DriverConfig snapshot. Never let
+  // RegExp.exec coerce an untyped JSON array into a trusted loopback endpoint.
+
+  executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
+    && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)
     && Date.now() < config.deadline && config.signal?.aborted !== true, 'authority_or_deadline'); }

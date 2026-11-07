@@ -8,14 +8,17 @@ function logProblem(input: OpenCodeV2NativeTurnCut): string | null {
   let last = -1
   for (const event of input.log.events) {
     if (event.aggregateID !== input.sessionID || event.data.sessionID !== input.sessionID || ids.has(event.id)
-      || !Number.isSafeInteger(event.seq) || event.seq <= last || last >= 0 && event.seq !== last + 1) { return 'foreign_or_incomplete_log' }
+      || !Number.isSafeInteger(event.seq) || event.seq <= last) { return 'foreign_or_incomplete_log' }
     ids.add(event.id); last = event.seq
   }
-  return input.log.watermark !== (input.log.events.at(-1)?.seq ?? null) ? 'incomplete_log_watermark' : null
+  // Session events are filtered from a shared durable bus; valid sequence gaps
+  // and a synced watermark beyond the last emitted event do not imply loss.
+  return typeof input.log.watermark !== 'number' || !Number.isSafeInteger(input.log.watermark)
+    || input.log.watermark < last ? 'incomplete_log_watermark' : null
 }
 function cutProblem(input: OpenCodeV2NativeTurnCut): string | null {
   if (record(input.messages)?.previous !== null || record(input.messages)?.next !== null || record(input.log)?.synced !== true) { return 'incomplete_native_cut' }
-  if (!['2.0.0', '2.0.21'].includes(input.pin)) { return 'unqualified_projection_pin' }
+  if (!['2.0.0', '2.0.21', '2.1.4'].includes(input.pin)) { return 'unqualified_projection_pin' }
   const events = input.log.events
   if (events.at(0)?.seq !== 0 || events.at(0)?.type !== 'session.created') { return 'missing_native_log_prefix' }
   if (events.length > 4096 || input.messages.data.length > 1600 || new Set(input.messages.data.map(message => message.id)).size !== input.messages.data.length) { return 'unbounded_or_duplicate_cut' }
@@ -38,7 +41,7 @@ function terminalProjection(input: OpenCodeV2NativeTurnCut, ending: OpenCodeV2Na
   const state = ending.type === 'session.execution.succeeded' ? 'succeeded' : ending.type === 'session.execution.failed' ? 'failed' : 'cancelled'
   if (state === 'succeeded' && assistants.length === 0) { return 'no_assistant_terminal_lineage' }
   // Current emits idle except native shutdown; floor omits idle (both pins audited).
-  if (input.pin === '2.0.21' && !(state === 'cancelled' && ending.data.reason === 'shutdown')) {
+  if (input.pin !== '2.0.0' && !(state === 'cancelled' && ending.data.reason === 'shutdown')) {
     const idle = input.messages.data.find(message => message.id === messageIDFromEvent(ending.id))
     if (!idle || idle.type !== 'idle' || idle.data.outcome !== (state === 'cancelled' ? 'interrupted' : state)) { return 'terminal_snapshot_mismatch' }
   }

@@ -3,7 +3,7 @@ import type { OpenCodeV2NativeTurnCut } from '../../../../src/opencode.ts'
 export const sessionID = 'ses_TESToriginal', nativeInputID = 'msg_TESTinput', assistantID = 'msg_TESTassistant'
 export const content = [{ type: 'text', text: '{"accepted":true,"task":{"status":"completed"}}' }]
 export const toolInput = { text: 'TEST tool input' }
-export function cut(pin: '2.0.0' | '2.0.21' = '2.0.21'): OpenCodeV2NativeTurnCut {
+export function cut(pin: '2.0.0' | '2.0.21' | '2.1.4' = '2.0.21'): OpenCodeV2NativeTurnCut {
   const event = (type: string, seq: number, data: Record<string, unknown> = {}) =>
     ({ id: `evt_TEST${seq}`, type, seq, aggregateID: sessionID, data: { sessionID, ...data } })
   const assistantMessageID = assistantID
@@ -14,7 +14,7 @@ export function cut(pin: '2.0.0' | '2.0.21' = '2.0.21'): OpenCodeV2NativeTurnCut
         time: { created: 3, completed: 9 }, content: [{ type: 'text', text: 'TEST reply' },
           { type: 'tool', id: 'TEST-tool', name: 'agent-teams_task_done', executed: false,
             state: { status: 'completed', input: toolInput, content } }] } },
-      ...(pin === '2.0.21' ? [{ id: 'msg_TEST9', type: 'idle', timeCreated: 9, data: { outcome: 'succeeded' } }] : []),
+      ...(pin !== '2.0.0' ? [{ id: 'msg_TEST9', type: 'idle', timeCreated: 9, data: { outcome: 'succeeded' } }] : []),
     ] },
     log: { synced: true, watermark: 9, events: [
       event('session.created', 0), event('session.execution.started', 1), event('session.inbox.delivered', 2, { inboxID: nativeInputID }),

@@ -1,4 +1,6 @@
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
+import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { checkExecutionSse, checkOpenCodeReadJson } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
 
@@ -8,6 +10,7 @@ export type OpenCodeV2TransportConfig = {
   endpoint: string
   version: '2.0.0' | '2.0.21'
   directory: string
+  nativeSessionId: string
   /** Private credential projection supplied by runtime custody; never emitted. */
   readPassword: () => string
   signal?: AbortSignal
@@ -51,16 +54,20 @@ class OpenCodeV2ExecutionFetch {
   private readonly endpoint: string
   private readonly pin: '2.0.0' | '2.0.21'
   private readonly directory: string
+  private readonly nativeSessionId: string
   private readonly readPassword: () => string
   private readonly context: { signal: AbortSignal | undefined; deadline: number }
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   constructor(config: OpenCodeV2TransportConfig) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
+    this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
-    executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(this.endpoint), 'authority_mismatch')
+
+    executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
+    executionAssert(safeV2SessionID(this.nativeSessionId), 'authority_mismatch')
     executionAssert(Number.isFinite(this.context.deadline) && typeof this.directory === 'string' && this.directory.length > 0, 'deadline')
   }
 
@@ -94,7 +101,7 @@ class OpenCodeV2ExecutionFetch {
     let reader
     try {
       let request = new Request(input, init)
-      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint)
+      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint, this.nativeSessionId)
       if (create || prompt) {
         const validationSignal = AbortSignal.any([controller.signal, request.signal,
           ...(this.context.signal ? [this.context.signal] : [])])
