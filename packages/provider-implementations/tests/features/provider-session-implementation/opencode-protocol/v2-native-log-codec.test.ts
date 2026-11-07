@@ -38,6 +38,25 @@ test('pre-execution empty log does not relax foreign/malformed/incomplete SSE re
   }
 })
 
+test('durable V2 log fails closed on unsupported SSE controls or empty data frames', () => {
+  const malformed = [
+    'event: hidden\\n\\n' + synced(0),
+    'id: hidden\\n\\n' + synced(0),
+    'retry: 100\\n\\n' + synced(0),
+    'data:\\n\\n' + synced(0),
+    'event: hidden\\n' + synced(0),
+    synced(0) + 'event: hidden\\n\\n',
+    synced(0) + 'id: hidden\\n\\n',
+    synced(0) + 'data:\\n\\n',
+  ]
+  for (const input of malformed) {
+    assert.throws(() => decodeV2Log(input, sessionID, directory), /incomplete_native_log/)
+  }
+  assert.deepEqual(decodeV2Log(': native keepalive\\n\\n' + synced(0) + ': idle\\n\\n', sessionID, directory), {
+    events: [], synced: true, watermark: 0,
+  })
+})
+
 test('known nonempty session-created prefix remains valid and ordered', () => {
   assert.deepEqual(decodeV2Log(
     event('session.created', 0) + event('session.execution.started', 3) + synced(5),

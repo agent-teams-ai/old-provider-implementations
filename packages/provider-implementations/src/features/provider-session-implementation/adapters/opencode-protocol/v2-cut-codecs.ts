@@ -49,8 +49,14 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
   const frames = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n\n')
   requireCut(frames.at(-1) === '' && frames.length <= 4098, 'incomplete_native_log')
   for (const frame of frames) {
-    const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n')
-    if (!data) {continue}
+    const lines = frame.split('\n')
+    // Only SSE comments/blank keep-alives are non-events. An unsupported
+    // directive or empty data frame cannot silently hide native log evidence.
+    requireCut(lines.every(line => line === '' || line.startsWith(':') || line.startsWith('data:')), 'incomplete_native_log')
+    const dataLines = lines.filter(line => line.startsWith('data:'))
+    if (dataLines.length === 0) {continue}
+    const data = dataLines.map(line => line.slice(5).replace(/^ /, '')).join('\n')
+    requireCut(data.length > 0, 'incomplete_native_log')
     const raw = record(JSON.parse(data) as unknown)
     requireCut(raw !== null && !synced, 'incomplete_native_log')
     if (raw.type === 'log.synced') {
