@@ -96,6 +96,21 @@ test('V2 rejects root, noncanonical directories and corrupted nested Host bindin
   assert.equal(host.counts().submitted, 0)
 })
 
+test('unqualified 2.1.4 Host version is refused before native credentials or probe', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  let probes = 0; let passwordReads = 0
+  const config = { ...nativeConfig(host), version: '2.1.4',
+    probe: async () => { probes++; return true },
+    readPassword: () => { passwordReads++; return 'TEST-should-never-be-read' },
+  } as unknown as ReturnType<typeof nativeConfig>
+  const factory = createOpenCodeV2DriverFactory({
+    capabilities: ['text'], resolveConfiguration: async () => config, readCheckpoint: async () => {},
+  })
+  await assert.rejects(factory.open(request), /opencode.driver.invalid-config/)
+  assert.equal(probes, 0); assert.equal(passwordReads, 0)
+  assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+})
+
 test('private Host failures never project credential/configuration details into public open errors', async () => {
   const factory: DriverFactory = createOpenCodeV2DriverFactory({ capabilities: ['text'], resolveConfiguration: async () => { throw new Error('TEST-private-credential') },
     readCheckpoint: async () => {} })
