@@ -57,7 +57,11 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
     if (dataLines.length === 0) {continue}
     const data = dataLines.map(line => line.slice(5).replace(/^ /, '')).join('\n')
     requireCut(data.length > 0, 'incomplete_native_log')
-    const raw = record(JSON.parse(data) as unknown)
+    // JSON.parse diagnostics can quote native SSE bytes (including secrets).
+    // The public decoder must only expose a fixed refusal code.
+    let raw: ReturnType<typeof record>
+    try { raw = record(JSON.parse(data) as unknown) }
+    catch { throw new Error('incomplete_native_log') }
     requireCut(raw !== null && !synced, 'incomplete_native_log')
     if (raw.type === 'log.synced') {
       requireCut(raw.aggregateID === sessionID, 'foreign_native_log')

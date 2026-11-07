@@ -57,6 +57,18 @@ test('durable V2 log fails closed on unsupported SSE controls or empty data fram
   })
 })
 
+test('malformed native SSE JSON fails with a fixed sanitized diagnostic', () => {
+  const secret = 'TEST_PRIVATE_NATIVE_STREAM_PAYLOAD'
+  const malformed = [
+    'data: ' + secret + '\n\n',
+    'data: {"text":' + secret + '}\n\n',
+  ]
+  for (const source of malformed) {
+    assert.throws(() => decodeV2Log(source + synced(0), sessionID, directory),
+      (error: unknown) => error instanceof Error && error.message === 'incomplete_native_log')
+  }
+})
+
 test('known nonempty session-created prefix remains valid and ordered', () => {
   assert.deepEqual(decodeV2Log(
     event('session.created', 0) + event('session.execution.started', 3) + synced(5),
