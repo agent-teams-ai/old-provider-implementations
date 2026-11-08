@@ -105,6 +105,9 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
         validateControlBody(body, routes, config.version)
         native = new Request(native.url, { method: native.method, headers: native.headers, body, signal: native.signal })
       } else {executionAssert(!native.body, 'unsupported_input')}
+      // Stream admission may outlive the original deadline or revoke the Host lease.
+      // Revalidate before projecting credentials, not only before native fetch.
+      check(); signal.throwIfAborted()
       const password = config.readPassword()
       executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
       check(); signal.throwIfAborted()

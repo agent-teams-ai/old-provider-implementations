@@ -143,6 +143,30 @@ test('control credential callback revocation is checked before native invocation
 })
 
 
+test('raw V2 control rechecks the deadline after reading a mutation body before credentials', async t => {
+  // Simulate the deadline expiring after the initial admission and both
+  // native Request body reads. The fifth clock read is the required pre-
+  // credential recheck; without it readPassword() would be called.
+  const baseline = Date.now()
+  let clockReads = 0, credentialReads = 0, nativeFetches = 0
+  t.mock.method(Date, 'now', () => ++clockReads <= 4 ? baseline : baseline + 20_000)
+  const raw = createV2ControlWire({
+    endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original',
+    version: '2.0.21', deadline: baseline + 10_000, nativeSessionId: 'ses_A',
+    readPassword: () => { credentialReads++; return 'TEST-private' },
+    fetchImpl: async () => { nativeFetches++; return new Response('{}') },
+  })
+  t.after(raw.dispose)
+  await assert.rejects(raw.request('/api/session/ses_A/permission/per_ses_A/reply', {
+    method: 'POST', body: JSON.stringify({ decision: 'reject' }),
+  }), error => {
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+    return true
+  })
+  assert.equal(credentialReads, 0, 'expired request must not project Host credentials')
+  assert.equal(nativeFetches, 0, 'expired request must not invoke native HTTP')
+})
+
 test('V2 durable always-approval is refused even via raw control wire without native reads or writes', async t => {
   // Native V2 "always" persists a project-scoped allow rule. Host has not yet
   // qualified control of those durable approvals or effective permission order.
