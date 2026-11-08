@@ -269,6 +269,32 @@ test('public read cut refuses a non-byte stream chunk before reading more data',
   } finally { clearTimeout(timer) }
 })
 
+test('public native read cut bounds tiny byte chunks before exhausting memory', async () => {
+  const directory = resolve('TEST/native-cut')
+  let reads = 0, cancelled = 0, requests = 0
+  const reader = {
+    async read() { reads++; return { done: false, value: Uint8Array.of(65) } },
+    async cancel() { cancelled++ },
+    releaseLock() {},
+  }
+  const transport = {
+    check() {},
+    async fetch(): Promise<Response> {
+      requests++
+      return { ok: true, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_cut_byte_budget')
+  assert.equal(requests, 1)
+  assert.equal(reads, 8193)
+  assert.equal(cancelled, 1)
+})
+
 test('direct native cut fails closed when an injected stream refuses cancellation', async () => {
   const directory = resolve('TEST/native-cut')
   for (const behavior of ['pending', 'reject'] as const) {
