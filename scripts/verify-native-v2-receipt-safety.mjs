@@ -25,7 +25,7 @@ const unsafeKeys = new Set([
 // Keep sessionAuthorization (a non-secret TEST assertion) valid.
 const unsafeKeyPattern = /(?:secret|password|passphrase|credential|api[_-]?key|private[_-]?key|(?:access|refresh|id)[_-]?token|cookie)/i
 const unsafeValue = /(?:\/home\/|\/Users\/|\/tmp\/|\/private\/var\/folders\/|\/var\/folders\/|[A-Za-z]:\\(?:a|Users|Windows)\\|node:internal\/|file:\/\/|\bError:\s|\bBearer\s+\S+|\bBasic\s+[A-Za-z0-9+/=]{16,}|\bsk-[A-Za-z0-9_-]{12,}|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b)/i
-const unsafeWindowsPath = /(?:[A-Za-z]:\\|\\\\[^\\\s]+\\[^\\\s]+)/
+const unsafeWindowsPath = /(?:(?<![A-Za-z0-9])[A-Za-z]:[\\/]|\\\\[^\\/\s]+[\\/][^\\/\s]+|(?<!:)\/\/[^\\/\s]+[\\/][^\\/\s]+)/
 let unsafe = 0
 if (!acceptedProofs.has(expectedProof) || filenames.length !== 1 || filenames[0] !== expectedFilename) unsafe++
 function inspect(value) {

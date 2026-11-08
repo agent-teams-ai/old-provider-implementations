@@ -88,6 +88,25 @@ test('rejects nested credential-like keys and recognizable token values', () => 
   }
 })
 
+
+test('rejects slash-normalized Windows drive and UNC paths in public receipts', () => {
+  for (const location of [
+    'E:/TEST/private-session/config.json',
+    '//internal-server/private-share/session.json',
+    String.raw`\\\\internal-server/private-share/session.json`,
+  ]) {
+    assert.equal(check('embedded', {
+      'native-v2-embedded-proof.json': JSON.stringify({ qualified: false, trace: location }),
+    }), 1)
+  }
+})
+
+test('ordinary non-secret URL metadata is not mistaken for a Windows drive path', () => {
+  assert.equal(check('embedded', {
+    'native-v2-embedded-proof.json': JSON.stringify({ qualified: false, origin: 'http://127.0.0.1:12345' }),
+  }), 0)
+})
+
 test('does not reject safe Session authority assertion metadata', () => {
   assert.equal(check('embedded', {
     'native-v2-embedded-proof.json': JSON.stringify({
