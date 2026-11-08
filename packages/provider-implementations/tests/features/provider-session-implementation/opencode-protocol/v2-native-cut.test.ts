@@ -158,10 +158,9 @@ test('native finite cut accepts 4096 events plus synced frame and rejects a 4097
 test('malformed session and message JSON fail closed without leaking native body or skipping read budgets', async t => {
   for (const mode of ['malformed-session', 'malformed-message'] as const) {
     const host = await fixture(mode); t.after(host.close)
-    const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
-      nativeSessionId: sessionID, version: '2.0.21', deadline: Date.now() + 10_000,
-      readPassword: () => 'TEST-private' })
-    t.after(() => transport.dispose())
+    // Exercise the public injected read transport directly: the standard
+    // execution wire rejects malformed JSON earlier with its own fixed failure.
+    const transport = { check() {}, fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init) }
     await assert.rejects(readOpenCodeV2NativeCut(transport,
       { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
       { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
