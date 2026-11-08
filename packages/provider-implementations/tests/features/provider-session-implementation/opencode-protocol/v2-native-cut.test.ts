@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { parse, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
 async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
   'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync') {
-  const value = cut(), directory = '/TEST/native-cut'
+  const value = cut(), directory = resolve('TEST/native-cut')
   let logs = 0, pages = 0, requests = 0
   const server = createServer((req, res) => {
     requests++; assert.equal(req.method, 'GET')
@@ -153,7 +154,8 @@ test('direct read-cut rejects malformed binding before any native fetch', async 
   // Unlike DriverConfig, this public read-only cut accepts an injected
   // transport. Invalid serialized profile data must not reach that transport.
   for (const pin of ['2.0.0', '2.0.21'] as const) {
-    const valid = { endpoint: 'http://127.0.0.1:12345', directory: '/TEST/native-cut', sessionID, pin }
+    const directory = resolve('TEST/native-cut')
+    const valid = { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin }
     const malformed: readonly Record<string, unknown>[] = [
       { endpoint: ['http://127.0.0.1:12345'] },
       { endpoint: 'http://127.0.0.1:65536' },
@@ -163,6 +165,11 @@ test('direct read-cut rejects malformed binding before any native fetch', async 
       { directory: ['/TEST/native-cut'] },
       { directory: 42 },
       { directory: 'x'.repeat(8193) },
+      { directory: parse(directory).root },
+      { directory: directory + sep },
+      { directory: directory + sep + '..' + sep + 'TEST-foreign' },
+      { directory: directory + sep + sep + 'TEST-neighbor' },
+      { directory: directory + '\0invalid' },
     ]
     for (const overrides of malformed) {
       let requests = 0

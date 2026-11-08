@@ -1,4 +1,5 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
+import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
@@ -34,7 +35,7 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
   // reject that, overflow ports and malformed workspace values BEFORE fetch.
 
   if (!isCanonicalOpenCodeV2LoopbackEndpoint(binding.endpoint)
-    || typeof binding.directory !== 'string' || binding.directory.length === 0 || binding.directory.length > 8192
+    || !isCanonicalV2DriverDirectory(binding.directory)
     || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
     || !['2.0.0', '2.0.21'].includes(binding.pin)
     || !(input.beforeCursor === null || Number.isSafeInteger(input.beforeCursor) && input.beforeCursor >= 0)
