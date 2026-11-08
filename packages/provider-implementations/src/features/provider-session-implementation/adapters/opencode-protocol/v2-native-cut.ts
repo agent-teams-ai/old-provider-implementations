@@ -76,14 +76,22 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   validateReadBinding(binding, input)
   const budget = { bytes: 0 }
   const read = async (path: string) => {
-    transport.check()
-    const response = await transport.fetch(binding.endpoint + path, { method: 'GET', redirect: 'error' })
-    const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
-    if (!response.ok || response.redirected || response.url && new URL(response.url).origin !== binding.endpoint
-      || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {throw new Error('invalid_native_read_response')}
-    const text = await nativeResponseBody(response, transport, budget)
-    transport.check()
-    return text
+    try {
+      transport.check()
+      const response = await transport.fetch(binding.endpoint + path, { method: 'GET', redirect: 'error' })
+      const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+      if (!response.ok || response.redirected || response.url && new URL(response.url).origin !== binding.endpoint
+        || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {throw new Error('invalid_native_read_response')}
+      const text = await nativeResponseBody(response, transport, budget)
+      transport.check()
+      return text
+    } catch (error) {
+      // An injected public read transport can reject with raw native payloads,
+      // header values or OS diagnostics; only fixed read-budget codes escape.
+      if (error instanceof Error && ['invalid_native_read_response', 'native_cut_byte_budget',
+        'native_read_cleanup_unknown'].includes(error.message)) throw error
+      throw new Error('invalid_native_read_response')
+    }
   }
   const sessionPath = `/api/session/${encodeURIComponent(binding.sessionID)}`
   const session = () => read(sessionPath).then(text => decodeV2Session(parseNativeReadJSON(text), binding.sessionID, binding.directory))

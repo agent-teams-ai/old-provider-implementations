@@ -210,6 +210,30 @@ test('direct read-cut rejects malformed binding before any native fetch', async 
   }
 })
 
+test('direct native read-cut redacts injected fetch and body stream diagnostics', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const failure of ['fetch', 'stream'] as const) {
+    let requests = 0
+    const transport = {
+      check() {},
+      async fetch(): Promise<Response> {
+        requests++
+        if (failure === 'fetch') throw new Error('TEST_PRIVATE_NATIVE_FETCH_SECRET')
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.error(new Error('TEST_PRIVATE_NATIVE_STREAM_SECRET')) },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    }
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+    (error: unknown) => error instanceof Error && (
+      failure === 'fetch' ? error.message === 'invalid_native_read_response'
+        : ['invalid_native_read_response', 'native_read_cleanup_unknown'].includes(error.message)))
+    assert.equal(requests, 1)
+  }
+})
+
 test('direct native cut fails closed when an injected stream refuses cancellation', async () => {
   const directory = resolve('TEST/native-cut')
   for (const behavior of ['pending', 'reject'] as const) {
