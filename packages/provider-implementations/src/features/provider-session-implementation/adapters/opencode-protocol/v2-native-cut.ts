@@ -22,6 +22,9 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
       for (;;) {
         const part = await reader.read(); transport.check()
         if (part.done) { break }
+        // Injected streams are not runtime-typed: non-byte chunks must never
+        // bypass the finite byte budget or force unbounded additional reads.
+        if (!(part.value instanceof Uint8Array)) throw new Error('invalid_native_read_response')
         responseBytes += part.value.byteLength; budget.bytes += part.value.byteLength
         if (responseBytes > 8 * 1024 * 1024 || budget.bytes > 32 * 1024 * 1024) { throw new Error('native_cut_byte_budget') }
         chunks.push(part.value)

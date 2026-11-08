@@ -234,6 +234,41 @@ test('direct native read-cut redacts injected fetch and body stream diagnostics'
   }
 })
 
+test('public read cut refuses a non-byte stream chunk before reading more data', async () => {
+  const directory = resolve('TEST/native-cut')
+  let reads = 0, cancelled = 0
+  const reader = {
+    read() {
+      reads++
+      if (reads === 1) return Promise.resolve({ done: false, value: { byteLength: 0 } })
+      return new Promise<never>(() => {})
+    },
+    async cancel() { cancelled++ },
+    releaseLock() {},
+  }
+  const transport = {
+    check() {},
+    async fetch(): Promise<Response> {
+      return { ok: true, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const result = await Promise.race([
+      readOpenCodeV2NativeCut(transport,
+        { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+        { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+        .then(() => 'unexpected_success', error => error instanceof Error ? error.message : 'unknown_error'),
+      new Promise<string>(resolve => { timer = setTimeout(() => resolve('nonbinary_stream_not_rejected'), 3000) }),
+    ])
+    assert.equal(result, 'invalid_native_read_response')
+    assert.equal(reads, 1)
+    assert.equal(cancelled, 1)
+  } finally { clearTimeout(timer) }
+})
+
 test('direct native cut fails closed when an injected stream refuses cancellation', async () => {
   const directory = resolve('TEST/native-cut')
   for (const behavior of ['pending', 'reject'] as const) {
