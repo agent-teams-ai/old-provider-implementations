@@ -53,6 +53,8 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
   const frames = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n\n')
   requireCut(frames.at(-1) === '' && frames.length <= 4098, 'incomplete_native_log')
   for (const frame of frames) {
+    // A comment-only frame consumes the same native wire budget as data.
+    requireCut(Buffer.byteLength(frame) <= 256 * 1024, 'incomplete_native_log')
     const lines = frame.split('\n')
     // Only SSE comments/blank keep-alives are non-events. An unsupported
     // directive or empty data frame cannot silently hide native log evidence.

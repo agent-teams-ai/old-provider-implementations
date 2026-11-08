@@ -77,7 +77,8 @@ test('public native SSE decoder enforces bounded frame size and JSON nesting', (
     '","seq":0,"untrusted":' + deeplyNested + '}\n\n'
   const oversizedFrame = frame({ type: 'log.synced', aggregateID: sessionID, seq: 0,
     untrusted: 'X'.repeat(256 * 1024) })
-  for (const source of [excessiveDepth, oversizedFrame]) {
+  const oversizedComment = ': ' + 'X'.repeat(256 * 1024) + '\n\n' + synced(0)
+  for (const source of [excessiveDepth, oversizedFrame, oversizedComment]) {
     assert.throws(() => decodeV2Log(source, sessionID, directory),
       (error: unknown) => error instanceof Error && error.message === 'incomplete_native_log')
   }
