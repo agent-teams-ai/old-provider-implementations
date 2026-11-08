@@ -89,7 +89,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
       // An injected public read transport can reject with raw native payloads,
       // header values or OS diagnostics; only fixed read-budget codes escape.
       if (error instanceof Error && ['invalid_native_read_response', 'native_cut_byte_budget',
-        'native_read_cleanup_unknown'].includes(error.message)) throw error
+        'native_read_cleanup_unknown', 'frame_limit', 'body_limit'].includes(error.message)) throw error
       throw new Error('invalid_native_read_response')
     }
   }
