@@ -210,6 +210,26 @@ test('direct read-cut rejects malformed binding before any native fetch', async 
   }
 })
 
+test('direct native read cut refuses empty or whitespace original input before transport access', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const text of ['', ' \t\n ']) {
+    let checks = 0, fetches = 0
+    const transport = {
+      check() { checks++ },
+      async fetch(): Promise<Response> {
+        fetches++
+        throw new Error('TEST_transport_must_not_be_called')
+      },
+    }
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text }),
+    /invalid_native_read_binding/)
+    assert.equal(checks, 0)
+    assert.equal(fetches, 0)
+  }
+})
+
 test('direct native read-cut redacts injected fetch and body stream diagnostics', async () => {
   const directory = resolve('TEST/native-cut')
   for (const failure of ['fetch', 'stream'] as const) {

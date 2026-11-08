@@ -72,7 +72,7 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
     || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
     || !['2.0.0', '2.0.21'].includes(binding.pin)
     || !(input.beforeCursor === null || Number.isSafeInteger(input.beforeCursor) && input.beforeCursor >= 0)
-    || typeof input.text !== 'string' || Buffer.byteLength(input.text) > 256 * 1024) { throw new Error('invalid_native_read_binding') }
+    || typeof input.text !== 'string' || input.text.trim().length === 0 || Buffer.byteLength(input.text) > 256 * 1024) { throw new Error('invalid_native_read_binding') }
 }
 /** Finite read-only cut; runtime still owns endpoint/session custody and admission. */
 export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport,
