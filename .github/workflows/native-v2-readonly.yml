@@ -28,6 +28,7 @@ on:
       - scripts/verify-native-v2-embedded-floor-hold.mjs
       - scripts/verify-native-v2-interrupt-proof.mjs
       - scripts/native-v2-mcp-proof.mjs
+      - scripts/native-v2-mcp-proof.test.mjs
       - scripts/verify-native-v2-receipt-safety.mjs
       - scripts/verify-native-v2-receipt-safety.test.mjs
       - .github/workflows/native-v2-readonly.yml
@@ -106,6 +107,7 @@ jobs:
           node --check scripts/verify-native-v2-embedded-floor-hold.mjs
           node --check scripts/verify-native-v2-interrupt-proof.mjs
           node --check scripts/native-v2-mcp-proof.mjs
+          node --test scripts/native-v2-mcp-proof.test.mjs
           node --check scripts/verify-native-v2-receipt-safety.mjs
           node --test scripts/verify-native-v2-receipt-safety.test.mjs
       - name: Install exact official V2 CLI into isolated test prefix

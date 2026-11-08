@@ -13,6 +13,9 @@ if (process.argv[2] === '--mcp-child') {
   // This process has no tools that read files, run shell commands or use a model.
   const marker = process.env.TEST_MCP_CHILD_MARKER
   if (!marker || !isAbsolute(marker)) process.exit(2)
+  // Record custody at child JavaScript entry, before MCP initialize/handshake.
+  // A pre-handshake failure must not disappear from the owned-child audit.
+  writeFileSync(marker, JSON.stringify({ pid: process.pid, method: 'spawn' }), { flag: 'wx', mode: 0o600 })
   const send = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n')
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity })
   const watchdog = setTimeout(() => process.exit(3), 25_000)
@@ -22,7 +25,7 @@ if (process.argv[2] === '--mcp-child') {
     let value
     try { value = JSON.parse(line) } catch { break }
     if (value?.method === 'initialize') {
-      writeFileSync(marker, JSON.stringify({ pid: process.pid, method: 'initialize' }), { flag: 'wx', mode: 0o600 })
+      writeFileSync(marker, JSON.stringify({ pid: process.pid, method: 'initialize' }), { flag: 'w', mode: 0o600 })
       send(value.id, { protocolVersion: '2025-11-25', capabilities: { tools: {}, resources: {} },
         serverInfo: { name: 'TEST-owned-mcp', version: '0.0.1' } })
     } else if (value?.method === 'tools/list') {
@@ -129,7 +132,11 @@ if (process.argv[2] === '--mcp-child') {
         : 'none'
       // Only a closed category and handshake bit are safe for public TEST artifacts.
       // Native error text can contain paths or future upstream diagnostic payloads.
-      receipt.mcpConnectFailure = { status: ['connected', 'connecting', 'disabled', 'failed', 'error'].includes(status) ? status : 'unknown', category, childHandshakeSeen: existsSync(marker) }
+      const handshakeSeen = (() => {
+        try { return JSON.parse(readFileSync(marker, 'utf8'))?.method === 'initialize' }
+        catch { return false }
+      })()
+      receipt.mcpConnectFailure = { status: ['connected', 'connecting', 'disabled', 'failed', 'error'].includes(status) ? status : 'unknown', category, childHandshakeSeen: handshakeSeen }
       throw Error('TEST_MCP_native_connection_not_ready')
     }
     const boot = JSON.parse(readFileSync(marker, 'utf8'))
@@ -245,7 +252,7 @@ if (process.argv[2] === '--mcp-child') {
       if (!existsSync(bootMarker)) continue
       try {
         const boot = JSON.parse(readFileSync(bootMarker, 'utf8'))
-        if (!Number.isSafeInteger(boot.pid) || boot.pid <= 0 || boot.method !== 'initialize' ||
+        if (!Number.isSafeInteger(boot.pid) || boot.pid <= 0 || !['spawn', 'initialize'].includes(boot.method) ||
             !(await waitGone(boot.pid))) {
           failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
         }
