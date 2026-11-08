@@ -130,7 +130,19 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       throw failure
     } finally {
       clearTimeout(timer); controllers.delete(controller)
-      if (reader) { await boundV2Request(track(reader.cancel()), 1000).catch(() => {}); reader.releaseLock() }
+      if (reader) {
+        // A failed or timed-out reader cancellation is NOT verified cleanup.
+        // Do not let the preceding body error be mistaken for a clean refusal.
+        let cleanupConfirmed = false
+        try {
+          await boundV2Request(track(reader.cancel()), 1000)
+          reader.releaseLock()
+          cleanupConfirmed = true
+        } catch {
+          // Injected native readers can reject, hang or throw on release.
+        }
+        if (!cleanupConfirmed) {throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')}
+      }
     }
   }
   return {

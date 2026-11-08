@@ -410,3 +410,32 @@ test('native V2 tool-origin permission keeps valid message lineage and allows on
       body: { [version === '2.0.0' ? 'reply' : 'decision']: 'once' } }])
   }
 })
+
+test('V2 raw control wire refuses to mask a rejected native reader cancellation', async t => {
+  const endpoint = 'http://127.0.0.1:12345'
+  let reads = 0, cancellations = 0
+  const raw = createV2ControlWire({
+    endpoint, directory: '/TEST/original', version: '2.0.21',
+    deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+    readPassword: () => 'TEST-private',
+    fetchImpl: async () => ({
+      status: 200, redirected: false, url: '',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: { getReader: () => ({
+        async read() { reads++; return { done: false, value: Uint8Array.of(65) } },
+        async cancel() { cancellations++; throw new Error('TEST_PRIVATE_CANCEL_DETAIL') },
+        releaseLock() {},
+      }) },
+    }) as unknown as Response,
+  })
+  t.after(raw.dispose)
+  await assert.rejects(raw.request('/api/session/ses_A/permission'), (error: unknown) => {
+    assert(error instanceof Error)
+    assert.equal((error as { code?: string }).code, 'cleanup_unknown')
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+    assert.doesNotMatch(error.message, /TEST_PRIVATE_CANCEL_DETAIL/)
+    return true
+  })
+  assert.equal(reads, 8193)
+  assert.equal(cancellations, 1)
+})
