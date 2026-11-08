@@ -93,7 +93,7 @@ test('rejects slash-normalized Windows drive and UNC paths in public receipts', 
   for (const location of [
     'E:/TEST/private-session/config.json',
     '//internal-server/private-share/session.json',
-    String.raw`\\\\internal-server/private-share/session.json`,
+    String.raw`\\internal-server/private-share/session.json`,
   ]) {
     assert.equal(check('embedded', {
       'native-v2-embedded-proof.json': JSON.stringify({ qualified: false, trace: location }),
