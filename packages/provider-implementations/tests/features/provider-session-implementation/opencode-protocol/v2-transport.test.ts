@@ -228,6 +228,33 @@ test('V2 execution wire bounds tiny native response chunks before memory fanout'
   assert.equal(cancelled, 1)
 })
 
+test('V2 outgoing prompt body bounds tiny and empty stream chunks before credentials or native fetch', async t => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const chunk of [Uint8Array.of(123), new Uint8Array(0)]) {
+    let pulls = 0, cancelled = 0, credentials = 0, fetches = 0
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) { pulls++; controller.enqueue(chunk) },
+      cancel() { cancelled++ },
+    })
+    const transport = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint),
+      readPassword: () => { credentials++; return 'TEST_PRIVATE_PASSWORD' },
+      fetchImpl: async () => { fetches++; return new Response('{}') },
+    })
+    t.after(() => transport.dispose())
+    const init: RequestInit & { duplex: 'half' } = { method: 'POST', body: stream, duplex: 'half' }
+    const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A/prompt', init))
+    assert(failure instanceof Error)
+    assert.equal((failure as { code?: string }).code, 'body_limit')
+    assert.equal(wasOpenCodeV2InputNotSubmitted(failure), true)
+    assert(pulls >= 8193, 'must exercise actual stream chunk fanout')
+    assert.equal(cancelled, 1)
+    assert.equal(credentials, 0)
+    assert.equal(fetches, 0)
+    await transport.dispose()
+  }
+})
+
 test('V2 interrupted request-body validation releases its reader before any native invocation', async t => {
   let nativeCalls = 0, canceled = false, bodyStarted!: () => void
   const reading = new Promise<void>(resolve => { bodyStarted = resolve })

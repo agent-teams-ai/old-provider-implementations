@@ -113,7 +113,8 @@ class OpenCodeV2ExecutionFetch {
           if (part.done) {break}
           const chunk: unknown = part.value
           executionAssert(chunk instanceof Uint8Array, 'invalid_input')
-          bodyBytes += chunk.byteLength; executionAssert(bodyBytes <= 1024 * 1024, 'body_limit')
+          bodyBytes += chunk.byteLength
+          executionAssert(bodyBytes <= 1024 * 1024 && pieces.length < MAX_V2_CHUNKS, 'body_limit')
           pieces.push(chunk)
         }
         reader.releaseLock(); reader = undefined
