@@ -69,6 +69,20 @@ test('malformed native SSE JSON fails with a fixed sanitized diagnostic', () => 
   }
 })
 
+test('public native SSE decoder enforces bounded frame size and JSON nesting', () => {
+  // An injected read transport bypasses the execution wire's SSE budget.
+  // Refuse oversized or deeply nested native data with a fixed, non-leaking code.
+  const deeplyNested = '['.repeat(34) + '0' + ']'.repeat(34)
+  const excessiveDepth = 'data: {"type":"log.synced","aggregateID":"' + sessionID +
+    '","seq":0,"untrusted":' + deeplyNested + '}\\n\\n'
+  const oversizedFrame = frame({ type: 'log.synced', aggregateID: sessionID, seq: 0,
+    untrusted: 'X'.repeat(256 * 1024) })
+  for (const source of [excessiveDepth, oversizedFrame]) {
+    assert.throws(() => decodeV2Log(source, sessionID, directory),
+      (error: unknown) => error instanceof Error && error.message === 'incomplete_native_log')
+  }
+})
+
 test('known nonempty session-created prefix remains valid and ordered', () => {
   assert.deepEqual(decodeV2Log(
     event('session.created', 0) + event('session.execution.started', 3) + synced(5),

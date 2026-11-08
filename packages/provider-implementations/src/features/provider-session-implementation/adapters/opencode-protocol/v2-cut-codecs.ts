@@ -1,4 +1,5 @@
 import { record, string } from './v2-projection-helpers.ts'
+import { checkOpenCodeReadJson } from './v2-json-budget.ts'
 import type { OpenCodeV2NativeLogEvent, OpenCodeV2NativeMessage } from './v2-projection-types.ts'
 
 function requireCut(value: boolean, code: string): asserts value { if (!value) {throw new Error(code)} }
@@ -44,6 +45,9 @@ function nativeLogEvent(raw: Record<string, unknown>, sessionID: string, directo
   return { id, type, aggregateID: sessionID, seq, data: body }
 }
 export function decodeV2Log(source: string, sessionID: string, directory: string) {
+  // The public decoder also receives injected read transports. Enforce the
+  // execution wire's body bound before splitting/parsing native SSE.
+  requireCut(Buffer.byteLength(source) <= 8 * 1024 * 1024, 'incomplete_native_log')
   const events: OpenCodeV2NativeLogEvent[] = [], ids = new Set<string>()
   let synced = false, watermark: number | null = null, previous = -1
   const frames = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n\n')
@@ -56,11 +60,11 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
     const dataLines = lines.filter(line => line.startsWith('data:'))
     if (dataLines.length === 0) {continue}
     const data = dataLines.map(line => line.slice(5).replace(/^ /, '')).join('\n')
-    requireCut(data.length > 0, 'incomplete_native_log')
+    requireCut(data.length > 0 && Buffer.byteLength(data) <= 256 * 1024, 'incomplete_native_log')
     // JSON.parse diagnostics can quote native SSE bytes (including secrets).
     // The public decoder must only expose a fixed refusal code.
     let raw: ReturnType<typeof record>
-    try { raw = record(JSON.parse(data) as unknown) }
+    try { checkOpenCodeReadJson(data); raw = record(JSON.parse(data) as unknown) }
     catch { throw new Error('incomplete_native_log') }
     requireCut(raw !== null && !synced, 'incomplete_native_log')
     if (raw.type === 'log.synced') {
