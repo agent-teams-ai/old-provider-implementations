@@ -27,7 +27,23 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
         chunks.push(part.value)
       }
     }
-  } finally { if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock() } }
+  } finally {
+    if (reader) {
+      // The public read cut accepts injected streams: cancellation can hang
+      // indefinitely after a rejected body. Fail closed on uncertain cleanup.
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        const cancelled = await Promise.race([
+          reader.cancel().then(() => true, () => false),
+          new Promise<boolean>(resolve => { timeout = setTimeout(() => resolve(false), 1000) }),
+        ])
+        if (!cancelled) throw new Error('native_read_cleanup_unknown')
+      } finally {
+        clearTimeout(timeout)
+        reader.releaseLock()
+      }
+    }
+  }
   return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
 }
 // Public read-cut callers can inject a transport that bypasses the bounded

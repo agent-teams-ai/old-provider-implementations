@@ -209,3 +209,38 @@ test('direct read-cut rejects malformed binding before any native fetch', async 
     }
   }
 })
+
+test('direct native cut fails closed when an injected stream refuses cancellation', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const behavior of ['pending', 'reject'] as const) {
+    let cancelled = 0, fetched = 0
+    const transport = {
+      check() {},
+      async fetch(): Promise<Response> {
+        fetched++
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1)) },
+          cancel() {
+            cancelled++
+            return behavior === 'pending'
+              ? new Promise<void>(() => {})
+              : Promise.reject(new Error('TEST_PRIVATE_NATIVE_CANCEL_DETAIL'))
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const result = await Promise.race([
+        readOpenCodeV2NativeCut(transport,
+          { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+          { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+          .then(() => 'unexpected_success', error => error instanceof Error ? error.message : 'unknown_error'),
+        new Promise<string>(resolve => { timer = setTimeout(() => resolve('unbounded_cleanup'), 3000) }),
+      ])
+      assert.equal(result, 'native_read_cleanup_unknown')
+      assert.equal(fetched, 1)
+      assert.equal(cancelled, 1)
+    } finally { clearTimeout(timer) }
+  }
+})
