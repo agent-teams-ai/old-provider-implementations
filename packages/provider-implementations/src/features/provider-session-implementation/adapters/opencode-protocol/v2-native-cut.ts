@@ -2,6 +2,7 @@ import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
+import { checkOpenCodeReadJson } from './v2-json-budget.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
@@ -28,6 +29,16 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
     }
   } finally { if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock() } }
   return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+}
+// Public read-cut callers can inject a transport that bypasses the bounded
+// execution wire. Never expose native JSON bytes through JSON.parse errors.
+function parseNativeReadJSON(source: string): unknown {
+  try {
+    checkOpenCodeReadJson(source)
+    return JSON.parse(source) as unknown
+  } catch {
+    throw new Error('invalid_native_read_json')
+  }
 }
 function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string }>): void {
   // Direct public read-cut callers can bypass the DriverConfig snapshot. A
@@ -59,7 +70,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     return text
   }
   const sessionPath = `/api/session/${encodeURIComponent(binding.sessionID)}`
-  const session = () => read(sessionPath).then(text => decodeV2Session(JSON.parse(text) as unknown, binding.sessionID, binding.directory))
+  const session = () => read(sessionPath).then(text => decodeV2Session(parseNativeReadJSON(text), binding.sessionID, binding.directory))
   const log = () => read(`/api/experimental/session/${encodeURIComponent(binding.sessionID)}/log?follow=false`)
     .then(text => decodeV2Log(text, binding.sessionID, binding.directory))
   const beforeSession = await session(), beforeLog = await log()
@@ -67,7 +78,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   let cursor: string | undefined, complete = false
   for (let page = 0; page < 8; page++) {
     const query = new URLSearchParams({ limit: '200', ...(cursor === undefined ? {} : { cursor }) })
-    const result = decodeV2MessagePage(JSON.parse(await read(`${sessionPath}/message?${query}`)) as unknown, binding.sessionID)
+    const result = decodeV2MessagePage(parseNativeReadJSON(await read(`${sessionPath}/message?${query}`)), binding.sessionID)
     messages.push(...result.data)
     if (messages.length > 1600 || new Set(messages.map(row => row.id)).size !== messages.length) {throw new Error('incomplete_native_transcript')}
     if (result.data.length === 0) {

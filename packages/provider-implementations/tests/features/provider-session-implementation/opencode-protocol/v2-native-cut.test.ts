@@ -7,7 +7,7 @@ import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpe
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
 async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
-  'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync') {
+  'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync' | 'malformed-session' | 'malformed-message') {
   const value = cut(), directory = resolve('TEST/native-cut')
   let logs = 0, pages = 0, requests = 0
   const server = createServer((req, res) => {
@@ -40,6 +40,10 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
     res.setHeader('content-type', 'application/json')
     if (url.pathname.endsWith('/message')) {
       pages++
+      if (mode === 'malformed-message') {
+        res.end('{"data":TEST_PRIVATE_NATIVE_JSON_PAYLOAD}')
+        return
+      }
       if (!url.searchParams.has('cursor')) {
         const data = value.messages.data.map(row => ({ ...row.data, id: row.id, type: row.type,
           time: { ...(row.data.time as object | undefined), created: row.timeCreated } }))
@@ -52,7 +56,8 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
     }
     const session = { id: sessionID, location: { directory: mode === 'foreign' ? '/TEST/foreign' : directory },
       agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } }
-    res.end(JSON.stringify(mode === 'flat' ? session : { data: session }))
+    res.end(mode === 'malformed-session' ? '{"data":TEST_PRIVATE_NATIVE_JSON_PAYLOAD}' :
+      JSON.stringify(mode === 'flat' ? session : { data: session }))
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const address = server.address(); assert(address && typeof address !== 'string')
@@ -147,6 +152,23 @@ test('native finite cut accepts 4096 events plus synced frame and rejects a 4097
       assert.equal(value.log.events.length, 4096)
       assert.equal(projectOpenCodeV2NativeTurn(value).state, 'succeeded')
     } else {await assert.rejects(work, /frame_limit/)}
+  }
+})
+
+test('malformed session and message JSON fail closed without leaking native body or skipping read budgets', async t => {
+  for (const mode of ['malformed-session', 'malformed-message'] as const) {
+    const host = await fixture(mode); t.after(host.close)
+    const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+      nativeSessionId: sessionID, version: '2.0.21', deadline: Date.now() + 10_000,
+      readPassword: () => 'TEST-private' })
+    t.after(() => transport.dispose())
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+    (error: unknown) => error instanceof Error && error.message === 'invalid_native_read_json')
+    assert.deepEqual(host.counts(), mode === 'malformed-session'
+      ? { logs: 0, pages: 0, requests: 1 }
+      : { logs: 1, pages: 1, requests: 3 })
   }
 })
 
