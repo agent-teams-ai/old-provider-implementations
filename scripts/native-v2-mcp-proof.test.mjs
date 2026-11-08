@@ -39,7 +39,7 @@ async function checkChild(initialize) {
     const startup = await observeMarker(marker, 'spawn')
     assert.equal(startup.pid, child.pid)
     if (initialize) {
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }) + '\\n')
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }) + '\n')
       const handshake = await observeMarker(marker, 'initialize')
       assert.equal(handshake.pid, child.pid)
     } else {
