@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parse, sep } from 'node:path'
+import { isCanonicalV2DriverDirectory } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts'
 import type { DriverFactory, OpenConfig } from '@agent-teams/provider-session-contracts'
 import { createOpenCodeV2DriverFactory } from '../../../../src/opencode.ts'
 import { nativeConfig } from './v2-driver-support.ts'
@@ -17,6 +18,24 @@ test('V2 attachment refs explicitly reject known not sent instead of silently us
     assert.deepEqual(await driver.submit(attachedInput([artifact().reference])), { ok: false, code: 'unsupported', delivery: 'known-not-sent' })
     assert.equal(host.counts().submitted, 0)
   } finally { await driver.close() }
+})
+
+test('V2 native path validation accepts canonical Windows drives but rejects unsafe forms', () => {
+  assert.equal(isCanonicalV2DriverDirectory('/TEST/owned/workspace', 'posix'), true)
+  for (const path of ['/', '/TEST/../other', '/TEST/owned/', 'TEST/relative']) {
+    assert.equal(isCanonicalV2DriverDirectory(path, 'posix'), false, path)
+  }
+  assert.equal(isCanonicalV2DriverDirectory('C:\\TEST\\owned\\workspace', 'win32'), true)
+  for (const path of [
+    'C:TEST\\relative', 'C:\\', 'C:\\TEST\\owned\\..\\other',
+    'C:\\TEST\\owned\\', 'C:\\TEST\\trailing.', 'C:\\TEST\\trailing ',
+    'C:\\TEST\\PRN.txt', 'C:\\TEST\\COM1', 'C:\\TEST\\file:stream',
+    '\\\\server\\share\\TEST', '\\TEST\\current-drive', 'C:/TEST/forward',
+  ]) {
+    assert.equal(isCanonicalV2DriverDirectory(path, 'win32'), false, path)
+  }
+  assert.equal(isCanonicalV2DriverDirectory(['C:\\TEST\\owned'], 'win32'), false)
+  assert.equal(isCanonicalV2DriverDirectory('C:\\TEST\\' + '\0' + 'owned', 'win32'), false)
 })
 
 test('selected native factory refuses unsupported capability before resolving Host or performing HTTP', async t => {
