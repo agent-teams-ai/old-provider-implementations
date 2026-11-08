@@ -76,6 +76,8 @@ jobs:
           - { os: macos-15-intel, proof: embedded-interrupt }
           - { os: macos-15-intel, proof: embedded-pinned-tool }
           - { os: macos-15-intel, proof: embedded-target-tool }
+          # 2.1.4 MCP custody/readback on Intel macOS as well as Apple Silicon.
+          - { os: macos-15-intel, proof: embedded-target-mcp }
           - { os: windows-2022, proof: embedded }
           - { os: windows-2022, proof: embedded-model }
           - { os: windows-2022, proof: embedded-interrupt }
