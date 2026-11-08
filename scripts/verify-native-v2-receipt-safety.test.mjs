@@ -79,6 +79,8 @@ test('rejects nested credential-like keys and recognizable token values', () => 
     { sessionAuthorization: { verified: true }, trace: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
     { trace: 'github_pat_abcdefghijklmnopqrstuvwxyz0123456789' },
     { trace: 'AKIA0123456789ABCDEF' },
+    { trace: 'D:\\TEST\\private-session\\config.json' },
+    { trace: '\\\\internal-server\\private-share\\session.json' },
   ]) {
     assert.equal(check('embedded', {
       'native-v2-embedded-proof.json': JSON.stringify({ qualified: false, ...data }),
