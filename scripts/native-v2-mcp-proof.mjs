@@ -48,6 +48,9 @@ if (process.argv[2] === '--mcp-child') {
   for (const name of ['workspace', 'neighbor', 'home', 'config', 'cache', 'data', 'state', 'temp'])
     mkdirSync(join(root, name))
   const workspace = join(root, 'workspace'), marker = join(root, 'mcp-boot.json')
+  // Capture every real TEST-owned MCP child, even when connect/handshake fails
+  // before the normal positive path has assigned its PID.
+  const ownedMarkers = [marker, join(root, 'remove-boot.json'), join(root, 'hostclose-boot.json')]
   let host, failed = false, childPid, removePid, hostClosePid
   const originalPath = process.env.PATH ?? process.env.Path ?? ''
   // Windows Node 24 needs SystemRoot for OS cryptographic initialization. Keep
@@ -235,10 +238,20 @@ if (process.argv[2] === '--mcp-child') {
         failed = true; receipt.hostCleanupFailure = 'TEST_MCP_host_cleanup_failed'
       }
     }
-    if ((childPid && childPresent(childPid)) ||
-        (removePid && childPresent(removePid)) ||
-        (hostClosePid && childPresent(hostClosePid))) {
-      failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
+    // A failed native connection may have spawned a child and written its boot
+    // marker BEFORE the positive branch records childPid. Do not report
+    // cleanup:true merely because no PID reached that branch.
+    for (const bootMarker of ownedMarkers) {
+      if (!existsSync(bootMarker)) continue
+      try {
+        const boot = JSON.parse(readFileSync(bootMarker, 'utf8'))
+        if (!Number.isSafeInteger(boot.pid) || boot.pid <= 0 || boot.method !== 'initialize' ||
+            !(await waitGone(boot.pid))) {
+          failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
+        }
+      } catch {
+        failed = true; receipt.childCleanupFailure = 'TEST_MCP_owned_child_not_closed'
+      }
     }
     try { rmSync(root, { recursive: true, force: true }) } catch {
       failed = true; receipt.rootCleanupFailure = 'TEST_MCP_root_cleanup_failed'
