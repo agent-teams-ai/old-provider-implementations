@@ -3,7 +3,7 @@ import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
-import { checkOpenCodeReadJson } from './v2-json-budget.ts'
+import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
@@ -93,7 +93,9 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
         for (;;) {
           const part = await boundV2Request(track(reader.read()), remaining(), signal)
           if (part.done) {break}
-          bytes += part.value.byteLength; executionAssert(bytes <= maximum, 'body_limit'); parts.push(part.value)
+          bytes += part.value.byteLength
+          executionAssert(bytes <= maximum && parts.length < MAX_V2_CHUNKS, 'body_limit')
+          parts.push(part.value)
         }
         reader.releaseLock(); reader = undefined
         return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts))

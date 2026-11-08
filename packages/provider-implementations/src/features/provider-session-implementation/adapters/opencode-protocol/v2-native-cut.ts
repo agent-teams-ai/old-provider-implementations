@@ -2,7 +2,7 @@ import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
-import { checkOpenCodeReadJson } from './v2-json-budget.ts'
+import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
@@ -26,7 +26,7 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
         // bypass the finite byte budget or force unbounded additional reads.
         if (!(part.value instanceof Uint8Array)) throw new Error('invalid_native_read_response')
         responseBytes += part.value.byteLength; budget.bytes += part.value.byteLength
-        if (responseBytes > 8 * 1024 * 1024 || budget.bytes > 32 * 1024 * 1024 || chunks.length >= 8192) {
+        if (responseBytes > 8 * 1024 * 1024 || budget.bytes > 32 * 1024 * 1024 || chunks.length >= MAX_V2_CHUNKS) {
           // A byte cap alone permits millions of tiny chunks and unbounded array overhead.
           throw new Error('native_cut_byte_budget')
         }

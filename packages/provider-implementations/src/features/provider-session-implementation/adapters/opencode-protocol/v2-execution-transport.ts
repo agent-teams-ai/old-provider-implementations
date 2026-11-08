@@ -1,7 +1,7 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
-import { checkExecutionSse, checkOpenCodeReadJson } from './v2-json-budget.ts'
+import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
@@ -143,7 +143,9 @@ class OpenCodeV2ExecutionFetch {
       if (part.done) { break }
       const chunk: unknown = part.value
       executionAssert(chunk instanceof Uint8Array, 'invalid_response')
-      bytes += chunk.byteLength; executionAssert(bytes <= 8 * 1024 * 1024, 'body_limit'); chunks.push(chunk)
+      bytes += chunk.byteLength
+      executionAssert(bytes <= 8 * 1024 * 1024 && chunks.length < MAX_V2_CHUNKS, 'body_limit')
+      chunks.push(chunk)
     }
     return chunks
   }

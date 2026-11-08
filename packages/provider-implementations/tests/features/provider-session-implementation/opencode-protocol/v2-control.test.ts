@@ -307,6 +307,38 @@ test('malformed native permission source message ID never permits a control gran
 })
 
 
+test('V2 control wire bounds tiny native response chunks before memory fanout', async t => {
+  let reads = 0, cancelled = 0, invoked = 0
+  const reader = {
+    async read() {
+      reads++
+      return reads <= 9000 ? { done: false, value: Uint8Array.of(65) } : { done: true, value: undefined }
+    },
+    async cancel() { cancelled++ },
+    releaseLock() {},
+  }
+  const endpoint = 'http://127.0.0.1:12345'
+  const raw = createV2ControlWire({ endpoint, directory: '/TEST/original', version: '2.0.21',
+    deadline: Date.now() + 10_000, nativeSessionId: 'ses_A', readPassword: () => 'TEST-private',
+    fetchImpl: async () => {
+      invoked++
+      return { status: 200, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  })
+  t.after(raw.dispose)
+  await assert.rejects(raw.request('/api/session/ses_A/permission'), error => {
+    assert(error instanceof Error)
+    assert.equal((error as { code?: string }).code, 'body_limit')
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+    return true
+  })
+  assert.equal(invoked, 1)
+  assert.equal(reads, 8193)
+  assert.equal(cancelled, 1)
+})
+
 test('session-bound control denies global MCP mutation and discovery before credentials', async t => {
   // MCP in V2 belongs to the trusted Host/project configuration boundary.
   // A session permission or interrupt capability must not turn into access

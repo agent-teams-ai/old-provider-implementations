@@ -199,6 +199,35 @@ test('V2 transport denies foreign session GET/POST/SSE before credentials or HTT
   assert.deepEqual(requested, ['GET /api/session/ses_A'])
 })
 
+test('V2 execution wire bounds tiny native response chunks before memory fanout', async t => {
+  let reads = 0, cancelled = 0, invoked = 0
+  const reader = {
+    async read() {
+      reads++
+      return reads <= 9000 ? { done: false, value: Uint8Array.of(65) } : { done: true, value: undefined }
+    },
+    async cancel() { cancelled++ },
+    releaseLock() {},
+  }
+  const endpoint = 'http://127.0.0.1:12345'
+  const transport = createOpenCodeV2ExecutionTransport({ ...config(endpoint),
+    fetchImpl: async () => {
+      invoked++
+      return { status: 200, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  })
+  t.after(() => transport.dispose())
+  const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A'))
+  assert(failure instanceof Error)
+  assert.equal((failure as { code?: string }).code, 'body_limit')
+  assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+  assert.equal(invoked, 1)
+  assert.equal(reads, 8193)
+  assert.equal(cancelled, 1)
+})
+
 test('V2 interrupted request-body validation releases its reader before any native invocation', async t => {
   let nativeCalls = 0, canceled = false, bodyStarted!: () => void
   const reading = new Promise<void>(resolve => { bodyStarted = resolve })

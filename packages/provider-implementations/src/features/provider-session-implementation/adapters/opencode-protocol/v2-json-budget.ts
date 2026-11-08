@@ -1,5 +1,8 @@
 import { executionAssert } from './v2-failures.ts'
 
+// A finite byte cap must also limit the number of tiny injected stream chunks.
+export const MAX_V2_CHUNKS = 8192
+
 export function checkOpenCodeReadJson(text: string): void {
   let depth = 0, tokens = 0, quoted = false, escaped = false, atom = false
   for (const char of text) {
