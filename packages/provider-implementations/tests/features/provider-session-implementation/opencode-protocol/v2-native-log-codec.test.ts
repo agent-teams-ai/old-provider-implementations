@@ -74,7 +74,7 @@ test('public native SSE decoder enforces bounded frame size and JSON nesting', (
   // Refuse oversized or deeply nested native data with a fixed, non-leaking code.
   const deeplyNested = '['.repeat(34) + '0' + ']'.repeat(34)
   const excessiveDepth = 'data: {"type":"log.synced","aggregateID":"' + sessionID +
-    '","seq":0,"untrusted":' + deeplyNested + '}\\n\\n'
+    '","seq":0,"untrusted":' + deeplyNested + '}\n\n'
   const oversizedFrame = frame({ type: 'log.synced', aggregateID: sessionID, seq: 0,
     untrusted: 'X'.repeat(256 * 1024) })
   for (const source of [excessiveDepth, oversizedFrame]) {
