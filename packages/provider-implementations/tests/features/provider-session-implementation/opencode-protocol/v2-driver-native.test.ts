@@ -95,6 +95,22 @@ test('unknown native stream cleanup stays unknown across driver disposal for que
       assert.equal(cancellations, 1)
       assert.equal(host.counts().submitted, 0)
       await assert.rejects(native.dispose(), /cleanup_unknown/)
+      // Cleanup UNKNOWN revokes this driver instance; a subsequent operation
+      // must not regain credentials or perform a new native request.
+      for (const retry of [
+        () => native.queue('msg_TESTnext', 'TEST must not replay'),
+        () => native.read({ nativeInputID: 'msg_TESTnext', text: 'TEST must not replay', beforeCursor: 0 }),
+        () => native.control(wire => wire.instructions()),
+      ]) {
+        await assert.rejects(retry(), error => {
+          assert.ok(error instanceof ExecutionTransportFailure)
+          assert.equal(error.code, 'cleanup_unknown')
+          assert.equal(error.disposition, 'unknown')
+          return true
+        })
+      }
+      assert.equal(reads, 1)
+      assert.equal(host.counts().submitted, 0)
     }
   }
 })
@@ -111,6 +127,16 @@ test('legacy flat V1-like read never submits, and malformed post-ACK is unknown 
   const uncertain = createDriverNative(nativeConfig(wrongAck), new AbortController().signal)
   await assert.rejects(uncertain.queue('msg_TESTfirst', 'TEST once'), error => {
     assert.equal(wasOpenCodeV2InputNotSubmitted(error), false); return true
+  })
+  assert.equal(wrongAck.counts().submitted, 1)
+  // The first POST may have executed. Never submit a second prompt through
+  // the same driver until a new authoritative generation reconciles it.
+  await assert.rejects(uncertain.queue('msg_TESTsecond', 'TEST must not replay'), error => {
+    assert.ok(error instanceof ExecutionTransportFailure)
+    assert.equal(error.code, 'native_prompt_unknown')
+    assert.equal(error.disposition, 'unknown')
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+    return true
   })
   assert.equal(wrongAck.counts().submitted, 1)
 })

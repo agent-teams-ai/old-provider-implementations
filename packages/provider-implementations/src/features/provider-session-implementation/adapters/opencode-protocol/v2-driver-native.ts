@@ -10,6 +10,12 @@ export type NativeDriverInput = { nativeInputID: string; text: string; beforeCur
 /** Each operation has a fresh finite deadline. No mutable transport lasts across turns. */
 export function createDriverNative(config: OpenCodeV2DriverConfig, signal: AbortSignal) {
   let cleanupUnknown = false
+  let promptUnknown = false
+  const assertUsable = (mutating = false): void => {
+    if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+    // After an unconfirmed prompt POST, only read-only reconciliation is safe.
+    if (mutating && promptUnknown) throw new ExecutionTransportFailure('native_prompt_unknown', 'unknown')
+  }
   // UNKNOWN native I/O custody remains UNKNOWN across driver close, even when
   // the finite wire has no outstanding tracked promise by the time it disposes.
   const rememberUncertainCleanup = (error: unknown): void => {
@@ -22,6 +28,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   const wireConfig = () => ({ ...config, signal, deadline: Date.now() + config.limits.timeoutMs })
   const path = `/api/session/${config.nativeSessionId}`
   const read = async (original: NativeDriverInput) => {
+    assertUsable()
     const wire = createOpenCodeV2ExecutionTransport(wireConfig())
     try { return await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
       sessionID: config.nativeSessionId, pin: config.version }, original) }
@@ -29,6 +36,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     finally { await dispose(wire) }
   }
   const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
+    assertUsable(true)
     const wire = createOpenCodeV2ExecutionTransport(wireConfig())
     let mutation = false
     try {
@@ -47,6 +55,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       return { nativeInputID, text, beforeCursor: log.watermark }
     } catch (error) {
       rememberUncertainCleanup(error)
+      if (mutation) promptUnknown = true
       if (!mutation) {
         // A read-only preflight cannot have submitted the prompt, but failed
         // native stream cleanup is still UNKNOWN custody, not a clean refusal.
@@ -57,6 +66,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     } finally { await dispose(wire) }
   }
   const control = async <T>(run: (wire: ReturnType<typeof createOpenCodeV2SessionControl>) => Promise<T>, scopedSignal?: AbortSignal) => {
+    assertUsable()
     const wire = createOpenCodeV2SessionControl({ ...wireConfig(), nativeSessionId: config.nativeSessionId, signal: scopedSignal ? AbortSignal.any([signal, scopedSignal]) : signal })
     try { return await run(wire) }
     catch (error) { rememberUncertainCleanup(error); throw error }
