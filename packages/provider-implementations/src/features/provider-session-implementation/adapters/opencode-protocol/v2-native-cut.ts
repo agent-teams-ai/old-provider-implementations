@@ -44,9 +44,12 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
           new Promise<boolean>(resolve => { timeout = setTimeout(() => resolve(false), 1000) }),
         ])
         if (!cancelled) throw new Error('native_read_cleanup_unknown')
+        reader.releaseLock()
+      } catch {
+        // Failed cancellation or lock release leaves reader custody unknown.
+        throw new Error('native_read_cleanup_unknown')
       } finally {
         clearTimeout(timeout)
-        reader.releaseLock()
       }
     }
   }

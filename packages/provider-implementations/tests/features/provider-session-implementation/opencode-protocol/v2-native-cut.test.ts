@@ -349,3 +349,31 @@ test('direct native cut fails closed when an injected stream refuses cancellatio
     } finally { clearTimeout(timer) }
   }
 })
+
+
+test('direct native cut reports unknown cleanup when an injected reader refuses lock release', async () => {
+  const directory = resolve('TEST/native-cut')
+  let fetched = 0, reads = 0, cancellations = 0, releases = 0
+  const reader = {
+    async read() { reads++; return { done: false, value: new Uint8Array(8 * 1024 * 1024 + 1) } },
+    async cancel() { cancellations++ },
+    releaseLock() { releases++; throw new Error('TEST_PRIVATE_NATIVE_LOCK_RELEASE_DETAIL') },
+  }
+  const transport = {
+    check() {},
+    async fetch(): Promise<Response> {
+      fetched++
+      return { ok: true, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+  assert.equal(fetched, 1)
+  assert.equal(reads, 1)
+  assert.equal(cancellations, 1)
+  assert.equal(releases, 1)
+})
