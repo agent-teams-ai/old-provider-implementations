@@ -307,6 +307,22 @@ test('malformed V2 control identifiers cannot reach a native route or mutate ano
       assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
     }, key)
   }
+  // Runtime JS callers can bypass TypeScript: RegExp.test and URL encoding
+  // otherwise coerce a one-element array into a valid native mutation route.
+  for (const untyped of [
+    ['per_ses_A'], { toString: () => 'per_ses_A' },
+  ]) {
+    await assert.rejects(control.replyPermission(untyped as unknown as string, 'once'), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    })
+  }
+  for (const untyped of [
+    ['test.role'], { toString: () => 'test.role' },
+  ]) {
+    await assert.rejects(control.putInstruction(untyped as unknown as string, { value: 'TEST' }), error => {
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true); return true
+    })
+  }
   assert.equal(host.calls(), 0)
   assert.deepEqual(host.effects, [])
 })

@@ -68,7 +68,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
       // V2 `always` writes a durable project-scoped approval pattern. Until Host
       // owns and proves that mutation, reject it before even reading native state.
-      if (!nativePermissionId.test(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
+      if (typeof requestId !== 'string' || !nativePermissionId.test(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
         const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
@@ -83,7 +83,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
     },
     putInstruction: async (key: string, value: unknown) => {
       // URL encoding does not escape '.' or '..'; reject non-canonical keys before PUT.
-      if (!/^[a-z0-9][a-z0-9._-]{0,255}$/.test(key)) denyUnsubmitted()
+      if (typeof key !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,255}$/.test(key)) denyUnsubmitted()
       // These validations precede any native write, so a caller must not
       // mistake a local validation failure for an UNKNOWN submission.
       let encoded: string
