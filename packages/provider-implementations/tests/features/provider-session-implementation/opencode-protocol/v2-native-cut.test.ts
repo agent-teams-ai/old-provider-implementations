@@ -399,6 +399,34 @@ test('public native read cut refuses a never-settling injected fetch after admis
   assert.equal(nativeSignal?.aborted, true)
 })
 
+test('public native read cut cancels a late fetch response after revocation', async () => {
+  const directory = resolve('TEST/native-cut'), controller = new AbortController()
+  let deliver!: (response: Response) => void
+  let fetched = 0, lateCancellations = 0, nativeSignal: AbortSignal | undefined
+  const transport = {
+    signal: controller.signal,
+    check() {},
+    fetch(_input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      fetched++; nativeSignal = init?.signal
+      queueMicrotask(() => controller.abort())
+      return new Promise<Response>(resolve => { deliver = resolve })
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+  assert.equal(fetched, 1)
+  assert.equal(nativeSignal?.aborted, true)
+  // A hostile injected fetch can still fulfill after the read has failed.
+  // Its late, previously unobserved response body must not be left open.
+  deliver(new Response(new ReadableStream<Uint8Array>({
+    cancel() { lateCancellations++ },
+  }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.equal(lateCancellations, 1)
+})
+
 test('public native read cut cancels a never-settling injected body read on revocation', async () => {
   const directory = resolve('TEST/native-cut'), controller = new AbortController()
   let fetched = 0, reads = 0, cancellations = 0, releases = 0

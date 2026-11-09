@@ -98,8 +98,18 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     try {
       transport.check(); signal.throwIfAborted()
       fetchPending = true
-      const response = await boundV2Request(transport.fetch(binding.endpoint + path,
-        { method: 'GET', redirect: 'error', signal }), deadline - Date.now(), signal)
+      // If injected fetch ignores abort and resolves *after* our bounded wait,
+      // reclaim its late response body best-effort. Custody was already UNKNOWN:
+      // never turn this asynchronous cancellation into a clean read receipt.
+      const pendingFetch = transport.fetch(binding.endpoint + path,
+        { method: 'GET', redirect: 'error', signal })
+      const response = await boundV2Request(pendingFetch.then(received => {
+        if (signal.aborted) {
+          try { void received.body?.cancel().catch(() => {}) } catch { /* unknown custody */ }
+          throw new Error('native_read_cleanup_unknown')
+        }
+        return received
+      }), deadline - Date.now(), signal)
       fetchPending = false
       const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
       if (!response.ok || response.redirected || response.url && new URL(response.url).origin !== binding.endpoint
