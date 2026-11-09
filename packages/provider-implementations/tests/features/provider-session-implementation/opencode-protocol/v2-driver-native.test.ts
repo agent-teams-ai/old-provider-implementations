@@ -198,12 +198,14 @@ test('concurrent native queue cannot submit a second prompt while first ACK is u
     const gate = new Promise<void>(resolve => { releaseFirst = resolve })
     config.fetchImpl = async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init)
-      const response = await fetch(input, init)
       if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/prompt')) {
         promptPosts++
+        // The server deliberately destroys the prompt socket (lost ACK).
+        // Mark admission before awaiting fetch, which will reject on that
+        // socket close. Hold the first pending wire operation at this boundary.
         if (promptPosts === 1) { resolveFirst(); await gate }
       }
-      return response
+      return fetch(input, init)
     }
     const native = createDriverNative(config, new AbortController().signal)
     const first = native.queue('msg_TESTfirst', 'TEST once')
@@ -218,13 +220,14 @@ test('concurrent native queue cannot submit a second prompt while first ACK is u
         assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
         return true
       })
-      assert.equal(host.counts().submitted, 1)
+      assert.equal(host.counts().submitted, 0)
       assert.equal(promptPosts, 1)
       releaseFirst()
       await assert.rejects(first, error => {
         assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
         return true
       })
+      assert.equal(host.counts().submitted, 1)
       await assert.rejects(native.queue('msg_TESTthird', 'TEST must not replay'), error => {
         assert.ok(error instanceof ExecutionTransportFailure)
         assert.equal(error.code, 'native_prompt_unknown')
