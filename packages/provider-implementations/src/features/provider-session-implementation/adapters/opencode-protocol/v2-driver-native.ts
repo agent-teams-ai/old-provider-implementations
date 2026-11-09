@@ -56,7 +56,12 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
         if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
         throw error
       } finally { await dispose(wire) }
-    } finally { activeOperations-- }
+    } finally {
+      activeOperations--
+      // A close can race the awaited wire.dispose() AFTER the operation returned.
+      // Never certify success when the physical close latched UNKNOWN custody.
+      if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+    }
   }
   const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
     assertUsable(true)
@@ -103,6 +108,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     } finally {
       queueActive = false
       activeOperations--
+      if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
     }
   }
   const control = async <T>(run: (wire: ReturnType<typeof createOpenCodeV2SessionControl>) => Promise<T>, scopedSignal?: AbortSignal) => {
@@ -132,7 +138,12 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
       throw error
     } finally { await dispose(wire) }
-    } finally { activeOperations-- }
+    } finally {
+      activeOperations--
+      // A close can race the awaited wire.dispose() AFTER the operation returned.
+      // Never certify success when the physical close latched UNKNOWN custody.
+      if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+    }
   }
   return { read, queue, control, async dispose() {
     closed = true

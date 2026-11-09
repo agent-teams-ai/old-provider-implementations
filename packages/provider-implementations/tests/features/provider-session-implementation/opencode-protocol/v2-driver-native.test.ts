@@ -385,3 +385,40 @@ test('driver close while a control callback is suspended cannot return a clean s
     }
   }
 })
+
+
+test('native close between callback success and wire disposal cannot return an uncertified success', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close)
+    const config = nativeConfig(host); config.version = version
+    const native = createDriverNative(config, new AbortController().signal)
+    let closeResult: Promise<{ ok: boolean; error?: unknown }> | undefined
+    let closeScheduled = 0
+    const pending = native.control(async () => {
+      // A nested microtask closes the driver after control's post-callback
+      // check but while its awaited wire disposal is still settling.
+      queueMicrotask(() => {
+        closeScheduled++
+        queueMicrotask(() => {
+          closeScheduled++
+          closeResult = native.dispose().then(() => ({ ok: true }), error => ({ ok: false, error }))
+        })
+      })
+      return 'TEST-must-not-certify'
+    })
+    await assert.rejects(pending, error => {
+      assert.ok(error instanceof ExecutionTransportFailure)
+      assert.equal(error.code, 'cleanup_unknown')
+      assert.equal(error.disposition, 'unknown')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+      return true
+    })
+    assert.equal(closeScheduled, 2)
+    assert.ok(closeResult)
+    const closed = await closeResult
+    assert.equal(closed.ok, false)
+    assert.ok(closed.error instanceof ExecutionTransportFailure)
+    assert.equal(closed.error.code, 'cleanup_unknown')
+    assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+  }
+})
