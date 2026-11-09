@@ -347,3 +347,41 @@ test('clean idle driver close rejects new native traffic as known-not-submitted'
   })
   assert.equal(nativeRequests, 0)
 })
+
+
+test('driver close while a control callback is suspended cannot return a clean success', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close)
+    const config = nativeConfig(host); config.version = version
+    const native = createDriverNative(config, new AbortController().signal)
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const pending = native.control(async () => {
+      entered()
+      await gate
+      return 'TEST-uncertified-success'
+    })
+    try {
+      await started
+      await assert.rejects(native.dispose(), error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'cleanup_unknown')
+        assert.equal(error.disposition, 'unknown')
+        return true
+      })
+      release()
+      await assert.rejects(pending, error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'cleanup_unknown')
+        assert.equal(error.disposition, 'unknown')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+    } finally {
+      release()
+      await pending.catch(() => {})
+    }
+  }
+})

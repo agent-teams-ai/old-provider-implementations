@@ -44,8 +44,13 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     activeOperations++
     try {
       const wire = createOpenCodeV2ExecutionTransport(wireConfig())
-      try { return await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
-        sessionID: config.nativeSessionId, pin: config.version }, original) }
+      try {
+        const result = await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
+          sessionID: config.nativeSessionId, pin: config.version }, original)
+        // A concurrent close may revoke physical custody after readback succeeds.
+        assertUsable()
+        return result
+      }
       catch (error) {
         rememberUncertainCleanup(error)
         if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
@@ -80,6 +85,8 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
         || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text) {throw new Error('native_handoff_identity_mismatch')}
+      // A close that raced the acknowledged POST cannot be reported as clean.
+      assertUsable(true)
       return { nativeInputID, text, beforeCursor: log.watermark }
       } catch (error) {
       rememberUncertainCleanup(error)
@@ -113,7 +120,13 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       replyPermission: (id, decision) => { assertUsable(true); return wire.replyPermission(id, decision) },
       putInstruction: (key, value) => { assertUsable(true); return wire.putInstruction(key, value) },
     }
-    try { return await run(guarded) }
+    try {
+      const result = await run(guarded)
+      // The callback can be suspended without having started a wire request.
+      // A concurrent close must still invalidate a late "success" return.
+      assertUsable()
+      return result
+    }
     catch (error) {
       rememberUncertainCleanup(error)
       if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
