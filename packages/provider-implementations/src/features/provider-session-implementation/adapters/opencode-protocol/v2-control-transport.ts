@@ -146,8 +146,13 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       return controlResponse(response, body, routes)
     } catch (error) {
       controller.abort()
-      const failure = new ExecutionTransportFailure(error instanceof ExecutionTransportFailure ? error.code : 'transport_failure', invoked ? 'unknown' : 'not_submitted')
-      if (!invoked) {unsubmitted.add(failure)}
+      // An admission fence may reject before this request invokes fetch while
+      // the *prior prompt* already has UNKNOWN custody. Preserve that trusted
+      // uncertainty: "not submitted" would permit an unsafe retry.
+      const uncertain = error instanceof ExecutionTransportFailure && error.disposition === 'unknown'
+      const failure = new ExecutionTransportFailure(error instanceof ExecutionTransportFailure ? error.code : 'transport_failure',
+        invoked || uncertain ? 'unknown' : 'not_submitted')
+      if (!invoked && !uncertain) {unsubmitted.add(failure)}
       throw failure
     } finally {
       clearTimeout(timer); controllers.delete(controller)

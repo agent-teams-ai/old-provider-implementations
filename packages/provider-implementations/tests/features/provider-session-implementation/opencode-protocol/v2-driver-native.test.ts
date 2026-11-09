@@ -209,6 +209,10 @@ test('permission detail already in flight cannot POST a grant after concurrent n
       await assert.rejects(grant, error => {
         assert.ok(error instanceof ExecutionTransportFailure)
         assert.equal(error.code, 'native_prompt_unknown')
+        // The POST was fenced, but the earlier prompt may have executed.
+        // The control transport must not downgrade that uncertainty.
+        assert.equal(error.disposition, 'unknown')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
         return true
       })
       assert.equal(host.counts().submitted, 1)
