@@ -140,3 +140,51 @@ test('legacy flat V1-like read never submits, and malformed post-ACK is unknown 
   })
   assert.equal(wrongAck.counts().submitted, 1)
 })
+
+test('unconfirmed native prompt fences all control mutations, including delayed callbacks, while read-only reconciliation works', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close); host.loseReceipt()
+    const config = nativeConfig(host); config.version = version
+    let nativeRequests = 0
+    config.fetchImpl = async (input, init) => {
+      nativeRequests++
+      return fetch(input, init)
+    }
+    const native = createDriverNative(config, new AbortController().signal)
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    // The control callback was admitted before the prompt became UNKNOWN.
+    // Its delayed mutation must still be rejected after the failed POST.
+    const delayed = native.control(async wire => { await gate; return wire.interrupt() })
+    try {
+      await assert.rejects(native.queue('msg_TESTunknown', 'TEST once'), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      assert.equal(host.counts().submitted, 1)
+      const afterUnknown = nativeRequests
+      release()
+      const mutations = [
+        delayed,
+        native.control(wire => wire.interrupt()),
+        native.control(wire => wire.cancelInbox('msg_TESTunknown')),
+        native.control(wire => wire.replyPermission('per_TESTpermission', 'reject')),
+        native.control(wire => wire.putInstruction('test-context', { value: 'TEST' })),
+      ]
+      for (const mutation of mutations) {
+        await assert.rejects(mutation, error => {
+          assert.ok(error instanceof ExecutionTransportFailure)
+          assert.equal(error.code, 'native_prompt_unknown')
+          assert.equal(error.disposition, 'unknown')
+          assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+          return true
+        })
+      }
+      assert.equal(nativeRequests, afterUnknown)
+      assert.deepEqual(host.counts(), { submitted: 1, interrupted: 0, replies: 0 })
+      assert.deepEqual(host.cancelled, [])
+      assert.deepEqual(await native.control(wire => wire.pendingPermissions()), [])
+      assert.equal(nativeRequests, afterUnknown + 1)
+    } finally { release(); await native.dispose() }
+  }
+})
