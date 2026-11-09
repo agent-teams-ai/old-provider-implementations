@@ -54,6 +54,35 @@ test('V2 execution transport never forwards caller headers with native credentia
   }
 })
 
+test('V2 raw prompt rejects unqualified attachments before credentials or native HTTP', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let credentialReads = 0
+    let nativeCalls = 0
+    const endpoint = 'http://127.0.0.1:12345'
+    const wire = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      readPassword: () => { credentialReads++; return 'TEST_PRIVATE_PASSWORD' },
+      fetchImpl: async () => { nativeCalls++; throw new Error('native_must_not_be_called') },
+    })
+    t.after(() => wire.dispose())
+    for (const attachments of [
+      { files: [{ uri: 'file:///TEST/foreign/private' }] },
+      { agents: [{ name: 'unqualified_agent' }] },
+      { skills: [{ id: 'unqualified_skill' }] },
+      { files: [] },
+    ]) {
+      const error = await captureFailure(wire.fetch(endpoint + '/api/session/ses_A/prompt', {
+        method: 'POST', body: JSON.stringify({ ...prompt, ...attachments }),
+      }))
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+      assert(error instanceof Error)
+      assert.doesNotMatch(error.message, /TEST_PRIVATE_PASSWORD|foreign\/private|unqualified_/)
+    }
+    assert.equal(credentialReads, 0)
+    assert.equal(nativeCalls, 0)
+  }
+})
+
 test('V2 effect then lost receipt is unknown and original input is recovered by readonly lookup without replay', async t => {
   let effects = 0
   const host = await peer((req, res) => {
