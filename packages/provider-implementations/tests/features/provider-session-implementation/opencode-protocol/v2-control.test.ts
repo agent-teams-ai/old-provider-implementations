@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { test } from 'node:test'
-import { createOpenCodeV2SessionControl, wasOpenCodeV2InputNotSubmitted } from '../../../../src/opencode.ts'
+import { createOpenCodeV2ExecutionTransport, createOpenCodeV2SessionControl, wasOpenCodeV2InputNotSubmitted } from '../../../../src/opencode.ts'
 import { createV2ControlWire } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts'
 
 async function peer() {
@@ -74,6 +74,31 @@ test('V2 raw control wire never forwards caller headers with native credentials'
       body: JSON.stringify(version === '2.0.0' ? { reply: 'reject' } : { decision: 'reject' }),
     })
     assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
+  }
+})
+
+
+test('raw V2 credential-bearing wires reject noncanonical workspace bindings before native access', () => {
+  // Public factories can be called without the private DriverConfig snapshot.
+  // A malformed directory must not bind a credential to an unverified workspace.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let credentials = 0, nativeCalls = 0
+    const options = {
+      endpoint: 'http://127.0.0.1:12345', version, nativeSessionId: 'ses_A',
+      deadline: Date.now() + 10_000,
+      readPassword: () => { credentials++; return 'TEST-private' },
+      fetchImpl: async () => { nativeCalls++; return new Response('{}') },
+    }
+    for (const directory of [
+      '', '/TEST/owner/../neighbor', '/TEST/owner/', ['/TEST/owner'],
+    ] as unknown[]) {
+      const config = { ...options, directory: directory as string }
+      assert.throws(() => createV2ControlWire(config), /authority_mismatch/)
+      assert.throws(() => createOpenCodeV2SessionControl(config), /authority_mismatch/)
+      assert.throws(() => createOpenCodeV2ExecutionTransport(config), /authority_mismatch/)
+    }
+    assert.equal(credentials, 0)
+    assert.equal(nativeCalls, 0)
   }
 })
 

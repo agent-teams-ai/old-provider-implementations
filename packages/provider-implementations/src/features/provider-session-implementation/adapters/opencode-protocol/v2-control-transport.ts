@@ -1,5 +1,6 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
+import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
@@ -70,6 +71,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   // RegExp.exec coerce an untyped JSON array into a trusted loopback endpoint.
 
   executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
+    && isCanonicalV2DriverDirectory(config.directory)
     && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)

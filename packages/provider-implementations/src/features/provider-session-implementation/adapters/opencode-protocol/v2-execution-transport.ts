@@ -1,6 +1,7 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
+import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
 
@@ -68,8 +69,8 @@ class OpenCodeV2ExecutionFetch {
 
     executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
-    executionAssert(safeV2SessionID(this.nativeSessionId), 'authority_mismatch')
-    executionAssert(Number.isFinite(this.context.deadline) && typeof this.directory === 'string' && this.directory.length > 0, 'deadline')
+    executionAssert(safeV2SessionID(this.nativeSessionId) && isCanonicalV2DriverDirectory(this.directory), 'authority_mismatch')
+    executionAssert(Number.isFinite(this.context.deadline), 'deadline')
   }
 
   check(): void {
