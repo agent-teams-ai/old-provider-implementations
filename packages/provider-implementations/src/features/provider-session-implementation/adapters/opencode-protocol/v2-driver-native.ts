@@ -40,6 +40,9 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       return { nativeInputID, text, beforeCursor: log.watermark }
     } catch (error) {
       if (!mutation) {
+        // A read-only preflight cannot have submitted the prompt, but failed
+        // native stream cleanup is still UNKNOWN custody, not a clean refusal.
+        if (error instanceof ExecutionTransportFailure && error.code === 'cleanup_unknown') {throw error}
         const failure = new ExecutionTransportFailure('preflight_failed', 'not_submitted'); unsubmitted.add(failure); throw failure
       }
       throw error
