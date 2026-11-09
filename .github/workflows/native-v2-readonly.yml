@@ -71,6 +71,7 @@ jobs:
           - { os: macos-15, proof: embedded }
           - { os: macos-15, proof: embedded-model }
           - { os: macos-15, proof: embedded-interrupt }
+          - { os: macos-15, proof: embedded-target-interrupt }
           - { os: macos-15, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded-target-tool }
           - { os: macos-15, proof: embedded-target-mcp }
@@ -78,6 +79,7 @@ jobs:
           - { os: macos-15-intel, proof: embedded }
           - { os: macos-15-intel, proof: embedded-model }
           - { os: macos-15-intel, proof: embedded-interrupt }
+          - { os: macos-15-intel, proof: embedded-target-interrupt }
           - { os: macos-15-intel, proof: embedded-pinned-tool }
           - { os: macos-15-intel, proof: embedded-target-tool }
           # 2.1.4 MCP custody/readback on Intel macOS as well as Apple Silicon.
@@ -85,11 +87,13 @@ jobs:
           - { os: windows-2022, proof: embedded }
           - { os: windows-2022, proof: embedded-model }
           - { os: windows-2022, proof: embedded-interrupt }
+          - { os: windows-2022, proof: embedded-target-interrupt }
           - { os: windows-2022, proof: embedded-pinned-tool }
           - { os: windows-2022, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded-target-mcp }
           # Windows 11 ARM64 is a separate native SDK tuple, not Server 2022 x64.
           - { os: windows-11-arm, proof: embedded-target-mcp }
+          - { os: windows-11-arm, proof: embedded-target-interrupt }
           - { os: windows-2022, proof: embedded-target }
           - { os: windows-2022, proof: embedded-target-model }
     steps:
