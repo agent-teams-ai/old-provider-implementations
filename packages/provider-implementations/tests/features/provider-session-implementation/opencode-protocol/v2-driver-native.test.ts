@@ -188,3 +188,34 @@ test('unconfirmed native prompt fences all control mutations, including delayed 
     } finally { release(); await native.dispose() }
   }
 })
+
+test('permission detail already in flight cannot POST a grant after concurrent native prompt becomes unknown', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close); host.loseReceipt(); host.pauseReplyPreflight()
+    const config = nativeConfig(host); config.version = version
+    const native = createDriverNative(config, new AbortController().signal)
+    const grant = native.control(wire => wire.replyPermission('per_TESTpermission', 'reject'))
+    try {
+      const timeout = Date.now() + 1500
+      while (host.permissionDetails() !== 1) {
+        assert.ok(Date.now() < timeout, 'TEST detail preflight not entered')
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      await assert.rejects(native.queue('msg_TESTunknown', 'TEST once'), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      host.releaseReplyPreflight()
+      await assert.rejects(grant, error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'native_prompt_unknown')
+        return true
+      })
+      assert.equal(host.counts().submitted, 1)
+      assert.equal(host.counts().replies, 0)
+    } finally {
+      host.releaseReplyPreflight()
+      await native.dispose()
+    }
+  }
+})

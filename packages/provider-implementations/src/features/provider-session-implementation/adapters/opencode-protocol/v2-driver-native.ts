@@ -67,7 +67,8 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   }
   const control = async <T>(run: (wire: ReturnType<typeof createOpenCodeV2SessionControl>) => Promise<T>, scopedSignal?: AbortSignal) => {
     assertUsable()
-    const wire = createOpenCodeV2SessionControl({ ...wireConfig(), nativeSessionId: config.nativeSessionId, signal: scopedSignal ? AbortSignal.any([signal, scopedSignal]) : signal })
+    const wire = createOpenCodeV2SessionControl({ ...wireConfig(), nativeSessionId: config.nativeSessionId, signal: scopedSignal ? AbortSignal.any([signal, scopedSignal]) : signal,
+      beforeMutation: () => assertUsable(true) })
     // A control callback may await before choosing its actual operation. Fence
     // every session-scoped mutation at invocation, not merely at control entry.
     const guarded: typeof wire = {

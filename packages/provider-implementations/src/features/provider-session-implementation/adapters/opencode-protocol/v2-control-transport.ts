@@ -8,7 +8,11 @@ import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
-export type OpenCodeV2SessionControlConfig = OpenCodeV2TransportConfig & { nativeSessionId: string }
+export type OpenCodeV2SessionControlConfig = OpenCodeV2TransportConfig & {
+  nativeSessionId: string
+  /** Private Driver mutation fence, checked after asynchronous request admission. */
+  beforeMutation?: () => void
+}
 
 type ControlRoutes = { listInstructions: boolean; putInstruction: boolean; interrupt: boolean; cancelInbox: boolean; permissions: boolean; reply: boolean }
 function allowedControlMethod(method: string, routes: ControlRoutes): boolean {
@@ -117,9 +121,11 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // Stream admission may outlive the original deadline or revoke the Host lease.
       // Revalidate before projecting credentials, not only before native fetch.
       check(); signal.throwIfAborted()
+      if (native.method !== 'GET') config.beforeMutation?.()
       const password = config.readPassword()
       executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
       check(); signal.throwIfAborted()
+      if (native.method !== 'GET') config.beforeMutation?.()
       // The caller may supply arbitrary headers to this raw control wire;
       // never forward them with the Host-owned Basic credential.
       const headers = new Headers()
