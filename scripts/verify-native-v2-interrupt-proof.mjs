@@ -8,7 +8,8 @@ const path = process.env.OPENCODE_V2_EMBEDDED_RECEIPT
 if (!path) throw Error('TEST_missing_interrupt_receipt')
 const proof = JSON.parse(readFileSync(path, 'utf8'))
 assert.equal(proof.kind, 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY')
-assert.equal(proof.version, '2.0.21')
+assert.ok(['2.0.21', '2.1.4'].includes(process.env.OPENCODE_V2_EMBEDDED_VERSION), 'TEST exact version required')
+assert.equal(proof.version, process.env.OPENCODE_V2_EMBEDDED_VERSION)
 assert.equal(proof.qualified, false, 'isolated TEST is not production admission')
 assert.equal(proof.completed, true)
 assert.equal(proof.cleanup, true)
@@ -41,5 +42,5 @@ assert.equal(interruption.streamCancelledAfterHostClose, true)
 assert.equal(interruption.durableTerminalCount, 1)
 assert.equal(interruption.qualified, false, 'Host integration remains HOLD')
 assert.equal(proof.interruptAfterHostClose?.socketClosed, true)
-console.log(JSON.stringify({ test: 'pinned_sdk_active_interrupt_stream_cancelled_and_no_replay',
+console.log(JSON.stringify({ test: 'versioned_sdk_active_interrupt_stream_cancelled_and_no_replay',
   verified: true, productionQualified: false, cleanup: true }))

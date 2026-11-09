@@ -59,6 +59,9 @@ jobs:
           - { os: ubuntu-24.04, proof: embedded-floor }
           - { os: ubuntu-24.04, proof: embedded-target }
           - { os: ubuntu-24.04, proof: embedded-target-model }
+          # TEST-only exact SDK 2.1.4 active stream cancellation and cold no-replay.
+          # Separate from pinned 2.0.21: neither is a production Driver admission.
+          - { os: ubuntu-24.04, proof: embedded-target-interrupt }
           # Discovery only: actual local fake-model tool call, policy hard-deny,
           # and an outside-workspace canary. Not a Host/production PASS.
           - { os: ubuntu-24.04, proof: embedded-target-tool }
@@ -177,7 +180,7 @@ jobs:
           fi
           node scripts/verify-native-v2-embedded-floor-hold.mjs
       - name: TEST embedded V2 persistent event log through cold host restart
-        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt' && matrix.proof != 'embedded-mcp' && matrix.proof != 'embedded-target-mcp'
+        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt' && matrix.proof != 'embedded-target-interrupt' && matrix.proof != 'embedded-mcp' && matrix.proof != 'embedded-target-mcp'
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
@@ -187,14 +190,14 @@ jobs:
           OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
         run: node scripts/native-v2-embedded-proof.mjs
-      - name: TEST embedded pinned active-interrupt HTTP cancel and cold no-replay
-        if: matrix.proof == 'embedded-interrupt'
+      - name: TEST embedded versioned active-interrupt HTTP cancel and cold no-replay
+        if: matrix.proof == 'embedded-interrupt' || matrix.proof == 'embedded-target-interrupt'
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
-          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-embedded-interrupt-proof.json
+          OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
           OPENCODE_V2_EMBEDDED_MODEL_PROOF: '1'
           OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: '1'
-          OPENCODE_V2_EMBEDDED_VERSION: '2.0.21'
+          OPENCODE_V2_EMBEDDED_VERSION: ${{ matrix.proof == 'embedded-target-interrupt' && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
         run: |
           node scripts/native-v2-embedded-proof.mjs
@@ -226,6 +229,7 @@ jobs:
             native-v2-embedded-proof.json
             native-v2-embedded-model-proof.json
             native-v2-embedded-interrupt-proof.json
+            native-v2-embedded-target-interrupt-proof.json
             native-v2-embedded-mcp-proof.json
             native-v2-embedded-target-mcp-proof.json
             native-v2-embedded-floor-proof.json

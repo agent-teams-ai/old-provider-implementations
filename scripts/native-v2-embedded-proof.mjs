@@ -20,8 +20,8 @@ if (!['2.0.0', '2.0.21', '2.1.4'].includes(pinnedVersion)) throw Error('TEST_unq
 // hard-deny `policies`; these are separate tests, never a fallback.
 if (toolMode && (!modelMode || !['2.0.21', '2.1.4'].includes(pinnedVersion)))
   throw Error('TEST_tool_policy_requires_supported_embedded_model')
-if (interruptMode && (!modelMode || toolMode || pinnedVersion !== '2.0.21'))
-  throw Error('TEST_interrupt_requires_pinned_embedded_model')
+if (interruptMode && (!modelMode || toolMode || !['2.0.21', '2.1.4'].includes(pinnedVersion)))
+  throw Error('TEST_interrupt_requires_supported_embedded_model')
 const receipt = { kind: 'TEST_V2_EMBEDDED_DURABLE_DISCOVERY_ONLY', version: pinnedVersion,
   qualified: false, steps: [], cleanup: false }
 // Public TEST receipts must never include upstream SDK/OS exception text.
