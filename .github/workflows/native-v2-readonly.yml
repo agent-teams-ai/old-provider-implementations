@@ -54,6 +54,8 @@ jobs:
           - { os: ubuntu-24.04, proof: embedded }
           - { os: ubuntu-24.04, proof: embedded-model }
           - { os: ubuntu-24.04, proof: embedded-interrupt }
+          # Exact pinned 2.0.21 private-Driver MCP TEST on all five native OS tuples.
+          # No production Host process custody or 2.1.4 Driver admission implied.
           - { os: ubuntu-24.04, proof: embedded-mcp }
           - { os: ubuntu-24.04, proof: embedded-target-mcp }
           - { os: ubuntu-24.04, proof: embedded-floor }
@@ -75,6 +77,7 @@ jobs:
           - { os: macos-15, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded-target-tool }
           - { os: macos-15, proof: embedded-target-mcp }
+          - { os: macos-15, proof: embedded-mcp }
           # GitHub-hosted macos-15 is Apple Silicon; macos-15-intel is x64.
           - { os: macos-15-intel, proof: embedded }
           - { os: macos-15-intel, proof: embedded-model }
@@ -84,6 +87,7 @@ jobs:
           - { os: macos-15-intel, proof: embedded-target-tool }
           # 2.1.4 MCP custody/readback on Intel macOS as well as Apple Silicon.
           - { os: macos-15-intel, proof: embedded-target-mcp }
+          - { os: macos-15-intel, proof: embedded-mcp }
           - { os: windows-2022, proof: embedded }
           - { os: windows-2022, proof: embedded-model }
           - { os: windows-2022, proof: embedded-interrupt }
@@ -91,8 +95,10 @@ jobs:
           - { os: windows-2022, proof: embedded-pinned-tool }
           - { os: windows-2022, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded-target-mcp }
+          - { os: windows-2022, proof: embedded-mcp }
           # Windows 11 ARM64 is a separate native SDK tuple, not Server 2022 x64.
           - { os: windows-11-arm, proof: embedded-target-mcp }
+          - { os: windows-11-arm, proof: embedded-mcp }
           - { os: windows-11-arm, proof: embedded-target-interrupt }
           # Independently prove 2.1.4 tool.use/external_directory hard-deny on
           # Windows ARM64; MCP/interrupt evidence alone cannot qualify policy.
