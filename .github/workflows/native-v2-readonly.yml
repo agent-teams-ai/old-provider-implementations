@@ -192,7 +192,7 @@ jobs:
           OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: ${{ endsWith(matrix.proof, '-interrupt') && '1' || '0' }}
           OPENCODE_V2_EMBEDDED_TOOL_PROOF: ${{ endsWith(matrix.proof, '-tool') && '1' || '0' }}
           OPENCODE_V2_EMBEDDED_VERSION: ${{ startsWith(matrix.proof, 'embedded-target') && '2.1.4' || '2.0.21' }}
-          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
         run: node scripts/native-v2-embedded-proof.mjs
       - name: TEST embedded versioned active-interrupt HTTP cancel and cold no-replay
         if: matrix.proof == 'embedded-interrupt' || matrix.proof == 'embedded-target-interrupt'
@@ -202,7 +202,7 @@ jobs:
           OPENCODE_V2_EMBEDDED_MODEL_PROOF: '1'
           OPENCODE_V2_EMBEDDED_INTERRUPT_PROOF: '1'
           OPENCODE_V2_EMBEDDED_VERSION: ${{ matrix.proof == 'embedded-target-interrupt' && '2.1.4' || '2.0.21' }}
-          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || 'linux-x64' }}
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
         run: |
           node scripts/native-v2-embedded-proof.mjs
           node scripts/verify-native-v2-interrupt-proof.mjs
