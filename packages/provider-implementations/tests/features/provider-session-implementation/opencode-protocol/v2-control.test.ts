@@ -78,6 +78,40 @@ test('V2 raw control wire never forwards caller headers with native credentials'
 })
 
 
+test('raw session-bound control refuses foreign ID namespaces before credentials or native effects', async t => {
+  // Unlike the typed helpers, the raw wire previously accepted an arbitrary
+  // [A-Za-z0-9_-] segment for inbox DELETE and permission GET/POST. A caller
+  // could therefore bypass the pinned msg_/per namespace and typed ID checks.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let credentials = 0, nativeCalls = 0
+    const wire = createV2ControlWire({
+      endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original', version,
+      nativeSessionId: 'ses_A', deadline: Date.now() + 10_000,
+      readPassword: () => { credentials++; return 'TEST-private' },
+      fetchImpl: async () => { nativeCalls++; return new Response(null, { status: 204 }) },
+    })
+    t.after(wire.dispose)
+    const mutation = { method: 'POST', body: JSON.stringify(version === '2.0.0'
+      ? { reply: 'reject' } : { decision: 'reject' }) }
+    const invalid = [
+      ['/api/session/ses_A/inbox/per_ses_A', { method: 'DELETE' }],
+      ['/api/session/ses_A/inbox/msg_', { method: 'DELETE' }],
+      ['/api/session/ses_A/inbox/ses_neighbor', { method: 'DELETE' }],
+      ['/api/session/ses_A/permission/msg_TEST', { method: 'GET' }],
+      ['/api/session/ses_A/permission/msg_TEST/reply', mutation],
+      ['/api/session/ses_A/permission/per/reply', mutation],
+    ] as const
+    for (const [path, init] of invalid) {
+      await assert.rejects(wire.request(path, init), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      }, path)
+    }
+    assert.equal(credentials, 0)
+    assert.equal(nativeCalls, 0)
+  }
+})
+
 test('raw V2 credential-bearing wires reject noncanonical workspace bindings before native access', () => {
   // Public factories can be called without the private DriverConfig snapshot.
   // A malformed directory must not bind a credential to an unverified workspace.

@@ -4,7 +4,7 @@ import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { decodeV2DataEnvelope } from './v2-cut-codecs.ts'
-import { safeV2MessageID } from './v2-native-identifiers.ts'
+import { safeV2MessageID, safeV2PermissionID } from './v2-native-identifiers.ts'
 
 export type OpenCodeV2Permission = Readonly<{
   requestId: string; sessionId: string; action: string; resources: readonly string[]
@@ -14,9 +14,6 @@ function text(value: unknown): string {
   if (typeof value !== 'string' || !value || value.length > 4096) {throw new Error('invalid_native_control_response')}
   return value
 }
-// Both pinned V2 versions brand pending permission IDs with the `per` prefix.
-// Bound to the session route's safe single-segment alphabet before any grant.
-const nativePermissionId = /^per[A-Za-z0-9_-]{1,253}$/
 function denyUnsubmitted(): never {
   const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
   unsubmitted.add(failure)
@@ -26,7 +23,7 @@ function permission(value: unknown, sessionId: string): OpenCodeV2Permission {
   const raw = record(value)
   if (!raw || raw.sessionID !== sessionId || !Array.isArray(raw.resources) || raw.resources.length > 256) {throw new Error('foreign_native_permission')}
   const requestId = text(raw.id)
-  if (!nativePermissionId.test(requestId)) {throw new Error('invalid_native_permission_id')}
+  if (!safeV2PermissionID(requestId)) {throw new Error('invalid_native_permission_id')}
   const result: { requestId: string; sessionId: string; action: string; resources: string[]; source?: NonNullable<OpenCodeV2Permission['source']> } = {
     requestId, sessionId, action: text(raw.action), resources: raw.resources.map(text),
   }
@@ -68,7 +65,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
       // V2 `always` writes a durable project-scoped approval pattern. Until Host
       // owns and proves that mutation, reject it before even reading native state.
-      if (typeof requestId !== 'string' || !nativePermissionId.test(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
+      if (typeof requestId !== 'string' || !safeV2PermissionID(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
         const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
