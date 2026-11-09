@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parse, sep } from 'node:path'
-import { isCanonicalV2DriverDirectory } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts'
+import { isCanonicalV2DriverDirectory, snapshotDriverConfig } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts'
 import type { DriverFactory, OpenConfig } from '@agent-teams/provider-session-contracts'
 import { createOpenCodeV2DriverFactory } from '../../../../src/opencode.ts'
 import { nativeConfig } from './v2-driver-support.ts'
@@ -10,6 +10,27 @@ import { artifact, attachedInput } from '../provider-session-io/attachment-suppo
 
 const request: OpenConfig = { tenantId: 'TEST-tenant', projectId: 'TEST-project', sessionId: 'TEST-runtime-session', generation: 1,
   configRevision: 'TEST-r1', requiredCapabilities: ['text'] }
+
+test('V2 Host getters cannot swap native authority between validation and config snapshot', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  const original = nativeConfig(host), supplied = { ...original }
+  let sessionReads = 0, endpointReads = 0, versionReads = 0
+  Object.defineProperty(supplied, 'nativeSessionId', {
+    enumerable: true, get: () => ++sessionReads === 1 ? original.nativeSessionId : 'ses_TESTforeign',
+  })
+  Object.defineProperty(supplied, 'endpoint', {
+    enumerable: true, get: () => ++endpointReads === 1 ? original.endpoint : 'http://127.0.0.1:65535',
+  })
+  Object.defineProperty(supplied, 'version', {
+    enumerable: true, get: () => ++versionReads === 1 ? '2.0.21' : '2.1.4',
+  })
+  const captured = snapshotDriverConfig(supplied, request)
+  assert.equal(captured.nativeSessionId, original.nativeSessionId)
+  assert.equal(captured.endpoint, original.endpoint)
+  assert.equal(captured.version, '2.0.21')
+  assert.deepEqual([sessionReads, endpointReads, versionReads], [1, 1, 1])
+  assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+})
 
 test('V2 attachment refs explicitly reject known not sent instead of silently using text queue', async t => {
   const host = await driverPeer(); t.after(host.close)

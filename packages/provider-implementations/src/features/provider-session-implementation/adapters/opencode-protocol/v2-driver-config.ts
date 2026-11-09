@@ -43,22 +43,25 @@ export function isCanonicalV2DriverDirectory(
 }
 
 export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: OpenConfig): OpenCodeV2DriverConfig {
-  if (record(config) === null || record(config.binding) === null || record(config.limits) === null) {
+  // Capture untrusted Host getters once. Validating a live object and then
+  // spreading it later could swap the session, endpoint or SDK pin after checks.
+  const fields = { ...config }
+  if (record(fields) === null || record(fields.binding) === null || record(fields.limits) === null) {
     throw new Error('opencode.driver.invalid-config')
   }
-  // RegExp.exec coerces a one-element JSON array into a string; never let an
-  // untyped Host capture masquerade as a qualified loopback endpoint.
-
-  if (config.configRevision !== request.configRevision || !config.trustedBinding?.trim() || !config.accountBinding?.trim()
-    || !safeV2SessionID(config.nativeSessionId)
-    || !isCanonicalV2DriverDirectory(config.directory)
-    || !isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
-    || !['2.0.0', '2.0.21'].includes(config.version)
-    || typeof config.readPassword !== 'function' || typeof config.probe !== 'function' || typeof config.confirmStopped !== 'function'
-    || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = config.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
-    || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => config.binding[key as keyof typeof config.binding] === request[key as keyof typeof config.binding]))
+  const captured = { ...fields, binding: { ...fields.binding }, limits: { ...fields.limits } }
+  // RegExp.exec coerces a one-element JSON array to a string: type-check the
+  // captured values, never read the original Host object again.
+  if (captured.configRevision !== request.configRevision || !captured.trustedBinding?.trim() || !captured.accountBinding?.trim()
+    || !safeV2SessionID(captured.nativeSessionId)
+    || !isCanonicalV2DriverDirectory(captured.directory)
+    || !isCanonicalOpenCodeV2LoopbackEndpoint(captured.endpoint)
+    || !['2.0.0', '2.0.21'].includes(captured.version)
+    || typeof captured.readPassword !== 'function' || typeof captured.probe !== 'function' || typeof captured.confirmStopped !== 'function'
+    || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
+    || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => captured.binding[key as keyof typeof captured.binding] === request[key as keyof typeof captured.binding]))
     {throw new Error('opencode.driver.invalid-config')}
-  return { ...config, binding: { ...config.binding }, limits: { ...config.limits } }
+  return captured
 }
 export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
   return createHash('sha256').update(JSON.stringify({ version: config.version, endpoint: config.endpoint,
