@@ -402,7 +402,7 @@ test('public native read cut refuses a never-settling injected fetch after admis
 test('public native read cut cancels a late fetch response after revocation', async () => {
   const directory = resolve('TEST/native-cut'), controller = new AbortController()
   let deliver!: (response: Response) => void
-  let fetched = 0, lateCancellations = 0, nativeSignal: AbortSignal | undefined
+  let fetched = 0, lateCancellations = 0, nativeSignal: AbortSignal | null | undefined
   const transport = {
     signal: controller.signal,
     check() {},
