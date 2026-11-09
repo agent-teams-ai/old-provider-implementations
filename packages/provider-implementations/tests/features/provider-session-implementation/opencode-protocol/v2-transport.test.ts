@@ -96,6 +96,43 @@ test('V2 unsupported route, workspace and create binding reject before native fe
   } as unknown as ReturnType<typeof config>), /authority_mismatch/)
 })
 
+test('V2 read-only query budgets refuse unbounded pagination and log offsets before credentials', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    let credentials = 0, nativeRequests = 0
+    const transport = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      readPassword: () => { credentials++; return 'TEST_PRIVATE_PASSWORD' },
+      fetchImpl: async () => {
+        nativeRequests++
+        return new Response(JSON.stringify({ data: [], cursor: { previous: null, next: null } }),
+          { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    t.after(() => transport.dispose())
+    for (const path of [
+      '/api/session/ses_A/message?limit=0',
+      '/api/session/ses_A/message?limit=201',
+      '/api/session/ses_A/message?limit=999999999',
+      '/api/session/ses_A/message?limit=0001',
+      '/api/session/ses_A/message?cursor=',
+      '/api/session/ses_A/message?cursor=' + 'x'.repeat(4097),
+      '/api/experimental/session/ses_A/log?follow=false&after=-1',
+      '/api/experimental/session/ses_A/log?follow=false&after=1e9',
+      '/api/experimental/session/ses_A/log?follow=false&after=9007199254740992',
+    ]) {
+      const failure = await captureFailure(transport.fetch(endpoint + path))
+      assert.equal(wasOpenCodeV2InputNotSubmitted(failure), true, path)
+    }
+    assert.equal(credentials, 0, 'rejected native reads must not project credentials')
+    assert.equal(nativeRequests, 0, 'rejected native reads must not access the engine')
+    const response = await transport.fetch(endpoint + '/api/session/ses_A/message?limit=200&cursor=TEST-cursor')
+    assert.equal(response.status, 200)
+    assert.equal(credentials, 1)
+    assert.equal(nativeRequests, 1)
+  }
+})
+
 test('V2 direct execution wire rejects overflow and noncanonical loopback ports before credentials or fetch', () => {
   let credentials = 0, fetches = 0
   for (const endpoint of [

@@ -64,6 +64,17 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   executionAssert(executionMethodAllowed(request.method, { session, prompt, list, log, scoped, activation, identity, create }), 'capabilities_pending')
   const allowed = scoped || activation ? ['location[directory]'] : log ? ['after', 'follow'] : url.pathname.endsWith('/message') ? ['cursor', 'limit'] : []
   for (const key of url.searchParams.keys()) { executionAssert(allowed.includes(key) && url.searchParams.getAll(key).length === 1, 'authority_mismatch') }
+  // These raw GET routes also carry Host credentials. Keep untrusted query
+  // values finite before native dispatch, not just the returned byte stream.
+  if (list && url.pathname.endsWith('/message')) {
+    const limit = url.searchParams.get('limit'), cursor = url.searchParams.get('cursor')
+    executionAssert(limit === null || (/^(?:[1-9]|[1-9][0-9]|1[0-9][0-9]|200)$/.test(limit)), 'authority_mismatch')
+    executionAssert(cursor === null || (cursor.length > 0 && Buffer.byteLength(cursor) <= 4096), 'authority_mismatch')
+  }
+  if (log) {
+    const after = url.searchParams.get('after')
+    executionAssert(after === null || (/^(?:0|[1-9][0-9]*)$/.test(after) && Number.isSafeInteger(Number(after))), 'authority_mismatch')
+  }
   if (scoped || activation) { executionAssert(url.searchParams.get('location[directory]') === directory, 'authority_mismatch') }
   if (log) { executionAssert(url.searchParams.get('follow') === 'false', 'capabilities_pending') }
   return { url, session, log, activation, create, prompt }
