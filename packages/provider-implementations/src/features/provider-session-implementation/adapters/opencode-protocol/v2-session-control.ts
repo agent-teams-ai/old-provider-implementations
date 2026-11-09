@@ -73,8 +73,11 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       try {
         const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
         if (current.requestId !== requestId) {throw new Error('native_permission_identity_mismatch')}
-      } catch {
-        // This method's grant POST has not begun; a failed read cannot have granted permission.
+      } catch (error) {
+        // The grant POST has not begun, but a failed preflight reader cancellation
+        // still has UNKNOWN native custody. Never downgrade that to a clean refusal.
+        if (error instanceof ExecutionTransportFailure && error.code === 'cleanup_unknown') { throw error }
+        // Other preflight failures cannot have granted this permission.
         const failure = new ExecutionTransportFailure('native_permission_preflight', 'not_submitted')
         unsubmitted.add(failure); throw failure
       }

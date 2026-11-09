@@ -427,6 +427,35 @@ test('native V2 tool-origin permission keeps valid message lineage and allows on
   }
 })
 
+test('V2 typed permission preflight preserves unknown native reader cleanup without granting', async t => {
+  // The permission GET is a read, but an unconfirmed reader cancellation means
+  // its native IO custody is UNKNOWN. It must not become a clean not-submitted
+  // grant result when the typed API wraps its preflight failure.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let nativeCalls = 0
+    const control = createOpenCodeV2SessionControl({
+      endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original', version,
+      deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+      readPassword: () => 'TEST-private',
+      fetchImpl: async () => {
+        nativeCalls++
+        return new Response(new ReadableStream({
+          start(controller) { controller.error(new Error('TEST_PRIVATE_PRECHECK_READ')) },
+        }), { headers: { 'content-type': 'application/json' } })
+      },
+    })
+    t.after(control.dispose)
+    await assert.rejects(control.replyPermission('per_ses_A', 'once'), (error: unknown) => {
+      assert(error instanceof Error)
+      assert.equal((error as { code?: string }).code, 'cleanup_unknown')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+      assert.doesNotMatch(error.message, /TEST_PRIVATE_PRECHECK_READ/)
+      return true
+    })
+    assert.equal(nativeCalls, 1, 'preflight GET must not be followed by a permission mutation')
+  }
+})
+
 test('V2 raw control wire refuses to mask a rejected native reader cancellation', async t => {
   const endpoint = 'http://127.0.0.1:12345'
   let reads = 0, cancellations = 0
