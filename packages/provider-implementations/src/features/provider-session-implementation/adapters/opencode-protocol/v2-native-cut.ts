@@ -4,6 +4,7 @@ import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
+import { ExecutionTransportFailure } from './v2-failures.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
@@ -146,6 +147,9 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
       }
       // An injected public read transport can reject with raw native payloads,
       // header values or OS diagnostics; only fixed read-budget codes escape.
+      if (error instanceof ExecutionTransportFailure && error.code === 'cleanup_unknown') {
+        throw new Error('native_read_cleanup_unknown')
+      }
       if (error instanceof Error && ['invalid_native_read_response', 'native_cut_byte_budget',
         'native_read_cleanup_unknown', 'frame_limit', 'body_limit'].includes(error.message)) throw error
       throw new Error('invalid_native_read_response')

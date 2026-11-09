@@ -67,6 +67,38 @@ test('native queue preserves UNKNOWN when preflight response stream cancellation
   }
 })
 
+
+test('unknown native stream cleanup stays unknown across driver disposal for queue, read and control', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const operation of ['queue', 'read', 'control'] as const) {
+      const host = await driverPeer(); t.after(host.close)
+      const config = nativeConfig(host); config.version = version
+      let reads = 0, cancellations = 0
+      config.fetchImpl = async () => {
+        reads++
+        return new Response(new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1)) },
+          cancel() { cancellations++; throw new Error('TEST-private-stream-should-not-leak') },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      const native = createDriverNative(config, new AbortController().signal)
+      const work = operation === 'queue' ? native.queue('msg_TESTcleanup', 'TEST once')
+        : operation === 'read' ? native.read({ nativeInputID: 'msg_TESTcleanup', text: 'TEST once', beforeCursor: 0 })
+          : native.control(wire => wire.instructions())
+      await assert.rejects(work, error => {
+        assert.ok(error instanceof Error)
+        assert.equal(error.message, operation === 'read' ? 'native_read_cleanup_unknown' : 'cleanup_unknown')
+        assert.equal(String(error).includes('TEST-private-stream-should-not-leak'), false)
+        return true
+      })
+      assert.equal(reads, 1)
+      assert.equal(cancellations, 1)
+      assert.equal(host.counts().submitted, 0)
+      await assert.rejects(native.dispose(), /cleanup_unknown/)
+    }
+  }
+})
+
 test('legacy flat V1-like read never submits, and malformed post-ACK is unknown without replay', async t => {
   const legacy = await driverPeer(); t.after(legacy.close); legacy.flatSession()
   const blocked = createDriverNative(nativeConfig(legacy), new AbortController().signal)
