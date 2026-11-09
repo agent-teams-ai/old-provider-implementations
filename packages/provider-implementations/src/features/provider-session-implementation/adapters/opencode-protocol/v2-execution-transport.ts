@@ -36,12 +36,13 @@ function missingSessionResponse(response: Response, request: Request, route: { s
 }
 function transportFailure(error: unknown, invoked: boolean): ExecutionTransportFailure {
   const code = error instanceof ExecutionTransportFailure ? error.code : 'transport_failure'
-  const failure = new ExecutionTransportFailure(code, invoked ? 'unknown' : 'not_submitted')
+  const cleanupUnknown = code === 'cleanup_unknown'
+  const failure = new ExecutionTransportFailure(code, invoked || cleanupUnknown ? 'unknown' : 'not_submitted')
   if (error !== null && typeof error === 'object') {
     const sessionID = missingSessions.get(error)
     if (sessionID !== undefined) { missingSessions.set(failure, sessionID) }
   }
-  if (!invoked) { unsubmitted.add(failure) }
+  if (!invoked && !cleanupUnknown) { unsubmitted.add(failure) }
   return failure
 }
 /** Finite execution operations only. SSE is consumed within the same deadline,
@@ -128,8 +129,15 @@ class OpenCodeV2ExecutionFetch {
       return { request, url, session, log, activation }
     } finally {
       if (reader) {
-        await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000).catch(() => {})
-        reader.releaseLock()
+        // No native HTTP was invoked, but rejected local body cancellation
+        // cannot be presented as a fully cleaned not-submitted attempt.
+        let cleaned = false
+        try {
+          await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000)
+          reader.releaseLock()
+          cleaned = true
+        } catch { /* Caller-owned stream did not confirm cleanup. */ }
+        if (!cleaned) { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
       }
     }
   }
@@ -209,11 +217,23 @@ class OpenCodeV2ExecutionFetch {
         headers: { 'content-type': log ? 'text/event-stream' : 'application/json' } })
     } catch (error) {
       controller.abort()
-      if (reader) {await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000).catch(() => {})}
+      if (reader) {
+        let cleaned = false
+        try {
+          await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000)
+          reader.releaseLock()
+          reader = undefined
+          cleaned = true
+        } catch { /* Native response reader did not confirm cancellation. */ }
+        if (!cleaned) { throw transportFailure(new ExecutionTransportFailure('cleanup_unknown', 'unknown'), true) }
+      }
       throw transportFailure(error, invoked)
     } finally {
       clearTimeout(timer); this.controllers.delete(controller)
-      reader?.releaseLock()
+      if (reader) {
+        try { reader.releaseLock() }
+        catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
+      }
     }
   }
   async dispose(): Promise<void> {

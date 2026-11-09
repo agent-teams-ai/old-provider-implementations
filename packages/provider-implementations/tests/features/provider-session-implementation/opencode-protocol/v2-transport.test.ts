@@ -351,3 +351,57 @@ test('V2 execution response does not expose native private response headers', as
   assert.equal(response.headers.get('set-cookie'), null)
   assert.deepEqual(await response.json(), { data: { id: 'ses_A' } })
 })
+
+test('V2 execution wire rejects unconfirmed outgoing reader cleanup before native HTTP', async t => {
+  const endpoint = 'http://127.0.0.1:12345'
+  let pulls = 0, cancellations = 0, credentials = 0, fetches = 0
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) { pulls++; controller.enqueue(Uint8Array.of(123)) },
+    cancel() { cancellations++; throw new Error('TEST_PRIVATE_REQUEST_CANCEL') },
+  })
+  const transport = createOpenCodeV2ExecutionTransport({
+    ...config(endpoint),
+    readPassword: () => { credentials++; return 'TEST_PRIVATE_PASSWORD' },
+    fetchImpl: async () => { fetches++; return new Response('{}') },
+  })
+  t.after(() => transport.dispose())
+  const init: RequestInit & { duplex: 'half' } = { method: 'POST', body: stream, duplex: 'half' }
+  const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A/prompt', init))
+  assert(failure instanceof Error)
+  assert.equal((failure as { code?: string }).code, 'cleanup_unknown')
+  assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+  assert.doesNotMatch(failure.message, /TEST_PRIVATE_REQUEST_CANCEL/)
+  assert(pulls >= 8193)
+  assert.equal(cancellations, 1)
+  assert.equal(credentials, 0)
+  assert.equal(fetches, 0)
+})
+
+test('V2 execution wire refuses a native response reader whose cancel rejects', async t => {
+  const endpoint = 'http://127.0.0.1:12345'
+  let reads = 0, cancellations = 0, fetches = 0
+  const transport = createOpenCodeV2ExecutionTransport({
+    ...config(endpoint),
+    fetchImpl: async () => {
+      fetches++
+      return {
+        status: 200, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => ({
+          async read() { reads++; return { done: false, value: Uint8Array.of(65) } },
+          async cancel() { cancellations++; throw new Error('TEST_PRIVATE_RESPONSE_CANCEL') },
+          releaseLock() {},
+        }) },
+      } as unknown as Response
+    },
+  })
+  t.after(() => transport.dispose())
+  const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A'))
+  assert(failure instanceof Error)
+  assert.equal((failure as { code?: string }).code, 'cleanup_unknown')
+  assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+  assert.doesNotMatch(failure.message, /TEST_PRIVATE_RESPONSE_CANCEL/)
+  assert.equal(fetches, 1)
+  assert.equal(reads, 8193)
+  assert.equal(cancellations, 1)
+})
