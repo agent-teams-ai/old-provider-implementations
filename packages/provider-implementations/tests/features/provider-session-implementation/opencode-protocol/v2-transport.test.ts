@@ -332,3 +332,22 @@ test('V2 Session SPI refuses all direct native creates until Host proves effecti
   }
   assert.equal(nativeCalls, 0)
 })
+
+test('V2 execution response does not expose native private response headers', async t => {
+  const host = await peer((_req, res) => {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'x-private-path': 'TEST_PRIVATE_NATIVE_PATH',
+      'set-cookie': 'TEST_PRIVATE_SESSION_COOKIE',
+    })
+    res.end('{"data":{"id":"ses_A"}}')
+  })
+  t.after(host.close)
+  const transport = createOpenCodeV2ExecutionTransport(config(host.endpoint))
+  t.after(() => transport.dispose())
+  const response = await transport.fetch(host.endpoint + '/api/session/ses_A')
+  assert.equal(response.headers.get('content-type'), 'application/json')
+  assert.equal(response.headers.get('x-private-path'), null)
+  assert.equal(response.headers.get('set-cookie'), null)
+  assert.deepEqual(await response.json(), { data: { id: 'ses_A' } })
+})

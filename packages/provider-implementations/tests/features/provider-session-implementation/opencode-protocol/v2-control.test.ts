@@ -439,3 +439,25 @@ test('V2 raw control wire refuses to mask a rejected native reader cancellation'
   assert.equal(reads, 8193)
   assert.equal(cancellations, 1)
 })
+
+test('V2 raw control does not relay native diagnostic headers', async t => {
+  const endpoint = 'http://127.0.0.1:12345'
+  const raw = createV2ControlWire({
+    endpoint, directory: '/TEST/original', version: '2.0.21',
+    deadline: Date.now() + 10_000, nativeSessionId: 'ses_A',
+    readPassword: () => 'TEST-private',
+    fetchImpl: async () => new Response('{"data":[]}', {
+      headers: {
+        'content-type': 'application/json',
+        'x-private-path': 'TEST_PRIVATE_NATIVE_PATH',
+        'set-cookie': 'TEST_PRIVATE_SESSION_COOKIE',
+      },
+    }),
+  })
+  t.after(raw.dispose)
+  const result = await raw.request('/api/session/ses_A/permission')
+  assert.equal(result.headers.get('content-type'), 'application/json')
+  assert.equal(result.headers.get('x-private-path'), null)
+  assert.equal(result.headers.get('set-cookie'), null)
+  assert.deepEqual(await result.json(), { data: [] })
+})

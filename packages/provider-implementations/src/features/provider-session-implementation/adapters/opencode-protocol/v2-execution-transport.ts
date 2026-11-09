@@ -203,7 +203,10 @@ class OpenCodeV2ExecutionFetch {
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
       if (log) {checkExecutionSse(text)}
       else { checkOpenCodeReadJson(text); JSON.parse(text) }
-      return new Response(text, { status: response.status, headers: response.headers })
+      // Never relay arbitrary native response headers across the provider boundary.
+      // Only the validated media type is part of the pinned protocol contract.
+      return new Response(text, { status: response.status,
+        headers: { 'content-type': log ? 'text/event-stream' : 'application/json' } })
     } catch (error) {
       controller.abort()
       if (reader) {await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000).catch(() => {})}

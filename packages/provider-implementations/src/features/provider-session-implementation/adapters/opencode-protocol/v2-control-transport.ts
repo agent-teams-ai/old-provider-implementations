@@ -58,7 +58,9 @@ function controlResponse(response: Response, body: string, routes: ControlRoutes
   }
   executionAssert(response.ok && response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json', 'invalid_response')
   checkOpenCodeReadJson(body); JSON.parse(body)
-  return new Response(body, { status: response.status, headers: response.headers })
+  // Project only the documented JSON media type. Native/server-injected headers
+  // are not a trusted public output channel for private paths or credentials.
+  return new Response(body, { status: response.status, headers: { 'content-type': 'application/json' } })
 }
 /** Exact session-bound control wire. It cannot configure or stop a shared host. */
 export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
