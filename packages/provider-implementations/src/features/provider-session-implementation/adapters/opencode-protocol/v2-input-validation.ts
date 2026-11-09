@@ -35,7 +35,9 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   const session = url.pathname === sessionPath, prompt = url.pathname === sessionPath + '/prompt'
   const list = url.pathname === sessionPath + '/inbox' || url.pathname === sessionPath + '/message'
   const log = url.pathname === `/api/experimental/session/${nativeSessionId}/log`
-  const scoped = /^\/api\/(?:location|agent\/[^/]+|model|integration|config)$/.test(url.pathname)
+  // Global configuration and integration discovery can expose account details;
+  // a session-bound credential wire has no authority to read either endpoint.
+  const scoped = /^\/api\/(?:location|agent\/[^/]+|model)$/.test(url.pathname)
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   const identity = (pin === '2.0.0' ? ['/api/health', '/api/server'] : ['/api/info']).includes(url.pathname), create = url.pathname === '/api/session'
   // The V2 Session SPI binds an already owned session. Native creation is a separate

@@ -190,6 +190,38 @@ test('V2 unsupported route, workspace and create binding reject before native fe
   } as unknown as ReturnType<typeof config>), /authority_mismatch/)
 })
 
+test('V2 raw execution wire refuses global config/integration reads before projecting session credentials', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    let credentialReads = 0, nativeCalls = 0
+    const transport = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      readPassword: () => { credentialReads++; return 'TEST_PRIVATE_PASSWORD' },
+      fetchImpl: async () => {
+        nativeCalls++
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    t.after(() => transport.dispose())
+    for (const route of [
+      '/api/config?location[directory]=/TEST/original',
+      '/api/integration?location[directory]=/TEST/original',
+      '/api/config',
+      '/api/integration',
+    ]) {
+      const failure = await captureFailure(transport.fetch(endpoint + route))
+      assert.equal(wasOpenCodeV2InputNotSubmitted(failure), true, route)
+    }
+    assert.equal(credentialReads, 0)
+    assert.equal(nativeCalls, 0)
+    // Preserve qualified workspace-scoped read-only discovery.
+    const location = await transport.fetch(endpoint + '/api/location?location[directory]=/TEST/original')
+    assert.equal(location.status, 200)
+    assert.equal(credentialReads, 1)
+    assert.equal(nativeCalls, 1)
+  }
+})
+
 test('V2 read-only query budgets refuse unbounded pagination and log offsets before credentials', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     const endpoint = 'http://127.0.0.1:12345'
