@@ -237,6 +237,34 @@ test('control credential callback revocation is checked before native invocation
 })
 
 
+test('raw V2 mutation callbacks cannot revoke Host custody before credentials or native fetch', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const revokeOn of [1, 2]) {
+      const abort = new AbortController()
+      let gates = 0, credentialReads = 0, nativeFetches = 0
+      const wire = createV2ControlWire({
+        endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original',
+        version, nativeSessionId: 'ses_A', deadline: Date.now() + 10_000, signal: abort.signal,
+        beforeMutation: () => { if (++gates === revokeOn) abort.abort() },
+        readPassword: () => { credentialReads++; return 'TEST-private' },
+        // An injected transport might ignore abort; it must never be called.
+        fetchImpl: async () => { nativeFetches++; return new Response('{"interrupted":true}',
+          { headers: { 'content-type': 'application/json' } }) },
+      })
+      t.after(wire.dispose)
+      const resume = version === '2.0.0' ? 'continue' : 'resume'
+      await assert.rejects(wire.request(`/api/session/ses_A/interrupt?${resume}=false`,
+        { method: 'POST' }), error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      })
+      assert.equal(gates, revokeOn)
+      assert.equal(credentialReads, revokeOn === 1 ? 0 : 1)
+      assert.equal(nativeFetches, 0, 'revoked owner cannot dispatch native HTTP')
+    }
+  }
+})
+
 test('raw V2 control rechecks the deadline after reading a mutation body before credentials', async t => {
   // Simulate the deadline expiring after the initial admission and both
   // native Request body reads. The fifth clock read is the required pre-
