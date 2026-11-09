@@ -101,7 +101,7 @@ class OpenCodeV2ExecutionFetch {
     controller: AbortController) {
     let reader
     try {
-      let request = new Request(input, init)
+      let request = new Request(input, { ...init, credentials: 'omit', redirect: 'error' })
       const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint, this.nativeSessionId)
       if (create || prompt) {
         const validationSignal = AbortSignal.any([controller.signal, request.signal,
@@ -123,7 +123,8 @@ class OpenCodeV2ExecutionFetch {
         checkOpenCodeReadJson(body)
         const parsed: unknown = JSON.parse(body)
         validateExecutionBody(parsed, create, this.directory)
-        request = new Request(request.url, { method: request.method, headers: request.headers, body, signal: request.signal })
+        request = new Request(request.url, { method: request.method, headers: request.headers, body,
+          signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
       if (activation) {executionAssert(!request.body, 'capabilities_pending')}
       return { request, url, session, log, activation }
@@ -169,6 +170,10 @@ class OpenCodeV2ExecutionFetch {
     headers.set('authorization', 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'))
     // Credential projection may synchronously dispose/abort; no fetch can precede these rechecks.
     this.check(); signal.throwIfAborted()
+    // An injected fetch may inspect Request rather than RequestInit. Sanitize
+    // both views so caller headers cannot cross this credential boundary.
+    for (const key of [...request.headers.keys()]) request.headers.delete(key)
+    for (const [key, value] of headers) request.headers.set(key, value)
     return headers
   }
   private async request(input: ExecutionFetchInput, init?: ExecutionFetchInit): Promise<Response> {
@@ -185,7 +190,7 @@ class OpenCodeV2ExecutionFetch {
       timer = setTimeout(() =>{  controller.abort(); }, Math.min(30_000, this.context.deadline - Date.now()))
       const headers = this.requestHeaders(request, signal)
       invoked = true
-      const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error' }).then(async response => {
+      const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error', credentials: 'omit' }).then(async response => {
         if (signal.aborted) { await response.body?.cancel(); throw new Error('deadline') }
         return response
       }))

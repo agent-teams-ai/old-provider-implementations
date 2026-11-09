@@ -49,9 +49,13 @@ test('V2 raw control wire never forwards caller headers with native credentials'
     const wire = createV2ControlWire({
       endpoint, directory: '/TEST/original', version, nativeSessionId: 'ses_A',
       deadline: Date.now() + 10_000, readPassword: () => 'TEST-private',
-      fetchImpl: async (_request, init) => {
+      fetchImpl: async (nativeRequest, init) => {
+        assert(nativeRequest instanceof Request)
         const headers = new Headers(init?.headers)
         seen.push([...headers.keys()].sort())
+        assert.deepEqual([...nativeRequest.headers.keys()].sort(), [...headers.keys()].sort())
+        assert.equal(nativeRequest.credentials, 'omit')
+        assert.equal(nativeRequest.redirect, 'error')
         assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST-private').toString('base64'))
         for (const untrusted of ['cookie', 'x-forwarded-host', 'x-test-secret']) {
           assert.equal(headers.get(untrusted), null)
@@ -64,9 +68,9 @@ test('V2 raw control wire never forwards caller headers with native credentials'
     t.after(wire.dispose)
     const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
       'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
-    await wire.request('/api/session/ses_A/permission', { headers: injected })
+    await wire.request('/api/session/ses_A/permission', { headers: injected, credentials: 'include', redirect: 'follow' })
     await wire.request('/api/session/ses_A/permission/per_TEST/reply', {
-      method: 'POST', headers: injected,
+      method: 'POST', headers: injected, credentials: 'include', redirect: 'follow',
       body: JSON.stringify(version === '2.0.0' ? { reply: 'reject' } : { decision: 'reject' }),
     })
     assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])

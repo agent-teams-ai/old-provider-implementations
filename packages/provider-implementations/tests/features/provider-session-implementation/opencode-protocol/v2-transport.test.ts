@@ -29,9 +29,13 @@ test('V2 execution transport never forwards caller headers with native credentia
     const seen: string[][] = []
     const wire = createOpenCodeV2ExecutionTransport({
       ...config(endpoint, version),
-      fetchImpl: async (_request, init) => {
+      fetchImpl: async (nativeRequest, init) => {
+        assert(nativeRequest instanceof Request)
         const headers = new Headers(init?.headers)
         seen.push([...headers.keys()].sort())
+        assert.deepEqual([...nativeRequest.headers.keys()].sort(), [...headers.keys()].sort())
+        assert.equal(nativeRequest.credentials, 'omit')
+        assert.equal(nativeRequest.redirect, 'error')
         assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST_PRIVATE_PASSWORD').toString('base64'))
         for (const untrusted of ['cookie', 'x-forwarded-host', 'x-test-secret']) {
           assert.equal(headers.get(untrusted), null)
@@ -42,9 +46,9 @@ test('V2 execution transport never forwards caller headers with native credentia
     t.after(() => wire.dispose())
     const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
       'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
-    await wire.fetch(endpoint + '/api/session/ses_A', { headers: injected })
+    await wire.fetch(endpoint + '/api/session/ses_A', { headers: injected, credentials: 'include', redirect: 'follow' })
     await wire.fetch(endpoint + '/api/session/ses_A/prompt', {
-      method: 'POST', headers: injected, body: JSON.stringify(prompt),
+      method: 'POST', headers: injected, credentials: 'include', redirect: 'follow', body: JSON.stringify(prompt),
     })
     assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
   }

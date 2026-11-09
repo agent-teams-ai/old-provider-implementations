@@ -83,7 +83,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       check()
-      let native = new Request(config.endpoint + path, init)
+      let native = new Request(config.endpoint + path, { ...init, credentials: 'omit', redirect: 'error' })
       const routes = controlRoutes(native, config)
       const { putInstruction, reply } = routes
       const signal = AbortSignal.any([controller.signal, native.signal, ...(config.signal ? [config.signal] : [])])
@@ -105,7 +105,8 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       if (putInstruction || reply) {
         const body = await consume(native.body, 1024 * 1024)
         validateControlBody(body, routes, config.version)
-        native = new Request(native.url, { method: native.method, headers: native.headers, body, signal: native.signal })
+        native = new Request(native.url, { method: native.method, headers: native.headers, body,
+          signal: native.signal, credentials: 'omit', redirect: 'error' })
       } else {executionAssert(!native.body, 'unsupported_input')}
       // Stream admission may outlive the original deadline or revoke the Host lease.
       // Revalidate before projecting credentials, not only before native fetch.
@@ -118,9 +119,13 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       const headers = new Headers()
       if (putInstruction || reply) {headers.set('content-type', 'application/json')}
       headers.set('authorization', 'Basic ' + Buffer.from('opencode:' + password).toString('base64'))
+      // Keep injected fetches from observing the caller's original headers or
+      // ambient credential/redirect settings through their Request parameter.
+      for (const key of [...native.headers.keys()]) native.headers.delete(key)
+      for (const [key, value] of headers) native.headers.set(key, value)
       invoked = true
       const response = await boundV2Request(track((config.fetchImpl ?? fetch)(native,
-        { headers, signal, redirect: 'error' }).then(async received => {
+        { headers, signal, redirect: 'error', credentials: 'omit' }).then(async received => {
         if (signal.aborted) { await received.body?.cancel(); throw new Error('deadline') }; return received
       })), remaining(), signal)
       executionAssert(!response.redirected && (!response.url || new URL(response.url).origin === config.endpoint), 'authority_mismatch')
