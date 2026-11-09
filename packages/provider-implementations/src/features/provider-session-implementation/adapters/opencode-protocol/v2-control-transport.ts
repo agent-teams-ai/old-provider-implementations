@@ -127,10 +127,15 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // Revalidate before projecting credentials, not only before native fetch.
       check(); signal.throwIfAborted()
       if (native.method !== 'GET') config.beforeMutation?.()
+      // The Host owner may synchronously revoke its lease inside the callback.
+      // Recheck before revealing a credential to the callback's next step.
+      check(); signal.throwIfAborted()
       const password = config.readPassword()
       executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
       check(); signal.throwIfAborted()
       if (native.method !== 'GET') config.beforeMutation?.()
+      // An owner callback may revoke this lease before native dispatch.
+      check(); signal.throwIfAborted()
       // The caller may supply arbitrary headers to this raw control wire;
       // never forward them with the Host-owned Basic credential.
       const headers = new Headers()
