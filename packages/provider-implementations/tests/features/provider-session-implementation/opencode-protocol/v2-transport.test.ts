@@ -83,6 +83,40 @@ test('V2 raw prompt rejects unqualified attachments before credentials or native
   }
 })
 
+test('V2 raw log refuses unsupported SSE directives and empty data before relaying native bytes', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    let nativeCalls = 0
+    let frame = ''
+    const wire = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      fetchImpl: async () => {
+        nativeCalls++
+        return new Response(frame, { headers: { 'content-type': 'text/event-stream' } })
+      },
+    })
+    t.after(() => wire.dispose())
+    for (const invalid of [
+      'event: TEST_PRIVATE_NATIVE_EVENT\\ndata: {"type":"log.synced","aggregateID":"ses_A"}\\n\\n',
+      'id: TEST_PRIVATE_NATIVE_ID\\n\\n',
+      'retry: 1000\\n\\n',
+      'data:\\n\\n',
+    ]) {
+      frame = invalid.replaceAll('\\n', '\n')
+      const error = await captureFailure(wire.fetch(endpoint + '/api/experimental/session/ses_A/log?follow=false'))
+      assert(error instanceof Error)
+      assert.equal((error as { code?: string }).code, 'invalid_response')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+      assert.doesNotMatch(error.message, /TEST_PRIVATE_NATIVE|log.synced/)
+    }
+    frame = ': TEST native keepalive\n\ndata: {"type":"log.synced","aggregateID":"ses_A"}\n\n'
+    const valid = await wire.fetch(endpoint + '/api/experimental/session/ses_A/log?follow=false')
+    assert.equal(valid.status, 200)
+    assert.match(await valid.text(), /log.synced/)
+    assert.equal(nativeCalls, 5)
+  }
+})
+
 test('V2 effect then lost receipt is unknown and original input is recovered by readonly lookup without replay', async t => {
   let effects = 0
   const host = await peer((req, res) => {
