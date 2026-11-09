@@ -377,3 +377,54 @@ test('direct native cut reports unknown cleanup when an injected reader refuses 
   assert.equal(cancellations, 1)
   assert.equal(releases, 1)
 })
+
+
+test('public native read cut refuses a never-settling injected fetch after admission revocation', async () => {
+  const directory = resolve('TEST/native-cut'), controller = new AbortController()
+  let fetched = 0, nativeSignal: AbortSignal | null | undefined
+  const transport = {
+    signal: controller.signal,
+    check() {},
+    fetch(_input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      fetched++; nativeSignal = init?.signal
+      queueMicrotask(() => controller.abort())
+      return new Promise<Response>(() => {})
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+  assert.equal(fetched, 1)
+  assert.equal(nativeSignal?.aborted, true)
+})
+
+test('public native read cut cancels a never-settling injected body read on revocation', async () => {
+  const directory = resolve('TEST/native-cut'), controller = new AbortController()
+  let fetched = 0, reads = 0, cancellations = 0, releases = 0
+  const reader = {
+    read(): Promise<ReadableStreamReadResult<Uint8Array>> {
+      reads++
+      queueMicrotask(() => controller.abort())
+      return new Promise<ReadableStreamReadResult<Uint8Array>>(() => {})
+    },
+    async cancel() { cancellations++ },
+    releaseLock() { releases++ },
+  }
+  const transport = {
+    signal: controller.signal,
+    check() {},
+    async fetch(): Promise<Response> {
+      fetched++
+      return { ok: true, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => reader } } as unknown as Response
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'invalid_native_read_response')
+  assert.deepEqual({ fetched, reads, cancellations, releases },
+    { fetched: 1, reads: 1, cancellations: 1, releases: 1 })
+})

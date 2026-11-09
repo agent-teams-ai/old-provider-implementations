@@ -3,6 +3,7 @@ import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
+import { boundV2Request } from './v2-bounded-await.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
@@ -12,15 +13,21 @@ export type OpenCodeV2ReadBinding = Readonly<{
 export type OpenCodeV2ReadTransport = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   check: () => void
+  signal?: AbortSignal
 }
 
-async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadTransport, budget: { bytes: number }): Promise<string> {
+// One shared deadline for the entire readback, including paginated GETs and
+// injected body streams. A byte/chunk cap alone does not bound idle IO.
+const MAX_V2_NATIVE_CUT_READ_MS = 30_000
+
+async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadTransport,
+  budget: { bytes: number }, deadline: number, signal: AbortSignal): Promise<string> {
   const reader = response.body?.getReader(), chunks: Uint8Array[] = []
   let responseBytes = 0
   try {
     if (reader) {
       for (;;) {
-        const part = await reader.read(); transport.check()
+        const part = await boundV2Request(reader.read(), deadline - Date.now(), signal); transport.check()
         if (part.done) { break }
         // Injected streams are not runtime-typed: non-byte chunks must never
         // bypass the finite byte budget or force unbounded additional reads.
@@ -83,23 +90,36 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string }>): Promise<OpenCodeV2NativeTurnCut> {
   const binding = structuredClone(supplied), input = structuredClone(original)
   validateReadBinding(binding, input)
-  const budget = { bytes: 0 }
+  const budget = { bytes: 0 }, deadline = Date.now() + MAX_V2_NATIVE_CUT_READ_MS
   const read = async (path: string) => {
+    const controller = new AbortController()
+    const signal = transport.signal ? AbortSignal.any([controller.signal, transport.signal]) : controller.signal
+    let fetchPending = false
     try {
-      transport.check()
-      const response = await transport.fetch(binding.endpoint + path, { method: 'GET', redirect: 'error' })
+      transport.check(); signal.throwIfAborted()
+      fetchPending = true
+      const response = await boundV2Request(transport.fetch(binding.endpoint + path,
+        { method: 'GET', redirect: 'error', signal }), deadline - Date.now(), signal)
+      fetchPending = false
       const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
       if (!response.ok || response.redirected || response.url && new URL(response.url).origin !== binding.endpoint
         || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {throw new Error('invalid_native_read_response')}
-      const text = await nativeResponseBody(response, transport, budget)
+      const text = await nativeResponseBody(response, transport, budget, deadline, signal)
       transport.check()
       return text
     } catch (error) {
+      // A fetch which ignores abort/timeout has no confirmed response-body
+      // custody. Do not misreport the unresolved operation as a clean refusal.
+      if (fetchPending && (signal.aborted || Date.now() >= deadline)) {
+        throw new Error('native_read_cleanup_unknown')
+      }
       // An injected public read transport can reject with raw native payloads,
       // header values or OS diagnostics; only fixed read-budget codes escape.
       if (error instanceof Error && ['invalid_native_read_response', 'native_cut_byte_budget',
         'native_read_cleanup_unknown', 'frame_limit', 'body_limit'].includes(error.message)) throw error
       throw new Error('invalid_native_read_response')
+    } finally {
+      controller.abort()
     }
   }
   const sessionPath = `/api/session/${encodeURIComponent(binding.sessionID)}`
