@@ -278,3 +278,71 @@ test('permission detail already in flight cannot POST a grant after concurrent n
     }
   }
 })
+
+test('driver close during native GET preflight never certifies cleanup or admits a later prompt', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const operation of ['queue', 'read', 'control'] as const) {
+      const host = await driverPeer(); t.after(host.close)
+      const config = nativeConfig(host); config.version = version
+      let requestCount = 0, entered!: () => void, release!: () => void
+      const started = new Promise<void>(resolve => { entered = resolve })
+      const gate = new Promise<void>(resolve => { release = resolve })
+      config.fetchImpl = async (input, init) => {
+        requestCount++
+        if (requestCount === 1) { entered(); await gate }
+        return fetch(input, init)
+      }
+      const native = createDriverNative(config, new AbortController().signal)
+      const work = operation === 'queue' ? native.queue('msg_TESTclose', 'TEST must not submit')
+        : operation === 'read' ? native.read({ nativeInputID: 'msg_TESTclose', text: 'TEST once', beforeCursor: 0 })
+          : native.control(wire => wire.instructions())
+      try {
+        await started
+        await assert.rejects(native.dispose(), error => {
+          assert.ok(error instanceof ExecutionTransportFailure)
+          assert.equal(error.code, 'cleanup_unknown')
+          assert.equal(error.disposition, 'unknown')
+          return true
+        })
+        release()
+        await assert.rejects(work, error => {
+          assert.ok(error instanceof ExecutionTransportFailure)
+          assert.equal(error.code, 'cleanup_unknown')
+          assert.equal(error.disposition, 'unknown')
+          assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+          return true
+        })
+        assert.equal(requestCount, 1)
+        assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+        await assert.rejects(native.queue('msg_TESTlater', 'TEST must never replay'), error => {
+          assert.ok(error instanceof ExecutionTransportFailure)
+          assert.equal(error.code, 'cleanup_unknown')
+          assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+          return true
+        })
+        assert.equal(requestCount, 1)
+      } finally {
+        release()
+        await work.catch(() => {})
+        await native.dispose().catch(() => {})
+      }
+    }
+  }
+})
+
+test('clean idle driver close rejects new native traffic as known-not-submitted', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  const config = nativeConfig(host)
+  let nativeRequests = 0
+  config.fetchImpl = async (input, init) => { nativeRequests++; return fetch(input, init) }
+  const native = createDriverNative(config, new AbortController().signal)
+  await native.dispose()
+  await assert.rejects(native.queue('msg_TESTafterclose', 'TEST must not submit'), error => {
+    assert.ok(error instanceof ExecutionTransportFailure)
+    assert.equal(error.code, 'native_driver_closed')
+    assert.equal(error.disposition, 'not_submitted')
+    assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+    return true
+  })
+  assert.equal(nativeRequests, 0)
+})

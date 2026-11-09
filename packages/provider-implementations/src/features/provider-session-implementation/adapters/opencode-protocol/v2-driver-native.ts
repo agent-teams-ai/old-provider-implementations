@@ -14,8 +14,17 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   // One native prompt admission at a time. A concurrent second queue can
   // otherwise reach POST before the first lost ACK latches promptUnknown.
   let queueActive = false
+  let closed = false
+  let activeOperations = 0
+  const shutdown = new AbortController()
+  const nativeSignal = AbortSignal.any([signal, shutdown.signal])
   const assertUsable = (mutating = false): void => {
     if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+    if (closed) {
+      const failure = new ExecutionTransportFailure('native_driver_closed', 'not_submitted')
+      unsubmitted.add(failure)
+      throw failure
+    }
     // After an unconfirmed prompt POST, only read-only reconciliation is safe.
     if (mutating && promptUnknown) throw new ExecutionTransportFailure('native_prompt_unknown', 'unknown')
   }
@@ -28,15 +37,21 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   const dispose = async (wire: { dispose: () => Promise<void> }) => {
     try { await wire.dispose() } catch (error) { cleanupUnknown = true; throw error }
   }
-  const wireConfig = () => ({ ...config, signal, deadline: Date.now() + config.limits.timeoutMs })
+  const wireConfig = () => ({ ...config, signal: nativeSignal, deadline: Date.now() + config.limits.timeoutMs })
   const path = `/api/session/${config.nativeSessionId}`
   const read = async (original: NativeDriverInput) => {
     assertUsable()
-    const wire = createOpenCodeV2ExecutionTransport(wireConfig())
-    try { return await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
-      sessionID: config.nativeSessionId, pin: config.version }, original) }
-    catch (error) { rememberUncertainCleanup(error); throw error }
-    finally { await dispose(wire) }
+    activeOperations++
+    try {
+      const wire = createOpenCodeV2ExecutionTransport(wireConfig())
+      try { return await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
+        sessionID: config.nativeSessionId, pin: config.version }, original) }
+      catch (error) {
+        rememberUncertainCleanup(error)
+        if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+        throw error
+      } finally { await dispose(wire) }
+    } finally { activeOperations-- }
   }
   const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
     assertUsable(true)
@@ -45,10 +60,12 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       unsubmitted.add(failure)
       throw failure
     }
-    const wire = createOpenCodeV2ExecutionTransport(wireConfig())
     queueActive = true
-    let mutation = false
+    activeOperations++
     try {
+      const wire = createOpenCodeV2ExecutionTransport(wireConfig())
+      let mutation = false
+      try {
       decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
       const log = decodeV2Log(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
         config.nativeSessionId, config.directory)
@@ -56,15 +73,18 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       // (event retention disabled). Without the original durable session prefix,
       // no future model turn has a verifiable ownership/terminal lineage.
       if (log.events.length === 0) throw new Error('native_durable_log_unqualified')
+      // Close can race a preflight GET; never admit a POST after shutdown.
+      assertUsable(true)
       mutation = true
       const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
         headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
         || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text) {throw new Error('native_handoff_identity_mismatch')}
       return { nativeInputID, text, beforeCursor: log.watermark }
-    } catch (error) {
+      } catch (error) {
       rememberUncertainCleanup(error)
       if (mutation) promptUnknown = true
+      if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
       if (!mutation) {
         // A read-only preflight cannot have submitted the prompt, but failed
         // native stream cleanup is still UNKNOWN custody, not a clean refusal.
@@ -72,14 +92,17 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
         const failure = new ExecutionTransportFailure('preflight_failed', 'not_submitted'); unsubmitted.add(failure); throw failure
       }
       throw error
+      } finally { await dispose(wire) }
     } finally {
-      try { await dispose(wire) }
-      finally { queueActive = false }
+      queueActive = false
+      activeOperations--
     }
   }
   const control = async <T>(run: (wire: ReturnType<typeof createOpenCodeV2SessionControl>) => Promise<T>, scopedSignal?: AbortSignal) => {
     assertUsable()
-    const wire = createOpenCodeV2SessionControl({ ...wireConfig(), nativeSessionId: config.nativeSessionId, signal: scopedSignal ? AbortSignal.any([signal, scopedSignal]) : signal,
+    activeOperations++
+    try {
+    const wire = createOpenCodeV2SessionControl({ ...wireConfig(), nativeSessionId: config.nativeSessionId, signal: scopedSignal ? AbortSignal.any([nativeSignal, scopedSignal]) : nativeSignal,
       beforeMutation: () => assertUsable(true) })
     // A control callback may await before choosing its actual operation. Fence
     // every session-scoped mutation at invocation, not merely at control entry.
@@ -91,8 +114,19 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       putInstruction: (key, value) => { assertUsable(true); return wire.putInstruction(key, value) },
     }
     try { return await run(guarded) }
-    catch (error) { rememberUncertainCleanup(error); throw error }
-    finally { await dispose(wire) }
+    catch (error) {
+      rememberUncertainCleanup(error)
+      if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+      throw error
+    } finally { await dispose(wire) }
+    } finally { activeOperations-- }
   }
-  return { read, queue, control, async dispose() { if (cleanupUnknown) {throw new Error('cleanup_unknown')} } }
+  return { read, queue, control, async dispose() {
+    closed = true
+    shutdown.abort()
+    // A live operation may still own HTTP/stream custody. Never report a
+    // successful Session SPI close or allow a delayed prompt after that close.
+    if (activeOperations > 0) cleanupUnknown = true
+    if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+  } }
 }
