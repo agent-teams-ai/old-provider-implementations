@@ -94,6 +94,9 @@ jobs:
           # Windows 11 ARM64 is a separate native SDK tuple, not Server 2022 x64.
           - { os: windows-11-arm, proof: embedded-target-mcp }
           - { os: windows-11-arm, proof: embedded-target-interrupt }
+          # Independently prove 2.1.4 tool.use/external_directory hard-deny on
+          # Windows ARM64; MCP/interrupt evidence alone cannot qualify policy.
+          - { os: windows-11-arm, proof: embedded-target-tool }
           - { os: windows-2022, proof: embedded-target }
           - { os: windows-2022, proof: embedded-target-model }
     steps:
