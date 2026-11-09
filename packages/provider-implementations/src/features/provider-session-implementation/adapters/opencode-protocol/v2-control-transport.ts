@@ -95,9 +95,13 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
         for (;;) {
           const part = await boundV2Request(track(reader.read()), remaining(), signal)
           if (part.done) {break}
-          bytes += part.value.byteLength
+          // Injected native response streams are untyped at runtime. Reject
+          // non-byte chunks before arithmetic or Buffer.concat budget accounting.
+          const chunk: unknown = part.value
+          executionAssert(chunk instanceof Uint8Array, 'invalid_response')
+          bytes += chunk.byteLength
           executionAssert(bytes <= maximum && parts.length < MAX_V2_CHUNKS, 'body_limit')
-          parts.push(part.value)
+          parts.push(chunk)
         }
         reader.releaseLock(); reader = undefined
         return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts))

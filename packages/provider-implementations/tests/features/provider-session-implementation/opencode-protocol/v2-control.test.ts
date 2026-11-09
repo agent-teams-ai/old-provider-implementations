@@ -382,6 +382,36 @@ test('malformed native permission source message ID never permits a control gran
 })
 
 
+test('raw V2 control refuses untyped native response chunks with confirmed cleanup', async t => {
+  // A malicious/injected ReadableStream can yield strings despite TS body types.
+  // byteLength would be undefined, turning the byte budget into NaN.
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let nativeCalls = 0, cancellations = 0
+    const raw = createV2ControlWire({
+      endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original',
+      version, nativeSessionId: 'ses_A', deadline: Date.now() + 10_000,
+      readPassword: () => 'TEST-private',
+      fetchImpl: async () => {
+        nativeCalls++
+        return new Response(new ReadableStream({
+          start(controller) { controller.enqueue('TEST_PRIVATE_NATIVE_PAYLOAD') },
+          cancel() { cancellations++ },
+        }), { headers: { 'content-type': 'application/json' } })
+      },
+    })
+    t.after(raw.dispose)
+    await assert.rejects(raw.request('/api/session/ses_A/permission'), (error: unknown) => {
+      assert(error instanceof Error)
+      assert.equal((error as { code?: string }).code, 'invalid_response')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+      assert.doesNotMatch(error.message, /TEST_PRIVATE_NATIVE_PAYLOAD/)
+      return true
+    })
+    assert.equal(nativeCalls, 1)
+    assert.equal(cancellations, 1)
+  }
+})
+
 test('V2 control wire bounds tiny native response chunks before memory fanout', async t => {
   let reads = 0, cancelled = 0, invoked = 0
   const reader = {
