@@ -23,6 +23,33 @@ async function captureFailure(work: Promise<unknown>): Promise<unknown> {
   assert.fail('expected failure')
 }
 
+test('V2 execution transport never forwards caller headers with native credentials', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    const seen: string[][] = []
+    const wire = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      fetchImpl: async (_request, init) => {
+        const headers = new Headers(init?.headers)
+        seen.push([...headers.keys()].sort())
+        assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST_PRIVATE_PASSWORD').toString('base64'))
+        for (const untrusted of ['cookie', 'x-forwarded-host', 'x-test-secret']) {
+          assert.equal(headers.get(untrusted), null)
+        }
+        return new Response('{"data":{}}', { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    t.after(() => wire.dispose())
+    const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
+      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
+    await wire.fetch(endpoint + '/api/session/ses_A', { headers: injected })
+    await wire.fetch(endpoint + '/api/session/ses_A/prompt', {
+      method: 'POST', headers: injected, body: JSON.stringify(prompt),
+    })
+    assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
+  }
+})
+
 test('V2 effect then lost receipt is unknown and original input is recovered by readonly lookup without replay', async t => {
   let effects = 0
   const host = await peer((req, res) => {

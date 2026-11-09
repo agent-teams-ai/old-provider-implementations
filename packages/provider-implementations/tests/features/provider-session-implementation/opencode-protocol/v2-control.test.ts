@@ -42,6 +42,37 @@ async function peer() {
   }
 }
 
+test('V2 raw control wire never forwards caller headers with native credentials', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    const seen: string[][] = []
+    const wire = createV2ControlWire({
+      endpoint, directory: '/TEST/original', version, nativeSessionId: 'ses_A',
+      deadline: Date.now() + 10_000, readPassword: () => 'TEST-private',
+      fetchImpl: async (_request, init) => {
+        const headers = new Headers(init?.headers)
+        seen.push([...headers.keys()].sort())
+        assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST-private').toString('base64'))
+        for (const untrusted of ['cookie', 'x-forwarded-host', 'x-test-secret']) {
+          assert.equal(headers.get(untrusted), null)
+        }
+        return seen.length === 1
+          ? new Response('{"data":[]}', { status: 200, headers: { 'content-type': 'application/json' } })
+          : new Response(null, { status: 204 })
+      },
+    })
+    t.after(wire.dispose)
+    const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
+      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
+    await wire.request('/api/session/ses_A/permission', { headers: injected })
+    await wire.request('/api/session/ses_A/permission/per_TEST/reply', {
+      method: 'POST', headers: injected,
+      body: JSON.stringify(version === '2.0.0' ? { reply: 'reject' } : { decision: 'reject' }),
+    })
+    assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
+  }
+})
+
 test('bound native control translates both dialects without touching neighboring session or host', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     const host = await peer(); t.after(host.close)

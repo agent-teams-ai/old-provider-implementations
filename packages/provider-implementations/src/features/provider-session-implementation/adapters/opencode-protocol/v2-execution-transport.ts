@@ -159,7 +159,12 @@ class OpenCodeV2ExecutionFetch {
     return chunks
   }
   private requestHeaders(request: Request, signal: AbortSignal): Headers {
-    const headers = new Headers(request.headers), password = this.readPassword()
+    // Only the trusted native Basic credential and validated JSON media type
+    // may leave this boundary. Caller headers (Cookie/X-Forwarded-*/etc.)
+    // are not part of the session capability.
+    const headers = new Headers()
+    if (request.body !== null) headers.set('content-type', 'application/json')
+    const password = this.readPassword()
     executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
     headers.set('authorization', 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'))
     // Credential projection may synchronously dispose/abort; no fetch can precede these rechecks.

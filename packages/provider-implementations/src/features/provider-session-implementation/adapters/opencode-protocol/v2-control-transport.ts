@@ -113,7 +113,9 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       const password = config.readPassword()
       executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
       check(); signal.throwIfAborted()
-      const headers = new Headers(native.headers)
+      // The caller may supply arbitrary headers to this raw control wire;
+      // never forward them with the Host-owned Basic credential.
+      const headers = new Headers()
       if (putInstruction || reply) {headers.set('content-type', 'application/json')}
       headers.set('authorization', 'Basic ' + Buffer.from('opencode:' + password).toString('base64'))
       invoked = true
