@@ -74,6 +74,8 @@ jobs:
           - { os: macos-15, proof: embedded-model }
           - { os: macos-15, proof: embedded-interrupt }
           - { os: macos-15, proof: embedded-target-interrupt }
+          # Native SDK 2.1.4 offline model terminal, durable pagination and cold no-replay.
+          - { os: macos-15, proof: embedded-target-model }
           - { os: macos-15, proof: embedded-pinned-tool }
           - { os: macos-15, proof: embedded-target-tool }
           - { os: macos-15, proof: embedded-target-mcp }
@@ -83,6 +85,7 @@ jobs:
           - { os: macos-15-intel, proof: embedded-model }
           - { os: macos-15-intel, proof: embedded-interrupt }
           - { os: macos-15-intel, proof: embedded-target-interrupt }
+          - { os: macos-15-intel, proof: embedded-target-model }
           - { os: macos-15-intel, proof: embedded-pinned-tool }
           - { os: macos-15-intel, proof: embedded-target-tool }
           # 2.1.4 MCP custody/readback on Intel macOS as well as Apple Silicon.
@@ -100,6 +103,7 @@ jobs:
           - { os: windows-11-arm, proof: embedded-target-mcp }
           - { os: windows-11-arm, proof: embedded-mcp }
           - { os: windows-11-arm, proof: embedded-target-interrupt }
+          - { os: windows-11-arm, proof: embedded-target-model }
           # Independently prove 2.1.4 tool.use/external_directory hard-deny on
           # Windows ARM64; MCP/interrupt evidence alone cannot qualify policy.
           - { os: windows-11-arm, proof: embedded-target-tool }
