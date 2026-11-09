@@ -456,3 +456,47 @@ test('public native read cut cancels a never-settling injected body read on revo
   assert.deepEqual({ fetched, reads, cancellations, releases },
     { fetched: 1, reads: 1, cancellations: 1, releases: 1 })
 })
+
+test('public native read cut cancels the body of a rejected status or media type', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const failure of ['status', 'media'] as const) {
+    let fetches = 0, cancellations = 0
+    const transport = {
+      check() {},
+      async fetch(): Promise<Response> {
+        fetches++
+        return new Response(new ReadableStream<Uint8Array>({
+          cancel() { cancellations++ },
+        }), { status: failure === 'status' ? 403 : 200,
+          headers: { 'content-type': failure === 'media' ? 'text/plain' : 'application/json' } })
+      },
+    }
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+    (error: unknown) => error instanceof Error && error.message === 'invalid_native_read_response')
+    assert.deepEqual({ fetches, cancellations }, { fetches: 1, cancellations: 1 })
+  }
+})
+
+test('public native read cut refuses to claim cleanup for a rejected response with failed body cancellation', async () => {
+  const directory = resolve('TEST/native-cut')
+  let fetches = 0, cancellations = 0
+  const transport = {
+    check() {},
+    async fetch(): Promise<Response> {
+      fetches++
+      return new Response(new ReadableStream<Uint8Array>({
+        cancel() {
+          cancellations++
+          return Promise.reject(new Error('TEST_PRIVATE_NATIVE_BODY_CANCEL_SECRET'))
+        },
+      }), { status: 403, headers: { 'content-type': 'application/json' } })
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(transport,
+    { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+  assert.deepEqual({ fetches, cancellations }, { fetches: 1, cancellations: 1 })
+})
