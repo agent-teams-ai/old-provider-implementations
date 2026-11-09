@@ -11,6 +11,9 @@ export type NativeDriverInput = { nativeInputID: string; text: string; beforeCur
 export function createDriverNative(config: OpenCodeV2DriverConfig, signal: AbortSignal) {
   let cleanupUnknown = false
   let promptUnknown = false
+  // One native prompt admission at a time. A concurrent second queue can
+  // otherwise reach POST before the first lost ACK latches promptUnknown.
+  let queueActive = false
   const assertUsable = (mutating = false): void => {
     if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
     // After an unconfirmed prompt POST, only read-only reconciliation is safe.
@@ -37,7 +40,13 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   }
   const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
     assertUsable(true)
+    if (queueActive) {
+      const failure = new ExecutionTransportFailure('native_prompt_in_flight', 'not_submitted')
+      unsubmitted.add(failure)
+      throw failure
+    }
     const wire = createOpenCodeV2ExecutionTransport(wireConfig())
+    queueActive = true
     let mutation = false
     try {
       decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
@@ -63,7 +72,10 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
         const failure = new ExecutionTransportFailure('preflight_failed', 'not_submitted'); unsubmitted.add(failure); throw failure
       }
       throw error
-    } finally { await dispose(wire) }
+    } finally {
+      try { await dispose(wire) }
+      finally { queueActive = false }
+    }
   }
   const control = async <T>(run: (wire: ReturnType<typeof createOpenCodeV2SessionControl>) => Promise<T>, scopedSignal?: AbortSignal) => {
     assertUsable()

@@ -189,6 +189,58 @@ test('unconfirmed native prompt fences all control mutations, including delayed 
   }
 })
 
+test('concurrent native queue cannot submit a second prompt while first ACK is unresolved', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close); host.loseReceipt()
+    const config = nativeConfig(host); config.version = version
+    let resolveFirst!: () => void, releaseFirst!: () => void, promptPosts = 0
+    const started = new Promise<void>(resolve => { resolveFirst = resolve })
+    const gate = new Promise<void>(resolve => { releaseFirst = resolve })
+    config.fetchImpl = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      const response = await fetch(input, init)
+      if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/prompt')) {
+        promptPosts++
+        if (promptPosts === 1) { resolveFirst(); await gate }
+      }
+      return response
+    }
+    const native = createDriverNative(config, new AbortController().signal)
+    const first = native.queue('msg_TESTfirst', 'TEST once')
+    try {
+      await started
+      // A second caller may arrive before first.promptUnknown is set. It must
+      // fail as known-not-sent without another HTTP read or mutation.
+      await assert.rejects(native.queue('msg_TESTsecond', 'TEST must not submit'), error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'native_prompt_in_flight')
+        assert.equal(error.disposition, 'not_submitted')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      })
+      assert.equal(host.counts().submitted, 1)
+      assert.equal(promptPosts, 1)
+      releaseFirst()
+      await assert.rejects(first, error => {
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      await assert.rejects(native.queue('msg_TESTthird', 'TEST must not replay'), error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'native_prompt_unknown')
+        assert.equal(error.disposition, 'unknown')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      assert.equal(promptPosts, 1)
+    } finally {
+      releaseFirst()
+      await first.catch(() => {})
+      await native.dispose()
+    }
+  }
+})
+
 test('permission detail already in flight cannot POST a grant after concurrent native prompt becomes unknown', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     const host = await driverPeer(); t.after(host.close); host.loseReceipt(); host.pauseReplyPreflight()
