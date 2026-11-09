@@ -87,7 +87,8 @@ test('unknown native stream cleanup stays unknown across driver disposal for que
           : native.control(wire => wire.instructions())
       await assert.rejects(work, error => {
         assert.ok(error instanceof Error)
-        assert.equal(error.message, operation === 'read' ? 'native_read_cleanup_unknown' : 'cleanup_unknown')
+        // The private Driver normalizes a raw read-cut custody failure to a typed UNKNOWN.
+        assert.equal(error.message, 'cleanup_unknown')
         assert.equal(String(error).includes('TEST-private-stream-should-not-leak'), false)
         return true
       })
