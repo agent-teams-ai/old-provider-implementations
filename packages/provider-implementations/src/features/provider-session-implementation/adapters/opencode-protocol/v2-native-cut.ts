@@ -112,8 +112,29 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
       }), deadline - Date.now(), signal)
       fetchPending = false
       const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
-      if (!response.ok || response.redirected || response.url && new URL(response.url).origin !== binding.endpoint
-        || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {throw new Error('invalid_native_read_response')}
+      let originMatches = !response.url
+      if (response.url) {
+        try { originMatches = new URL(response.url).origin === binding.endpoint }
+        catch { originMatches = false }
+      }
+      if (!response.ok || response.redirected || !originMatches
+        || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {
+        // Even a rejected native status/media/origin can carry a live body.
+        // Do not leave that stream running or claim clean refusal if cancellation fails.
+        if (response.body) {
+          let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+          let cancelled = false
+          try {
+            cancelled = await Promise.race([
+              response.body.cancel().then(() => true, () => false),
+              new Promise<boolean>(resolve => { cleanupTimer = setTimeout(() => resolve(false), 1000) }),
+            ])
+          } catch { /* Native body cancellation was not confirmed. */ }
+          finally { clearTimeout(cleanupTimer) }
+          if (!cancelled) throw new Error('native_read_cleanup_unknown')
+        }
+        throw new Error('invalid_native_read_response')
+      }
       const text = await nativeResponseBody(response, transport, budget, deadline, signal)
       transport.check()
       return text
