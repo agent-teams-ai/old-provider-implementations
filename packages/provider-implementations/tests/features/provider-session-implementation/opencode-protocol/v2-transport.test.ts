@@ -190,7 +190,7 @@ test('V2 unsupported route, workspace and create binding reject before native fe
   } as unknown as ReturnType<typeof config>), /authority_mismatch/)
 })
 
-test('V2 raw execution wire refuses global config/integration reads before projecting session credentials', async t => {
+test('V2 raw execution wire refuses unqualified global discovery before projecting session credentials', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     const endpoint = 'http://127.0.0.1:12345'
     let credentialReads = 0, nativeCalls = 0
@@ -208,6 +208,10 @@ test('V2 raw execution wire refuses global config/integration reads before proje
       '/api/integration?location[directory]=/TEST/original',
       '/api/config',
       '/api/integration',
+      '/api/model?location[directory]=/TEST/original',
+      '/api/model',
+      '/api/agent/default?location[directory]=/TEST/original',
+      '/api/agent/default',
     ]) {
       const failure = await captureFailure(transport.fetch(endpoint + route))
       assert.equal(wasOpenCodeV2InputNotSubmitted(failure), true, route)
