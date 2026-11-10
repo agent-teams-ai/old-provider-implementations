@@ -17,7 +17,7 @@ const config = (endpoint: string, version: '2.0.0' | '2.0.21' = '2.0.21',
   endpoint, version, nativeSessionId, directory: '/TEST/original',
   readPassword: () => 'TEST_PRIVATE_PASSWORD', deadline: Date.now() + 10_000,
 })
-const prompt = { id: 'msg_original', text: 'TEST input', delivery: 'queue', resume: false }
+const prompt = { id: 'msg_original', text: 'TEST input', delivery: 'queue', resume: true }
 async function captureFailure(work: Promise<unknown>): Promise<unknown> {
   try { await work } catch (error) { return error }
   assert.fail('expected failure')
@@ -114,7 +114,7 @@ test('V2 raw prompt refuses partial/asynchronous 2xx as a confirmed handoff', as
   }
 })
 
-test('V2 raw prompt rejects unqualified attachments before credentials or native HTTP', async t => {
+test('V2 raw prompt rejects unqualified resume modes and attachments before credentials or native HTTP', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     let credentialReads = 0
     let nativeCalls = 0
@@ -125,14 +125,16 @@ test('V2 raw prompt rejects unqualified attachments before credentials or native
       fetchImpl: async () => { nativeCalls++; throw new Error('native_must_not_be_called') },
     })
     t.after(() => wire.dispose())
-    for (const attachments of [
+    for (const forbidden of [
+      { resume: false }, // Host-qualified prompt mode is resumed, session-bound text queue only.
+      { resume: 'true' },
       { files: [{ uri: 'file:///TEST/foreign/private' }] },
       { agents: [{ name: 'unqualified_agent' }] },
       { skills: [{ id: 'unqualified_skill' }] },
       { files: [] },
     ]) {
       const error = await captureFailure(wire.fetch(endpoint + '/api/session/ses_A/prompt', {
-        method: 'POST', body: JSON.stringify({ ...prompt, ...attachments }),
+        method: 'POST', body: JSON.stringify({ ...prompt, ...forbidden }),
       }))
       assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
       assert(error instanceof Error)
