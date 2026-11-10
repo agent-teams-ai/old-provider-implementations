@@ -17,7 +17,7 @@ export function canonicalExecutionJSON(value: unknown): string {
     const items: string[] = []
     for (let index = 0; index < value.length; index++) {
       const entry = Object.getOwnPropertyDescriptor(value, String(index))
-      assertCanonical(entry !== undefined && entry.enumerable && 'value' in entry)
+      assertCanonical(entry !== undefined && entry.enumerable === true && 'value' in entry)
       items.push(canonicalExecutionJSON(entry.value))
     }
     return '[' + items.join(',') + ']'
