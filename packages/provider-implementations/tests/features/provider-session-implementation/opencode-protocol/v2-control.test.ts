@@ -688,6 +688,40 @@ test('V2 raw control does not relay native diagnostic headers', async t => {
   assert.deepEqual(await result.json(), { data: [] })
 })
 
+test('V2 control cleans up a native response when metadata access throws', async () => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const field of ['url', 'redirected'] as const) {
+      for (const cancelFails of [false, true]) {
+        let calls = 0, cancels = 0
+        const response = {
+          status: 200, url: '', redirected: false,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: { async cancel() {
+            cancels++
+            if (cancelFails) throw new Error('TEST_PRIVATE_CANCEL')
+          } },
+        }
+        Object.defineProperty(response, field, { get() { throw new Error('TEST_PRIVATE_METADATA') } })
+        const wire = createV2ControlWire({
+          endpoint, directory: '/TEST/original', version,
+          nativeSessionId: 'ses_A', readPassword: () => 'TEST-private',
+          deadline: Date.now() + 10_000,
+          fetchImpl: async () => { calls++; return response as unknown as Response },
+        })
+        try {
+          await assert.rejects(wire.request('/api/session/ses_A/permission'), error => {
+            assert.equal((error as { code?: string }).code, cancelFails ? 'cleanup_unknown' : 'transport_failure')
+            assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+            return true
+          })
+          assert.deepEqual({ calls, cancels }, { calls: 1, cancels: 1 })
+        } finally { await wire.dispose() }
+      }
+    }
+  }
+})
+
 test('V2 raw control cannot claim clean native reader custody on locked or malformed readbacks', async () => {
   const endpoint = 'http://127.0.0.1:12345'
   for (const version of ['2.0.0', '2.0.21'] as const) {

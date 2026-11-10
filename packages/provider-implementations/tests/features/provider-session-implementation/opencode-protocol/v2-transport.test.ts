@@ -599,6 +599,36 @@ test('V2 execution wire refuses a native response reader whose cancel rejects', 
   assert.equal(cancellations, 1)
 })
 
+test('V2 execution cleans up a native response when metadata access throws', async () => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const field of ['url', 'redirected'] as const) {
+      for (const cancelFails of [false, true]) {
+        let calls = 0, cancels = 0
+        const response = {
+          status: 200, url: '', redirected: false,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: { async cancel() {
+            cancels++
+            if (cancelFails) throw new Error('TEST_PRIVATE_CANCEL')
+          } },
+        }
+        Object.defineProperty(response, field, { get() { throw new Error('TEST_PRIVATE_METADATA') } })
+        const wire = createOpenCodeV2ExecutionTransport({
+          ...config(endpoint, version),
+          fetchImpl: async () => { calls++; return response as unknown as Response },
+        })
+        try {
+          const failure = await captureFailure(wire.fetch(endpoint + '/api/session/ses_A'))
+          assert.equal((failure as { code?: string }).code, cancelFails ? 'cleanup_unknown' : 'transport_failure')
+          assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+          assert.deepEqual({ calls, cancels }, { calls: 1, cancels: 1 })
+        } finally { await wire.dispose() }
+      }
+    }
+  }
+})
+
 test('V2 execution GET cannot certify cleanup when the native response reader is unacquirable', async () => {
   const endpoint = 'http://127.0.0.1:12345'
   for (const version of ['2.0.0', '2.0.21'] as const) {

@@ -193,6 +193,8 @@ class OpenCodeV2ExecutionFetch {
   }
   private async request(input: ExecutionFetchInput, init?: ExecutionFetchInit): Promise<Response> {
     let invoked = false
+    let response: Response | undefined
+    let metadataValidated = false
     let reader: ReturnType<typeof executionResponseReader> = undefined
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -209,8 +211,10 @@ class OpenCodeV2ExecutionFetch {
         if (signal.aborted) { await response.body?.cancel(); throw new Error('deadline') }
         return response
       }))
-      const response = await this.bound(responseWork, signal, this.context.deadline - Date.now())
-      executionAssert(!response.redirected && (!response.url || new URL(response.url).origin === this.endpoint), 'authority_mismatch')
+      response = await this.bound(responseWork, signal, this.context.deadline - Date.now())
+      const responseUrl = response.url
+      executionAssert(!response.redirected && (!responseUrl || new URL(responseUrl).origin === this.endpoint), 'authority_mismatch')
+      metadataValidated = true
       reader = executionResponseReader(response)
       const chunks = await this.readResponse(reader, signal)
       const bytes = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
@@ -245,6 +249,17 @@ class OpenCodeV2ExecutionFetch {
         headers: { 'content-type': log ? 'text/event-stream' : 'application/json' } })
     } catch (error) {
       controller.abort()
+      // A hostile native response can throw before a reader is acquired.
+      // A confirmed body cancellation is required before returning clean custody.
+      if (response && !metadataValidated) {
+        let cleaned = false
+        try {
+          const body = response.body
+          if (body) await this.bound(this.track(body.cancel()), new AbortController().signal, 1000)
+          cleaned = true
+        } catch { /* Unclaimed native response body has UNKNOWN custody. */ }
+        if (!cleaned) throw transportFailure(new ExecutionTransportFailure('cleanup_unknown', 'unknown'), true)
+      }
       if (reader) {
         let cleaned = false
         try {

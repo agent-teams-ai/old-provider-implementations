@@ -93,6 +93,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   }
   const request = async (path: string, init?: RequestInit): Promise<Response> => {
     let invoked = false, reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+    let response: Response | undefined, metadataValidated = false
     const controller = new AbortController(); controllers.add(controller)
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
@@ -159,16 +160,28 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       for (const key of [...native.headers.keys()]) native.headers.delete(key)
       for (const [key, value] of headers) native.headers.set(key, value)
       invoked = true
-      const response = await boundV2Request(track((config.fetchImpl ?? fetch)(native,
+      response = await boundV2Request(track((config.fetchImpl ?? fetch)(native,
         { headers, signal, redirect: 'error', credentials: 'omit' }).then(async received => {
         if (signal.aborted) { await received.body?.cancel(); throw new Error('deadline') }; return received
       })), remaining(), signal)
-      executionAssert(!response.redirected && (!response.url || new URL(response.url).origin === config.endpoint), 'authority_mismatch')
+      const responseUrl = response.url
+      executionAssert(!response.redirected && (!responseUrl || new URL(responseUrl).origin === config.endpoint), 'authority_mismatch')
+      metadataValidated = true
       const body = await consume(response.body, 8 * 1024 * 1024)
       check(); signal.throwIfAborted()
       return controlResponse(response, body, routes)
     } catch (error) {
       controller.abort()
+      // Metadata access can throw before the native reader is acquired.
+      if (response && !metadataValidated) {
+        let cleaned = false
+        try {
+          const body = response.body
+          if (body) await boundV2Request(track(body.cancel()), 1000)
+          cleaned = true
+        } catch { /* Unclaimed response body cancellation is not confirmed. */ }
+        if (!cleaned) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+      }
       // An admission fence may reject before this request invokes fetch while
       // the *prior prompt* already has UNKNOWN custody. Preserve that trusted
       // uncertainty: "not submitted" would permit an unsafe retry.
