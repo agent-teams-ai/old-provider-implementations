@@ -160,16 +160,17 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       for (const key of [...native.headers.keys()]) native.headers.delete(key)
       for (const [key, value] of headers) native.headers.set(key, value)
       invoked = true
-      response = await boundV2Request(track((config.fetchImpl ?? fetch)(native,
+      const receivedResponse = await boundV2Request(track((config.fetchImpl ?? fetch)(native,
         { headers, signal, redirect: 'error', credentials: 'omit' }).then(async received => {
         if (signal.aborted) { await received.body?.cancel(); throw new Error('deadline') }; return received
       })), remaining(), signal)
-      const responseUrl = response.url
-      executionAssert(!response.redirected && (!responseUrl || new URL(responseUrl).origin === config.endpoint), 'authority_mismatch')
+      response = receivedResponse
+      const responseUrl = receivedResponse.url
+      executionAssert(!receivedResponse.redirected && (!responseUrl || new URL(responseUrl).origin === config.endpoint), 'authority_mismatch')
       metadataValidated = true
-      const body = await consume(response.body, 8 * 1024 * 1024)
+      const body = await consume(receivedResponse.body, 8 * 1024 * 1024)
       check(); signal.throwIfAborted()
-      return controlResponse(response, body, routes)
+      return controlResponse(receivedResponse, body, routes)
     } catch (error) {
       controller.abort()
       // Metadata access can throw before the native reader is acquired.
