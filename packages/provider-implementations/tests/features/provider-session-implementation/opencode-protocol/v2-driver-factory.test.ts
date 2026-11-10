@@ -165,7 +165,7 @@ test('V2 Host probe and physical stop attestation require primitive true, not tr
     for (const untyped of [1, 'true', { ok: false }, { ok: true }]) {
       let probes = 0, passwordReads = 0
       const config = { ...nativeConfig(host), version,
-        probe: async () => { probes++; return untyped as boolean },
+        probe: async () => { probes++; return untyped as unknown as boolean },
         readPassword: () => { passwordReads++; return 'TEST-private' },
       }
       const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
@@ -178,7 +178,7 @@ test('V2 Host probe and physical stop attestation require primitive true, not tr
     for (const untyped of [1, 'true', { stopped: false }, { stopped: true }]) {
       let stops = 0
       const config = { ...nativeConfig(host), version,
-        confirmStopped: async () => { stops++; return untyped as boolean },
+        confirmStopped: async () => { stops++; return untyped as unknown as boolean },
       }
       const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
         resolveConfiguration: async () => config, readCheckpoint: async () => {} })
