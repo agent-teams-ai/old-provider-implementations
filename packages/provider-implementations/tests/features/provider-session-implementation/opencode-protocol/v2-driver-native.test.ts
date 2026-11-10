@@ -57,7 +57,7 @@ test('escaped native prompt body over 1 MiB is rejected before credentials and G
     config.fetchImpl = async (input, init) => { nativeRequests++; return fetch(input, init) }
     const native = createDriverNative(config, new AbortController().signal)
     // Raw text is within 256 KiB; JSON escaping expands NUL to six bytes.
-    const encodedText = '\\0'.repeat(200_000)
+    const encodedText = '\0'.repeat(200_000)
     assert.ok(Buffer.byteLength(encodedText) < 256 * 1024)
     assert.ok(Buffer.byteLength(JSON.stringify({ id: 'msg_TESToversize', text: encodedText,
       resume: true, delivery: 'queue' })) > 1024 * 1024)
