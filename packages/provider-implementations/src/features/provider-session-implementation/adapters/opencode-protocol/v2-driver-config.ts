@@ -2,6 +2,7 @@ import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
+import { types as nodeUtilTypes } from 'node:util'
 import { posix, win32 } from 'node:path'
 import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
@@ -79,8 +80,19 @@ export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
     tenantId: config.binding.tenantId, projectId: config.binding.projectId, sessionId: config.binding.sessionId })).digest('hex')
 }
 export function checkDriverCheckpoint(value: unknown, config: OpenCodeV2DriverConfig): boolean {
-  if (value === null || typeof value !== 'object') {return false}
-  const checkpoint = value as Record<string, unknown>
-  return checkpoint.version === 1 && checkpoint.engine === 'opencode-v2' && checkpoint.nativeSessionId === config.nativeSessionId
-    && checkpoint.compatibility === driverCompatibility(config)
+  // Durable checkpoint bytes are untrusted. A getter or Proxy can forge the
+  // identity on read or throw Host-private data out of open().
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || nodeUtilTypes.isProxy(value)) return false
+  try {
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) return false
+    const expected = ['version', 'engine', 'nativeSessionId', 'compatibility']
+    const keys = Reflect.ownKeys(value)
+    if (keys.length !== expected.length || keys.some(key => typeof key !== 'string' || !expected.includes(key))) return false
+    const fields = Object.getOwnPropertyDescriptors(value)
+    if (expected.some(key => !fields[key]?.enumerable || !Object.hasOwn(fields[key], 'value'))) return false
+    return fields.version.value === 1 && fields.engine.value === 'opencode-v2'
+      && fields.nativeSessionId.value === config.nativeSessionId
+      && fields.compatibility.value === driverCompatibility(config)
+  } catch { return false }
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parse, sep } from 'node:path'
-import { isCanonicalV2DriverDirectory, snapshotDriverConfig } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts'
+import { driverCompatibility, isCanonicalV2DriverDirectory, snapshotDriverConfig } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts'
 import type { DriverFactory, OpenConfig } from '@agent-teams/provider-session-contracts'
 import { createOpenCodeV2DriverFactory } from '../../../../src/opencode.ts'
 import { nativeConfig } from './v2-driver-support.ts'
@@ -33,6 +33,43 @@ test('V2 refuses malformed checkpoint references before invoking Host storage or
   assert.equal(reads, 0)
   assert.equal(probes, 0)
   assert.equal(stringifications, 0)
+  assert.equal(host.counts().submitted, 0)
+})
+
+test('V2 refuses forged checkpoint getters, Proxy and hidden fields before native admission', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  const baseline = nativeConfig(host)
+  let getters = 0, probes = 0, passwords = 0, reads = 0
+  const valid = { version: 1, engine: 'opencode-v2', nativeSessionId: baseline.nativeSessionId,
+    compatibility: driverCompatibility(baseline) }
+  const accessor = { ...valid }
+  Object.defineProperty(accessor, 'compatibility', {
+    enumerable: true, get: () => { getters++; throw new Error('TEST-private-checkpoint-secret') },
+  })
+  const proxy = new Proxy(valid, { get: () => { getters++; throw new Error('TEST-private-checkpoint-secret') } })
+  const hidden = { ...valid }
+  Object.defineProperty(hidden, 'TEST-hidden', { value: 'TEST-foreign', enumerable: false })
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let checkpoint: unknown
+    const config = { ...baseline, version,
+      probe: async () => { probes++; return true },
+      readPassword: () => { passwords++; return 'TEST-private' },
+    }
+    const factory = createOpenCodeV2DriverFactory({
+      capabilities: ['text', 'checkpoint'],
+      resolveConfiguration: async () => config,
+      readCheckpoint: async () => { reads++; return checkpoint },
+    })
+    for (const forged of [accessor, proxy, hidden, Object.create(valid)]) {
+      checkpoint = forged
+      await assert.rejects(factory.open({ ...request, checkpointRef: 'TEST-readback' }),
+        /opencode.driver.checkpoint-incompatible/)
+    }
+  }
+  assert.equal(getters, 0, 'untrusted checkpoint accessors must never execute')
+  assert.equal(reads, 8)
+  assert.equal(probes, 0)
+  assert.equal(passwords, 0)
   assert.equal(host.counts().submitted, 0)
 })
 
