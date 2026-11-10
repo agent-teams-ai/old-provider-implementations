@@ -54,6 +54,32 @@ test('V2 execution transport never forwards caller headers with native credentia
   }
 })
 
+test('V2 raw native GET refuses partial or asynchronous 2xx as a complete readback', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    let status = 200, calls = 0
+    const transport = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      fetchImpl: async () => {
+        calls++
+        return new Response('{"data":{"id":"ses_A"}}', {
+          status, headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
+    t.after(() => transport.dispose())
+    for (const unsupported of [201, 202, 206]) {
+      status = unsupported
+      const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A'))
+      assert.equal((failure as { code?: string }).code, 'invalid_response')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+    }
+    status = 200
+    assert.deepEqual(await (await transport.fetch(endpoint + '/api/session/ses_A')).json(), { data: { id: 'ses_A' } })
+    assert.equal(calls, 4)
+  }
+})
+
 test('V2 raw prompt rejects unqualified attachments before credentials or native HTTP', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     let credentialReads = 0

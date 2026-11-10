@@ -66,7 +66,9 @@ function controlResponse(response: Response, body: string, routes: ControlRoutes
     executionAssert(response.status === 204 && body === '', 'invalid_response')
     return new Response(null, { status: 204 })
   }
-  executionAssert(response.ok && response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json', 'invalid_response')
+  // Session-bound native readbacks and the interrupt receipt require a
+  // complete HTTP 200; partial/async 2xx is not a confirmed control result.
+  executionAssert(response.status === 200 && response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json', 'invalid_response')
   checkOpenCodeReadJson(body); JSON.parse(body)
   // Project only the documented JSON media type. Native/server-injected headers
   // are not a trusted public output channel for private paths or credentials.

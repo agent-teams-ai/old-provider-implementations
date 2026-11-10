@@ -78,6 +78,35 @@ test('V2 raw control wire never forwards caller headers with native credentials'
 })
 
 
+test('V2 control readback refuses partial or asynchronous 2xx as confirmed permission state', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let status = 200, calls = 0
+    const wire = createV2ControlWire({
+      endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original',
+      version, nativeSessionId: 'ses_A', deadline: Date.now() + 10_000,
+      readPassword: () => 'TEST-private',
+      fetchImpl: async () => {
+        calls++
+        return new Response('{"data":[]}', {
+          status, headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
+    t.after(wire.dispose)
+    for (const unsupported of [201, 202, 206]) {
+      status = unsupported
+      await assert.rejects(wire.request('/api/session/ses_A/permission'), error => {
+        assert.equal((error as { code?: string }).code, 'invalid_response')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+    }
+    status = 200
+    assert.deepEqual(await (await wire.request('/api/session/ses_A/permission')).json(), { data: [] })
+    assert.equal(calls, 4)
+  }
+})
+
 test('raw session-bound control refuses foreign ID namespaces before credentials or native effects', async t => {
   // Unlike the typed helpers, the raw wire previously accepted an arbitrary
   // [A-Za-z0-9_-] segment for inbox DELETE and permission GET/POST. A caller

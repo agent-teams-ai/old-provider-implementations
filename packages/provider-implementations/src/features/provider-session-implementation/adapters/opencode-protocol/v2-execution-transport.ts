@@ -217,6 +217,9 @@ class OpenCodeV2ExecutionFetch {
         throw failure
       }
       // No response body/tag from an SDK error escapes this boundary.
+      // A partial/asynchronous 2xx GET cannot establish a complete native
+      // session, message page or durable log. Fail closed before decoding.
+      if (request.method === 'GET') executionAssert(response.status === 200, 'invalid_response')
       executionAssert(response.status >= 200 && response.status < 300, 'http_failure')
       executionAssert(media === (log ? 'text/event-stream' : 'application/json'), 'media_type')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
