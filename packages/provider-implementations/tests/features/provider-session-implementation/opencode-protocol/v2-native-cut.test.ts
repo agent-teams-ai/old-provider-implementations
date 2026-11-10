@@ -479,6 +479,43 @@ test('public native read cut cancels the body of a rejected status or media type
   }
 })
 
+test('public native read cut cleans up streams when response metadata getters throw', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    for (const field of ['headers', 'redirected', 'url'] as const) {
+      for (const cancelFails of [false, true]) {
+        let fetches = 0, cancellations = 0
+        const response = {
+          status: 200, redirected: false, url: '',
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: {
+            async cancel() {
+              cancellations++
+              if (cancelFails) throw new Error('TEST_PRIVATE_NATIVE_CANCEL')
+            },
+          },
+        }
+        Object.defineProperty(response, field, {
+          get() { throw new Error('TEST_PRIVATE_NATIVE_METADATA') },
+        })
+        const transport = {
+          check() {},
+          async fetch(): Promise<Response> {
+            fetches++
+            return response as unknown as Response
+          },
+        }
+        await assert.rejects(readOpenCodeV2NativeCut(transport,
+          { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin },
+          { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+        (error: unknown) => error instanceof Error && error.message === (
+          cancelFails ? 'native_read_cleanup_unknown' : 'invalid_native_read_response'))
+        assert.deepEqual({ fetches, cancellations }, { fetches: 1, cancellations: 1 })
+      }
+    }
+  }
+})
+
 test('public injected native read cut rejects partial 2xx before reading any session bytes', async () => {
   const directory = resolve('TEST/native-cut')
   for (const pin of ['2.0.0', '2.0.21'] as const) {

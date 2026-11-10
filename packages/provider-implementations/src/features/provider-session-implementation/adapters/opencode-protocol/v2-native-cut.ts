@@ -125,30 +125,41 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
         return received
       }), deadline - Date.now(), signal)
       fetchPending = false
-      const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
-      let originMatches = !response.url
-      if (response.url) {
-        try { originMatches = new URL(response.url).origin === binding.endpoint }
-        catch { originMatches = false }
+      // Injected metadata getters can throw before the native response stream
+      // has a reader. Do not report a clean refusal while its body is unowned.
+      const cancelUnclaimedBody = async () => {
+        let body: ReadableStream<Uint8Array> | null
+        try { body = response.body } catch { throw new Error('native_read_cleanup_unknown') }
+        if (!body) return
+        let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+        let cancelled = false
+        try {
+          cancelled = await Promise.race([
+            body.cancel().then(() => true, () => false),
+            new Promise<boolean>(resolve => { cleanupTimer = setTimeout(() => resolve(false), 1000) }),
+          ])
+        } catch { /* Native body cancellation was not confirmed. */ }
+        finally { clearTimeout(cleanupTimer) }
+        if (!cancelled) throw new Error('native_read_cleanup_unknown')
       }
-      // Public/injected read-cut must not treat partial or accepted 2xx as a complete cut.
-      // Session, durable log, and message page require exact HTTP 200.
-      if (response.status !== 200 || response.redirected || !originMatches
-        || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {
-        // Even a rejected native status/media/origin can carry a live body.
-        // Do not leave that stream running or claim clean refusal if cancellation fails.
-        if (response.body) {
-          let cleanupTimer: ReturnType<typeof setTimeout> | undefined
-          let cancelled = false
-          try {
-            cancelled = await Promise.race([
-              response.body.cancel().then(() => true, () => false),
-              new Promise<boolean>(resolve => { cleanupTimer = setTimeout(() => resolve(false), 1000) }),
-            ])
-          } catch { /* Native body cancellation was not confirmed. */ }
-          finally { clearTimeout(cleanupTimer) }
-          if (!cancelled) throw new Error('native_read_cleanup_unknown')
+      let rejected: boolean
+      try {
+        const media = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+        const responseUrl = response.url
+        let originMatches = !responseUrl
+        if (responseUrl) {
+          try { originMatches = new URL(responseUrl).origin === binding.endpoint }
+          catch { originMatches = false }
         }
+        // Complete session/log/message readbacks require exact HTTP 200.
+        rejected = response.status !== 200 || response.redirected || !originMatches
+          || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')
+      } catch {
+        await cancelUnclaimedBody()
+        throw new Error('invalid_native_read_response')
+      }
+      if (rejected) {
+        await cancelUnclaimedBody()
         throw new Error('invalid_native_read_response')
       }
       const text = await nativeResponseBody(response, transport, budget, deadline, signal)
