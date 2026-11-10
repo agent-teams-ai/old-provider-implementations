@@ -538,6 +538,30 @@ test('public injected native read cut never claims clean cleanup for a locked re
   }
 })
 
+test('public injected native cut fails closed when a body returns no reader handle', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    for (const empty of [undefined, null] as const) {
+      let fetches = 0, acquisitions = 0
+      const transport = {
+        check() {},
+        async fetch(): Promise<Response> {
+          fetches++
+          return { status: 200, redirected: false, url: '',
+            headers: new Headers({ 'content-type': 'application/json' }),
+            body: { getReader() { acquisitions++; return empty } },
+          } as unknown as Response
+        },
+      }
+      await assert.rejects(readOpenCodeV2NativeCut(transport,
+        { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin },
+        { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+      (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+      assert.deepEqual({ fetches, acquisitions }, { fetches: 1, acquisitions: 1 })
+    }
+  }
+})
+
 test('public native read cut refuses to claim cleanup for a rejected response with failed body cancellation', async () => {
   const directory = resolve('TEST/native-cut')
   let fetches = 0, cancellations = 0

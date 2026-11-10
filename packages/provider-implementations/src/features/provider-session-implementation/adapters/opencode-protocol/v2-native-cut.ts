@@ -27,8 +27,13 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
   // ownership cannot be acquired, cancellation is not confirmed: never
   // describe an unobserved native stream as a clean invalid response.
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
-  try { reader = response.body?.getReader() }
-  catch { throw new Error('native_read_cleanup_unknown') }
+  try {
+    const body = response.body
+    reader = body?.getReader()
+    // An injected getReader() can return null/undefined without throwing.
+    // A present body without an owned reader has no confirmed cleanup.
+    if (body && !reader) throw new Error('native_read_cleanup_unknown')
+  } catch { throw new Error('native_read_cleanup_unknown') }
   const chunks: Uint8Array[] = []
   let responseBytes = 0
   try {
