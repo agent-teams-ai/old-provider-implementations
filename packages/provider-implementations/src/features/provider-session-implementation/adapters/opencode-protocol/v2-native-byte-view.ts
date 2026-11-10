@@ -8,9 +8,13 @@ const getOffset = Object.getOwnPropertyDescriptor(intrinsic, 'byteOffset')!.get!
 const getLength = Object.getOwnPropertyDescriptor(intrinsic, 'byteLength')!.get!
 
 export function nativeV2ByteView(value: unknown): Uint8Array | null {
-  if (!(value instanceof Uint8Array)) return null
   try {
-    return new Uint8Array(getBuffer.call(value) as ArrayBufferLike,
+    if (!(value instanceof Uint8Array)) return null
+    const backing = getBuffer.call(value) as ArrayBufferLike
+    // Shared memory may change on another thread between budget validation
+    // and the transport's owned-byte copy. No synchronization is authorized.
+    if (typeof SharedArrayBuffer !== 'undefined' && backing instanceof SharedArrayBuffer) return null
+    return new Uint8Array(backing,
       getOffset.call(value) as number, getLength.call(value) as number)
   } catch {
     // Proxy-backed or detached views have no verified typed-array backing slots.
