@@ -20,7 +20,20 @@ export type OpenCodeV2TransportConfig = {
 }
 
 function executionResponseReader(response: Response) {
-  return response.body?.getReader()
+  // A native response with a present but unacquirable stream cannot establish
+  // owned cleanup. In particular, a locked WHATWG stream throws at getReader(),
+  // while an injected peer can return a missing or incomplete reader handle.
+  try {
+    const body = response.body
+    if (body === null) return undefined
+    if (!body || typeof body.getReader !== 'function') throw new Error('unowned reader')
+    const reader = body.getReader()
+    if (!reader || typeof reader.read !== 'function' || typeof reader.cancel !== 'function'
+      || typeof reader.releaseLock !== 'function') throw new Error('unowned reader')
+    return reader
+  } catch {
+    throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+  }
 }
 
 function missingSessionResponse(response: Response, request: Request, route: { session: boolean; url: URL }, chunks: Uint8Array[]): string | undefined {

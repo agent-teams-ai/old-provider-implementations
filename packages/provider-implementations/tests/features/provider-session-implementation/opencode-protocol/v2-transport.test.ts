@@ -598,3 +598,37 @@ test('V2 execution wire refuses a native response reader whose cancel rejects', 
   assert.equal(reads, 8193)
   assert.equal(cancellations, 1)
 })
+
+test('V2 execution GET cannot certify cleanup when the native response reader is unacquirable', async () => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const mode of ['locked', 'null-reader', 'missing-cancel'] as const) {
+      let calls = 0
+      const response = new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('{"data":{}}')) },
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+      const ownerReader = mode === 'locked' ? response.body?.getReader() : undefined
+      const injected = mode === 'locked' ? response : {
+        status: 200, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => mode === 'null-reader' ? null : { read: async () => ({ done: true }), releaseLock() {} } },
+      } as unknown as Response
+      const wire = createOpenCodeV2ExecutionTransport({
+        ...config(endpoint, version),
+        fetchImpl: async () => { calls++; return injected },
+      })
+      try {
+        const failure = await captureFailure(wire.fetch(endpoint + '/api/session/ses_A'))
+        assert(failure instanceof Error)
+        assert.equal((failure as { code?: string }).code, 'cleanup_unknown', mode)
+        assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+        assert.doesNotMatch(failure.message, /unowned reader|ERR_INVALID_STATE/)
+        assert.equal(calls, 1)
+      } finally {
+        await ownerReader?.cancel()
+        ownerReader?.releaseLock()
+        await wire.dispose()
+      }
+    }
+  }
+})
