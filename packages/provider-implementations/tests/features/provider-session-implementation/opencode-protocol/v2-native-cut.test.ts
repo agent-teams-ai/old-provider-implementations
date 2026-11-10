@@ -269,7 +269,7 @@ test('public read cut refuses a non-byte stream chunk before reading more data',
   const transport = {
     check() {},
     async fetch(): Promise<Response> {
-      return { ok: true, redirected: false, url: '',
+      return { status: 200, ok: true, redirected: false, url: '',
         headers: new Headers({ 'content-type': 'application/json' }),
         body: { getReader: () => reader } } as unknown as Response
     },
@@ -301,7 +301,7 @@ test('public native read cut bounds tiny byte chunks before exhausting memory', 
     check() {},
     async fetch(): Promise<Response> {
       requests++
-      return { ok: true, redirected: false, url: '',
+      return { status: 200, ok: true, redirected: false, url: '',
         headers: new Headers({ 'content-type': 'application/json' }),
         body: { getReader: () => reader } } as unknown as Response
     },
@@ -363,7 +363,7 @@ test('direct native cut reports unknown cleanup when an injected reader refuses 
     check() {},
     async fetch(): Promise<Response> {
       fetched++
-      return { ok: true, redirected: false, url: '',
+      return { status: 200, ok: true, redirected: false, url: '',
         headers: new Headers({ 'content-type': 'application/json' }),
         body: { getReader: () => reader } } as unknown as Response
     },
@@ -444,7 +444,7 @@ test('public native read cut cancels a never-settling injected body read on revo
     check() {},
     async fetch(): Promise<Response> {
       fetched++
-      return { ok: true, redirected: false, url: '',
+      return { status: 200, ok: true, redirected: false, url: '',
         headers: new Headers({ 'content-type': 'application/json' }),
         body: { getReader: () => reader } } as unknown as Response
     },
@@ -476,6 +476,38 @@ test('public native read cut cancels the body of a rejected status or media type
       { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
     (error: unknown) => error instanceof Error && error.message === 'invalid_native_read_response')
     assert.deepEqual({ fetches, cancellations }, { fetches: 1, cancellations: 1 })
+  }
+})
+
+test('public injected native read cut rejects partial 2xx before reading any session bytes', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    for (const status of [201, 202, 206]) {
+      let fetches = 0, reads = 0, cancellations = 0
+      const transport = {
+        check() {},
+        async fetch(): Promise<Response> {
+          fetches++
+          // This public read-cut accepts a supplied transport rather than the
+          // validated execution wire; reject before any body inspection.
+          return { ok: true, status, redirected: false, url: '',
+            headers: new Headers({ 'content-type': 'application/json' }),
+            body: {
+              async cancel() { cancellations++ },
+              getReader() {
+                reads++
+                throw new Error('TEST_PRIVATE_NATIVE_READ_MUST_NOT_START')
+              },
+            },
+          } as unknown as Response
+        },
+      }
+      await assert.rejects(readOpenCodeV2NativeCut(transport,
+        { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin },
+        { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+      (error: unknown) => error instanceof Error && error.message === 'invalid_native_read_response')
+      assert.deepEqual({ fetches, reads, cancellations }, { fetches: 1, reads: 0, cancellations: 1 })
+    }
   }
 })
 

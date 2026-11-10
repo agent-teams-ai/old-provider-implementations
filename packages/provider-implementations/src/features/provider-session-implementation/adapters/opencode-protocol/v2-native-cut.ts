@@ -118,7 +118,9 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
         try { originMatches = new URL(response.url).origin === binding.endpoint }
         catch { originMatches = false }
       }
-      if (!response.ok || response.redirected || !originMatches
+      // Public/injected read-cut must not treat partial or accepted 2xx as a complete cut.
+      // Session, durable log, and message page require exact HTTP 200.
+      if (response.status !== 200 || response.redirected || !originMatches
         || media !== (path.includes('/log?') ? 'text/event-stream' : 'application/json')) {
         // Even a rejected native status/media/origin can carry a live body.
         // Do not leave that stream running or claim clean refusal if cancellation fails.
