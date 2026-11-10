@@ -23,7 +23,13 @@ const MAX_V2_NATIVE_CUT_READ_MS = 30_000
 
 async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadTransport,
   budget: { bytes: number }, deadline: number, signal: AbortSignal): Promise<string> {
-  const reader = response.body?.getReader(), chunks: Uint8Array[] = []
+  // A public injected Response can already have a locked body. If reader
+  // ownership cannot be acquired, cancellation is not confirmed: never
+  // describe an unobserved native stream as a clean invalid response.
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  try { reader = response.body?.getReader() }
+  catch { throw new Error('native_read_cleanup_unknown') }
+  const chunks: Uint8Array[] = []
   let responseBytes = 0
   try {
     if (reader) {

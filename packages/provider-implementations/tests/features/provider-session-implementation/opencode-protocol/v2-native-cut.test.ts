@@ -511,6 +511,33 @@ test('public injected native read cut rejects partial 2xx before reading any ses
   }
 })
 
+test('public injected native read cut never claims clean cleanup for a locked response body', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    let fetches = 0
+    const response = new Response(new ReadableStream<Uint8Array>(), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+    // A borrowed/locked stream cannot be cancelled by this public read cut.
+    // The caller owns the lock and must release it separately.
+    const owner = response.body!.getReader()
+    try {
+      const transport = {
+        check() {},
+        async fetch(): Promise<Response> { fetches++; return response },
+      }
+      await assert.rejects(readOpenCodeV2NativeCut(transport,
+        { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin },
+        { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+      (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+      assert.equal(fetches, 1)
+    } finally {
+      await owner.cancel()
+      owner.releaseLock()
+    }
+  }
+})
+
 test('public native read cut refuses to claim cleanup for a rejected response with failed body cancellation', async () => {
   const directory = resolve('TEST/native-cut')
   let fetches = 0, cancellations = 0
