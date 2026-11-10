@@ -87,7 +87,7 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       // These validations precede any native write, so a caller must not
       // mistake a local validation failure for an UNKNOWN submission.
       let encoded: string
-      try { encoded = canonicalExecutionJSON(value) } catch { denyUnsubmitted() }
+      try { encoded = canonicalExecutionJSON(value, 256 * 1024) } catch { denyUnsubmitted() }
       if (Buffer.byteLength(encoded) > 256 * 1024) denyUnsubmitted()
       await wire.request(entries + '/' + encodeURIComponent(key), { method: 'PUT', body: '{"value":' + encoded + '}' })
     },

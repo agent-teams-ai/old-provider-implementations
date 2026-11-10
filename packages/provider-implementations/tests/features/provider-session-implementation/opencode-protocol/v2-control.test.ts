@@ -373,9 +373,13 @@ test('V2 canonical instruction serializer refuses oversized, escaped and deeply 
   let tooDeep: unknown = 'TEST'
   for (let depth = 0; depth < 33; depth++) tooDeep = [tooDeep]
   for (const invalid of ['X'.repeat(2 * 1024 * 1024), '\0'.repeat(100_000), cyclic, tooDeep]) {
-    assert.throws(() => canonicalExecutionJSON(invalid), /invalid_native_json/)
+    assert.throws(() => canonicalExecutionJSON(invalid, 256 * 1024), /invalid_native_json/)
   }
   assert.equal(canonicalExecutionJSON({ b: ['TEST'], a: 1 }), '{"a":1,"b":["TEST"]}')
+  // Readback/projection has an independent 4096-event bound, not the
+  // 256 KiB instruction-write limit.
+  const largeReadback = { data: 'X'.repeat(256 * 1024 + 1) }
+  assert.equal(JSON.parse(canonicalExecutionJSON(largeReadback)).data.length, 256 * 1024 + 1)
 })
 
 test('typed V2 instruction preflight is not-submitted for over-budget and non-JSON values', async t => {

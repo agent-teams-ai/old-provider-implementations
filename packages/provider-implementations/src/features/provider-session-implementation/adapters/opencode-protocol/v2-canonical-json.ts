@@ -10,15 +10,21 @@ function canonicalRecord(value: unknown): Record<string, unknown> {
  * Charge the actual escaped UTF-8 bytes as they are produced: an oversized or
  * cyclic instruction must fail before allocating an unbounded native PUT body.
  */
-export function canonicalExecutionJSON(value: unknown): string {
-  let remaining = 256 * 1024
+export function canonicalExecutionJSON(value: unknown, maxBytes = Number.POSITIVE_INFINITY): string {
+  // The same canonical serializer serves unbounded, already-validated native
+  // event/log readbacks as well as Host-supplied durable instruction writes.
+  // A 256 KiB mutation cap must never truncate a valid 4096-event readback.
+  const bounded = Number.isFinite(maxBytes)
+  let remaining = maxBytes
   const charge = (fragment: string): string => {
-    remaining -= Buffer.byteLength(fragment)
-    assertCanonical(remaining >= 0)
+    if (bounded) {
+      remaining -= Buffer.byteLength(fragment)
+      assertCanonical(remaining >= 0)
+    }
     return fragment
   }
   const visit = (current: unknown, depth: number): string => {
-    assertCanonical(depth <= 32)
+    if (bounded) assertCanonical(depth <= 32)
     if (current === null || typeof current === 'boolean') return charge(JSON.stringify(current))
     if (typeof current === 'number') {
       assertCanonical(Number.isFinite(current))
@@ -27,11 +33,11 @@ export function canonicalExecutionJSON(value: unknown): string {
     if (typeof current === 'string') {
       // JSON.stringify may expand control characters sixfold, but never
       // materialize an already oversized source string.
-      assertCanonical(Buffer.byteLength(current) <= remaining)
+      if (bounded) assertCanonical(Buffer.byteLength(current) <= remaining)
       return charge(JSON.stringify(current))
     }
     if (Array.isArray(current)) {
-      assertCanonical(depth < 32 && !nodeUtilTypes.isProxy(current) && Object.getPrototypeOf(current) === Array.prototype)
+      assertCanonical((!bounded || depth < 32) && !nodeUtilTypes.isProxy(current) && Object.getPrototypeOf(current) === Array.prototype)
       assertCanonical(Reflect.ownKeys(current).length === current.length + 1)
       charge('[')
       const items: string[] = []
@@ -45,7 +51,7 @@ export function canonicalExecutionJSON(value: unknown): string {
       return '[' + items.join(',') + ']'
     }
     const object = canonicalRecord(current)
-    assertCanonical(depth < 32 && !nodeUtilTypes.isProxy(object)
+    assertCanonical((!bounded || depth < 32) && !nodeUtilTypes.isProxy(object)
       && (Object.getPrototypeOf(object) === Object.prototype || Object.getPrototypeOf(object) === null))
     const keys = Reflect.ownKeys(object)
     assertCanonical(keys.every(key => typeof key === 'string'))
