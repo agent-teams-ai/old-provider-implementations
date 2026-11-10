@@ -397,7 +397,10 @@ test('typed V2 instruction preflight is not-submitted for over-budget and non-JS
     // Canonical dense JSON arrays must remain supported for native instructions.
     await control.putInstruction('test.role', ['TEST'])
     assert.equal(host.calls(), 1)
-    assert.deepEqual(host.effects[0]?.body, { value: ['TEST'] })
+    assert.deepEqual(host.effects, [{
+      path: `${version === '2.0.0' ? '/api/session' : '/api/experimental/session'}/ses_A/instructions/entries/test.role`,
+      body: { value: ['TEST'] },
+    }])
   }
 })
 
