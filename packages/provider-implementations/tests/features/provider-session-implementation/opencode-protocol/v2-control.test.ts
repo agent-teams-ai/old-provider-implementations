@@ -4,6 +4,7 @@ import { once } from 'node:events'
 import { test } from 'node:test'
 import { createOpenCodeV2ExecutionTransport, createOpenCodeV2SessionControl, wasOpenCodeV2InputNotSubmitted } from '../../../../src/opencode.ts'
 import { createV2ControlWire } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts'
+import { canonicalExecutionJSON } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-canonical-json.ts'
 
 async function peer() {
   const effects: Array<{ path: string; body: unknown }> = []
@@ -364,6 +365,17 @@ test('raw V2 instruction PUT enforces the durable value byte budget before crede
     assert.equal(host.calls(), 0)
     assert.deepEqual(host.effects, [])
   }
+})
+
+test('V2 canonical instruction serializer refuses oversized, escaped and deeply nested Host data before materialization', () => {
+  const cyclic: unknown[] = []
+  cyclic.push(cyclic)
+  let tooDeep: unknown = 'TEST'
+  for (let depth = 0; depth < 33; depth++) tooDeep = [tooDeep]
+  for (const invalid of ['X'.repeat(2 * 1024 * 1024), '\0'.repeat(100_000), cyclic, tooDeep]) {
+    assert.throws(() => canonicalExecutionJSON(invalid), /invalid_native_json/)
+  }
+  assert.equal(canonicalExecutionJSON({ b: ['TEST'], a: 1 }), '{"a":1,"b":["TEST"]}')
 })
 
 test('typed V2 instruction preflight is not-submitted for over-budget and non-JSON values', async t => {
