@@ -376,7 +376,8 @@ test('typed V2 instruction preflight is not-submitted for over-budget and non-JS
       readPassword: () => { credentialReads++; return 'TEST-private' },
     })
     t.after(control.dispose)
-    for (const value of ['X'.repeat(256 * 1024 + 1), undefined, Number.POSITIVE_INFINITY]) {
+    for (const value of ['X'.repeat(256 * 1024 + 1), undefined, Number.POSITIVE_INFINITY,
+      Array(1), Object.assign(Array(1), { extra: 'TEST' })]) {
       await assert.rejects(control.putInstruction('test.role', value), error => {
         assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
         return true
