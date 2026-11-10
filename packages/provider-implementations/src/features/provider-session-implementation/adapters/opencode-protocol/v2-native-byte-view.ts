@@ -1,3 +1,5 @@
+import { types as nodeUtilTypes } from 'node:util'
+
 // Host-injected native stream chunks can override Uint8Array byteLength/length
 // accessors and defeat normal byte accounting. Obtain backing slots through
 // intrinsic getters, then expose a plain typed-array view. Callers check their
@@ -13,7 +15,7 @@ export function nativeV2ByteView(value: unknown): Uint8Array | null {
     const backing = getBuffer.call(value) as ArrayBufferLike
     // Shared memory may change on another thread between budget validation
     // and the transport's owned-byte copy. No synchronization is authorized.
-    if (typeof SharedArrayBuffer !== 'undefined' && backing instanceof SharedArrayBuffer) return null
+    if (nodeUtilTypes.isSharedArrayBuffer(backing)) return null
     return new Uint8Array(backing,
       getOffset.call(value) as number, getLength.call(value) as number)
   } catch {
