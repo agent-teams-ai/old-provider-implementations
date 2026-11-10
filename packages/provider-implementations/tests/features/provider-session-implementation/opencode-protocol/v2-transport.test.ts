@@ -80,6 +80,40 @@ test('V2 raw native GET refuses partial or asynchronous 2xx as a complete readba
   }
 })
 
+test('V2 raw prompt refuses partial/asynchronous 2xx as a confirmed handoff', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const endpoint = 'http://127.0.0.1:12345'
+    let status = 200, calls = 0
+    const transport = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      fetchImpl: async () => {
+        calls++
+        return new Response('{"data":{"id":"msg_original","sessionID":"ses_A","type":"user","delivery":"queue","payload":{"text":"TEST input"}}}', {
+          status, headers: { 'content-type': 'application/json' },
+        })
+      },
+    })
+    t.after(() => transport.dispose())
+    for (const unsupported of [201, 202, 206]) {
+      status = unsupported
+      const failure = await captureFailure(transport.fetch(endpoint + '/api/session/ses_A/prompt', {
+        method: 'POST', body: JSON.stringify(prompt),
+      }))
+      assert.equal((failure as { code?: string }).code, 'invalid_response')
+      // Native POST was invoked: a rejected acknowledgement is not evidence
+      // that the mutation did not happen and must never permit replay.
+      assert.equal(wasOpenCodeV2InputNotSubmitted(failure), false)
+    }
+    status = 200
+    const accepted = await transport.fetch(endpoint + '/api/session/ses_A/prompt', {
+      method: 'POST', body: JSON.stringify(prompt),
+    })
+    assert.equal(accepted.status, 200)
+    assert.equal((await accepted.json() as { data?: { id?: string } }).data?.id, prompt.id)
+    assert.equal(calls, 4)
+  }
+})
+
 test('V2 raw prompt rejects unqualified attachments before credentials or native HTTP', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     let credentialReads = 0

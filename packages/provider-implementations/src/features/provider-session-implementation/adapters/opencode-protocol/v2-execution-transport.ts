@@ -201,7 +201,7 @@ class OpenCodeV2ExecutionFetch {
     this.controllers.add(controller)
     try {
       this.check()
-      const { request, url, session, log, activation } = await this.validateRequest(input, init, controller)
+      const { request, url, session, log, activation, prompt } = await this.validateRequest(input, init, controller)
       this.check(); request.signal.throwIfAborted()
       const signal = AbortSignal.any([controller.signal, request.signal, ...(this.context.signal ? [this.context.signal] : [])])
       timer = setTimeout(() =>{  controller.abort(); }, Math.min(30_000, this.context.deadline - Date.now()))
@@ -235,9 +235,10 @@ class OpenCodeV2ExecutionFetch {
         throw failure
       }
       // No response body/tag from an SDK error escapes this boundary.
-      // A partial/asynchronous 2xx GET cannot establish a complete native
-      // session, message page or durable log. Fail closed before decoding.
-      if (request.method === 'GET') executionAssert(response.status === 200, 'invalid_response')
+      // Neither a partial GET nor an asynchronous/partial prompt 2xx can
+      // establish a complete native readback or acknowledged prompt handoff.
+      // A prompt may already have executed, so refusal remains UNKNOWN.
+      if (request.method === 'GET' || prompt) executionAssert(response.status === 200, 'invalid_response')
       executionAssert(response.status >= 200 && response.status < 300, 'http_failure')
       executionAssert(media === (log ? 'text/event-stream' : 'application/json'), 'media_type')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
