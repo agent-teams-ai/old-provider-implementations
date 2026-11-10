@@ -46,7 +46,12 @@ test('V2 refuses forged checkpoint getters, Proxy and hidden fields before nativ
   Object.defineProperty(accessor, 'compatibility', {
     enumerable: true, get: () => { getters++; throw new Error('TEST-private-checkpoint-secret') },
   })
-  const proxy = new Proxy(valid, { get: () => { getters++; throw new Error('TEST-private-checkpoint-secret') } })
+  // Promise resolution inspects "then" before Provider receives the value.
+  // Test the Provider's own checkpoint-field reads, not Promise assimilation.
+  const proxy = new Proxy(valid, { get: (_target, key) => {
+    if (key === 'then') return undefined
+    getters++; throw new Error('TEST-private-checkpoint-secret')
+  } })
   const hidden = { ...valid }
   Object.defineProperty(hidden, 'TEST-hidden', { value: 'TEST-foreign', enumerable: false })
   for (const version of ['2.0.0', '2.0.21'] as const) {
