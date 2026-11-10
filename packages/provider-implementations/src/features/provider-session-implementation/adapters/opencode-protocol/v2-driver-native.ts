@@ -4,6 +4,7 @@ import { decodeV2DataEnvelope, decodeV2Log, decodeV2Session } from './v2-cut-cod
 import { readOpenCodeV2NativeCut } from './v2-native-cut.ts'
 import { record } from './v2-projection-helpers.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
+import { safeV2MessageID } from './v2-native-identifiers.ts'
 import type { OpenCodeV2DriverConfig } from './v2-driver-config.ts'
 
 export type NativeDriverInput = { nativeInputID: string; text: string; beforeCursor: number | null }
@@ -65,6 +66,15 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
   }
   const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
     assertUsable(true)
+    // Reject malformed input before even the native session/log preflight GET:
+    // these reads carry Host Basic credentials and cannot validate a bad queue.
+    // The wire also checks the eventual POST, but that is too late for preflight.
+    if (!safeV2MessageID(nativeInputID) || typeof text !== 'string'
+      || text.trim().length === 0 || Buffer.byteLength(text) > 256 * 1024) {
+      const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
+      unsubmitted.add(failure)
+      throw failure
+    }
     if (queueActive) {
       const failure = new ExecutionTransportFailure('native_prompt_in_flight', 'not_submitted')
       unsubmitted.add(failure)

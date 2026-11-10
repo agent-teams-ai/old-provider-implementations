@@ -17,6 +17,37 @@ test('fresh finite native operations retain original queue anchor and qualify it
   assert.deepEqual(host.counts(), { submitted: 1, interrupted: 0, replies: 0 })
 })
 
+test('invalid native queue input never reads Host credentials or performs preflight GET on either pinned SDK', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close)
+    const config = nativeConfig(host); config.version = version
+    let passwordReads = 0, nativeRequests = 0
+    config.readPassword = () => { passwordReads++; return 'TEST-private-password' }
+    config.fetchImpl = async () => { nativeRequests++; throw new Error('TEST-unexpected-native-I/O') }
+    const native = createDriverNative(config, new AbortController().signal)
+    for (const [inputId, content] of [
+      ['not-a-message-id', 'TEST text'],
+      ['msg_', 'TEST text'],
+      ['msg_TESTvalid', ''],
+      ['msg_TESTvalid', '  '],
+      ['msg_TESTvalid', 'x'.repeat(256 * 1024 + 1)],
+      ['msg_TESTvalid', null as unknown as string],
+    ] as const) {
+      await assert.rejects(native.queue(inputId, content), error => {
+        assert.ok(error instanceof ExecutionTransportFailure)
+        assert.equal(error.code, 'invalid_input')
+        assert.equal(error.disposition, 'not_submitted')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+        return true
+      })
+    }
+    assert.equal(nativeRequests, 0)
+    assert.equal(passwordReads, 0)
+    assert.deepEqual(host.counts(), { submitted: 0, interrupted: 0, replies: 0 })
+    await native.dispose()
+  }
+})
+
 test('stock CLI sync-only log is not a durable execution preflight and cannot submit a model prompt', async t => {
   const host = await driverPeer(); t.after(host.close); host.syncOnlyLog()
   const native = createDriverNative(nativeConfig(host), new AbortController().signal)
