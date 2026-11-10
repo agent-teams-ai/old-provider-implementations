@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "scope": "Local controlled standalone workspace verification; no live provider, authentication or publishing qualification.",
+  "sourceRevision": "4e37051ed390da84842eb27535c8e9b07a0364b7",
+  "sourceManifestSha256": "0eec454a86a96de79c6331eb240d102baa8ce4101ab4eddf855f983dc68d48e2",
+  "sourceIdentity": {
+    "unchangedFilesUnderSrc": 115,
+    "unchangedTypeScriptProductionFiles": 108,
+    "physicalProductionLines": 9421
+  },
+  "toolchain": {
+    "pnpm": "11.18.0",
+    "typescript": "7.0.2",
+    "node": [
+      "26.11.1",
+      "24.21.0"
+    ],
+    "node24Sha256": "e4b5a3af0e05c75de2eae013904145f40fe7fc2a6e6f17510128bf45cca4e79b"
+  },
+  "lock": {
+    "path": "pnpm-lock.yaml",
+    "sha256": "0314f7fd37058c2c7a0cb5065db5341262892ae85031fe147bbc846fdab30ff2",
+    "freshlyGenerated": true,
+    "frozenInstallPassed": true,
+    "workspaceImporters": [
+      ".",
+      "packages/provider-implementations",
+      "packages/provider-session-contracts"
+    ]
+  },
+  "results": {
+    "node26": {
+      "build": "PASS",
+      "strictTypes": "PASS",
+      "sourceTests": {
+        "pass": 318,
+        "fail": 0,
+        "skipped": 0
+      },
+      "packedConsumers": {
+        "pass": 2,
+        "fail": 0
+      },
+      "qualification": "Original normal check failed in the first packed consumer; source/build/type results retained. Affected packed gate passed after explicitly pinning the Corepack wrapper to pnpm@11.18.0. No duplicate source pass claimed."
+    },
+    "node24": {
+      "normalCheck": "PASS",
+      "build": "PASS",
+      "strictTypes": "PASS",
+      "sourceTests": {
+        "pass": 318,
+        "fail": 0,
+        "skipped": 0
+      },
+      "packedConsumers": {
+        "pass": 2,
+        "fail": 0
+      }
+    }
+  },
+  "retainedOriginalFailure": {
+    "phase": "node26-original-check",
+    "exitCode": 1,
+    "error": "Packed SPI consumer pnpm install reached its existing 20s timeout while Corepack attempted a default package-manager download outside the workspace.",
+    "correction": "Local and CI wrappers dispatch explicit pnpm@11.18.0 in disposable consumer directories; no timeout increase, test weakening or production source change."
+  },
+  "archives": [
+    {
+      "filename": "agent-teams-provider-implementations-0.0.0.tgz",
+      "sha256": "7fc8f2959519eff06bbd558f3bfc79237236825534bac30d25891cec8ab37c2d",
+      "packageName": "@agent-teams/provider-implementations",
+      "regularMembers": 209,
+      "distMembers": 206,
+      "allDistMatchStandalone": true
+    },
+    {
+      "filename": "agent-teams-provider-session-contracts-0.0.0.tgz",
+      "sha256": "2cd9c307644812321bd9891a383b0e00d6e9166d11e4a9f102b03c264a1fa6fa",
+      "packageName": "@agent-teams/provider-session-contracts",
+      "regularMembers": 12,
+      "distMembers": 10,
+      "allDistMatchStandalone": true
+    }
+  ],
+  "selectedUpstreamProviderComparison": {
+    "archiveSha256": "dad39edf2f02a23ae68768722b5bba2e7beddf2125ae79d0bacb4e8b303d1dce",
+    "distMembers": 206,
+    "byteDifferences": 0,
+    "claim": "Emitted provider JS/declarations match; standalone metadata/license/README and tar hashes may differ."
+  },
+  "pending": [
+    "Linux CI on the standalone repository has not run.",
+    "Remote delivery, bootstrap/source commits and draft PR are Root-owned; this record grants no publish or merge authority."
+  ],
+  "retention": "Original terminal logs, failure and correction evidence are retained separately by the repository owner; no local execution paths or raw logs are published here.",
+  "selectedUpstreamSpiComparison": {
+    "archiveSha256": "2a6e0e2cc61d7513b6de352d5cc7e2dba6ade8749e76fb4558520b1ea99bbf2e",
+    "distMembers": 10,
+    "byteDifferences": 0,
+    "claim": "Emitted SPI JS/declarations match; standalone metadata/license and tar hashes may differ."
+  }
+}

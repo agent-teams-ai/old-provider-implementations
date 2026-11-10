@@ -1,0 +1,64 @@
+{
+  "sourceRevision": "c9740b35a433ba370ed473a8dbfba27f3d902bbd",
+  "sourceRepository": "agent-teams-ai/agent-runtime",
+  "runtimeContractRevision": "25de9bf2d9a3982d1f62348547a2808c112ad8b5",
+  "entries": [
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/config.ts",
+      "sourceBlob": "b475be370ea4e412ceb7bcf69a6bf9f2d724e43e",
+      "sourceSha256": "479c764f0830e0d3622a9a710b6e8e760f7748628c09ccfe8b279d2f0a535aa6",
+      "physicalLines": 63,
+      "targetPath": "src/features/claude-sdk/config.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    },
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/index.ts",
+      "sourceBlob": "54a26d38ca8bb50f606dd9acc838f6e1541d73d0",
+      "sourceSha256": "bcb31bc8e3c7966d31cc8d5bc811cd6494042914d9ca8ce1052deda198da6dfb",
+      "physicalLines": 31,
+      "targetPath": "src/features/claude-sdk/open-session.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    },
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/primitives.ts",
+      "sourceBlob": "bdb6669c515668402e542272cf17ec2e678696e8",
+      "sourceSha256": "a56a4c146272ac838b3b0fbaabe3edb98b1956d49b5d84b86031f22e34408d20",
+      "physicalLines": 52,
+      "targetPath": "src/features/claude-sdk/primitives.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    },
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/normalize.ts",
+      "sourceBlob": "cf282c1e5b41c17e2bf1c82c17f54496da569c68",
+      "sourceSha256": "e0e9a51fde5bcaf7011b8c5ca72c1162623cef09d7ed8f8fc7a8f36a2d0f8dcc",
+      "physicalLines": 75,
+      "targetPath": "src/features/claude-sdk/normalize.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    },
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/session.ts",
+      "sourceBlob": "0fd67d683099f91e383d5f095f934e7eab93984c",
+      "sourceSha256": "4b4892f6748297892004b954e2aff7e2b6e4878f2e1793e8b1a69928388960da",
+      "physicalLines": 236,
+      "targetPath": "src/features/claude-sdk/session.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    },
+    {
+      "sourcePath": "experiments/interactive-provider-contract/src/claude/interactions.ts",
+      "sourceBlob": "0b40ef4cc1d27dec63626d7efef17f93e7bd8bce",
+      "sourceSha256": "7d20f0e7f9181bf19ac835cfa790f0a15cd2b6b39f0c06887e37e56392775051",
+      "physicalLines": 63,
+      "targetPath": "src/features/claude-sdk/interactions.ts",
+      "disposition": "single pending integration move; canonical type-only SPI import replaces draft; B retirement patch follows packed-consumer qualification"
+    }
+  ],
+  "BRetirement": "pending integration patch; B CI branch untouched; no indefinite editable duplicate permitted",
+  "qualification": "candidate SDK adapter; no provider authentication, containment or deployment claim",
+  "postPromotionChanges": {
+    "config.ts": "optional trusted tool-binding port; snapshot tool-name set and bind it into native checkpoint compatibility; reject native SendMessage/ListAgents alongside existing native team/task/spawn tools so product control MCP stays the sole team authority",
+    "session.ts": "install foreground native prompt/tool hook; revoke captured preparation on interrupt, terminal, unavailability and close; align handoff vocabulary with actual C client-consumed (providerAcceptance stays unknown); bounded physical-session native tool-ID tombstones reject cross-input reuse without assuming global ID uniqueness",
+    "tool-binding.ts": "new provider-specific data-only Host port; no SDK/runtime/product authority grant",
+    "qualification": "focused attribution/revocation races and installed SDK-process marker rewrite at actual localhost MCP handler",
+    "primitives.ts": "EventFeed/deferred/bounded moved once to shared curated provider-session-io entry after actual second consumer; Claude-specific fail remains local"
+  }
+}

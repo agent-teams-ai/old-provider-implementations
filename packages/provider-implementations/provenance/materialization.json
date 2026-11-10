@@ -1,0 +1,1397 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "bc644a5045219bd635d6ea7b3467b9f297033cdf",
+  "runtimeBase": "be373520e5352633fcbe6db36f07aa214d56b57b",
+  "historicalInput": "standalone provider-implementations extraction repository; immutable input, not a source resolver",
+  "authoritativeDestination": "packages/platform/provider-implementations",
+  "authorityDecision": "ADR-0092",
+  "omitted": [
+    "node_modules",
+    "dist",
+    "caches",
+    "historical contract archives",
+    "standalone dependency manifests and candidate checker",
+    "B integration patch"
+  ],
+  "records": [
+    {
+      "sourcePath": "src/features/claude-sdk/README.md",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/README.md",
+      "sourceBlob": "e99420e7dd60ca4ed32c464a5c9553392ef963e8",
+      "sourceSha256": "5870e921016805d9cda6b96210669ca76c2a7e4e1a957d9d89c242875ce10cc3",
+      "targetSha256": "936f2d79073d901a41b491641d675235ad301fb954baeb2932aa74f54ca7e78d",
+      "adaptation": "provenance-relative-link-relocation",
+      "materializationAdaptation": "provenance-relative-link-relocation"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/config.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/config.ts",
+      "sourceBlob": "81a6ed0c9a45470a774dcbb7cd01587e90b1439e",
+      "sourceSha256": "472fe2d9a353c9acef97ce9df27e6d96d0b9fe56d467c3e24a486cde5dc7ec98",
+      "targetSha256": "5470f7787d5e633cce10f012b253137f1807db4bac759ff096b62727c1a05346",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "472fe2d9a353c9acef97ce9df27e6d96d0b9fe56d467c3e24a486cde5dc7ec98",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/extraction-manifest.json",
+      "targetPath": "provenance/claude-sdk-extraction.json",
+      "sourceBlob": "69da8a57f9c44ad0185eb21645f1c77965606bf4",
+      "sourceSha256": "2e9e07839bd78085946dd13c0dd56cc995621849aab7a24c7cddb9c4ed2c6bea",
+      "targetSha256": "2e9e07839bd78085946dd13c0dd56cc995621849aab7a24c7cddb9c4ed2c6bea",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/factory.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/factory.ts",
+      "sourceBlob": "d5c25aaf92081fc75e50791be49bfd4f73f74495",
+      "sourceSha256": "7685f37a7d9f88e05b5a23888152a03d6fa2da1ddf369573bc57b49f9d67ce41",
+      "targetSha256": "4332ffb84d978312f94f3205a9ab38aa3f979f7d76ac25a43a4aed45a9ba94e4",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "7685f37a7d9f88e05b5a23888152a03d6fa2da1ddf369573bc57b49f9d67ce41",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/index.ts",
+      "targetPath": "src/claude.ts",
+      "sourceBlob": "e086ba7f46ce6f0697f79d881abe70cc5bfd9a10",
+      "sourceSha256": "89b0ddec96e6a5e31bdd1535b1aa25f42484787f356ad7f465554ba3c46c2033",
+      "targetSha256": "265541b78d299220461096c20c6499ecc08e4fac7ff4fbe2a355f56284a295b3",
+      "adaptation": "native-curated-facade-relocation",
+      "materializationAdaptation": "native-curated-facade-relocation",
+      "initialQualifiedWorkspaceSha256": "265541b78d299220461096c20c6499ecc08e4fac7ff4fbe2a355f56284a295b3",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/interactions.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/interactions.ts",
+      "sourceBlob": "8bd121e7d9a1365692b7b379310208a81597538d",
+      "sourceSha256": "1ea3f22c5913ab6006cb67b45861fc60bdd8abd4951aed00f7f384718f37d3db",
+      "targetSha256": "71c0bfe3e9dfaf72c9e7e339591b18ab1a31c901a275df7c6b099f64cf1f52e6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "1ea3f22c5913ab6006cb67b45861fc60bdd8abd4951aed00f7f384718f37d3db",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/normalize.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/normalize.ts",
+      "sourceBlob": "a6daf7bfa2b175fa2058597052cceddc033b9f5b",
+      "sourceSha256": "fa262ed7380a26549768bb649a4e0c37d37a3f883f5f774d8d1f71110227669b",
+      "targetSha256": "b8eaf953add0eea17e78999666783b529b0101c10e09b440027143d80a475576",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "fa262ed7380a26549768bb649a4e0c37d37a3f883f5f774d8d1f71110227669b",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/open-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/open-session.ts",
+      "sourceBlob": "47a5fc8a3342c5d23cacf8490d71565748b612b1",
+      "sourceSha256": "72ad88b0a792d6c3dd15381412b4b5c480e8004d67af1efac88d14d69167c968",
+      "targetSha256": "4b4073babc5e496da3cbb84fd34155f7a3b1c9b4639e9135daca673c6adbbc0e",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "4b4073babc5e496da3cbb84fd34155f7a3b1c9b4639e9135daca673c6adbbc0e",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/primitives.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/primitives.ts",
+      "sourceBlob": "a7bdc0b3c28bdb8a04edb90d01f28ceafc2a233e",
+      "sourceSha256": "d31bfa8aac454790017e7af0b81da1a8bdedec62f21f264910eeffe73692522c",
+      "targetSha256": "d31bfa8aac454790017e7af0b81da1a8bdedec62f21f264910eeffe73692522c",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "d31bfa8aac454790017e7af0b81da1a8bdedec62f21f264910eeffe73692522c",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/session.ts",
+      "sourceBlob": "5cc507dd604eb54d6c374e5a7b3ef7365747b5df",
+      "sourceSha256": "5e10017cc22ccfaec56fcb7aa977d2b00057c6adcbb0757df7359e49623a15c5",
+      "targetSha256": "a66cdb67f03b393456d04edf8264e1270443be7b3fa1469ab972844c4d276db6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "fba65e0db99aeab7b5b259e002181090cb29a7d050eda1e623c822377f99a370",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/claude-sdk/tool-binding.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/claude-sdk/tool-binding.ts",
+      "sourceBlob": "b326a28db7b47a999838326cb3fafa88006d1165",
+      "sourceSha256": "86707db88dbabe25b87c3819506f9c171b6307a1bff4d0b9ccaae09ef741d20c",
+      "targetSha256": "4d73999cd164dd574158d62824a12326d9bb35cde1cf2a76a92c29aee7466228",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "86707db88dbabe25b87c3819506f9c171b6307a1bff4d0b9ccaae09ef741d20c",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/README.md",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/README.md",
+      "sourceBlob": "5e288d7763b75c3852aca65305d35b27e9361e57",
+      "sourceSha256": "d4112a7ad9cdb140cef2b684cbaf18d35f30c992839224409db6434dd8f246ee",
+      "targetSha256": "d4112a7ad9cdb140cef2b684cbaf18d35f30c992839224409db6434dd8f246ee",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/app-server.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/app-server.ts",
+      "sourceBlob": "9ba374719460a8f402afcd445bc637c98e3299e5",
+      "sourceSha256": "95698cbb5eb2fc8246fcac3d6eba200c24f598cb16fd674d40187cc5ab78f085",
+      "targetSha256": "8000f0ae82a73e56c9c1367220b9737c172d84eaa4324cb313c51a4c8c10f503",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-and-reviewed-thread-lifecycle-routing",
+      "initialQualifiedWorkspaceSha256": "240547b85884ce3b7469629ee9ff50b990d6aa5f95c85dbba9ae37f3a0c08965",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/approval-request.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/approval-request.ts",
+      "sourceBlob": "e2c14d804a435344f6d5fa4c54f8bc127131ad07",
+      "sourceSha256": "50b5c0e7983af52e171065eb349e6270231806c0e9c1d4f37974083e504f7541",
+      "targetSha256": "3006d8dd48f25908003f43279211cd3c4c70ff205839d048cb2290effab9be8e",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "89e5fceb733f28c4e03b4520feb3209e53e4572aab8058e1123c4639c23186a6",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/approval-response.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/approval-response.ts",
+      "sourceBlob": "5ef40e5a4de5f036f3deb19e0e245aed2849f5a4",
+      "sourceSha256": "4b6f0c1bc95f7efec1d58e9aa31a81d96449b26fd92188a203e9ea67ed88e7ea",
+      "targetSha256": "606641429b83d8d53917719d8409df57ca8d97c93c11a17641960ac2c19c923f",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "a9c83ed699ab29e1a378d1d0d57ed2a7012d1ca023f30bba9f9d4a9b7f7e430b",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/approval-types.ts",
+      "targetPath": "src/features/provider-session-implementation/contracts/codex-approval.ts",
+      "sourceBlob": "562fa6b49f88a743800819de73c8f873434f171a",
+      "sourceSha256": "d40591c18dc17853e8537ec0f7700396775100998cd67291547d8749caaffe28",
+      "targetSha256": "d40591c18dc17853e8537ec0f7700396775100998cd67291547d8749caaffe28",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "d40591c18dc17853e8537ec0f7700396775100998cd67291547d8749caaffe28",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/driver-config.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/driver-config.ts",
+      "sourceBlob": "f1a1f0b6a436fa0d583546fa530de59dbae8d48b",
+      "sourceSha256": "80c093314b90b3c3dbf23e4d6d222acf391958c8706bed0f97afb2ca28c0e03f",
+      "targetSha256": "f5c07ba6f37abc24c0d489c3b152e1f7aa685d182fae34cec8c9f3f930fc622e",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "80c093314b90b3c3dbf23e4d6d222acf391958c8706bed0f97afb2ca28c0e03f",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/driver-factory.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/driver-factory.ts",
+      "sourceBlob": "d073512dba92be041aa71d7433645758ace48932",
+      "sourceSha256": "edeac093c4b0d14c5a33a22eb1d23fa84ab7de8e61c875d856acdd73a4bab6b7",
+      "targetSha256": "9b8a9ef505226615f34135b2ffd8d7e047047bc50d9e72c1e7450ebc99abbb14",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "edeac093c4b0d14c5a33a22eb1d23fa84ab7de8e61c875d856acdd73a4bab6b7",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/driver-interactions.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/driver-interactions.ts",
+      "sourceBlob": "c4ab55ca5d426320d1fc5c3491ceb4e908c2cbe2",
+      "sourceSha256": "9bb42ad734119d5fed1a1e5431934d894f9aed5ccb87b7bcb369209e19e862f7",
+      "targetSha256": "65f44861612f78bbbefa114c4e44e03232cfc150a287bb90ff25919dc903b048",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "472858f1271423f8eae7d2428738d029e6373cea85e9b2ad525931a3c6eb21c8",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/driver-output.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/driver-output.ts",
+      "sourceBlob": "9c1a88978f9c8bfb4ba2922e8c20d4a4123e2d47",
+      "sourceSha256": "e8ec63161107f50392f5a722a8b5ee3a14fde47830e8a5fef77ae0ab1cd734fc",
+      "targetSha256": "03163c2c7ab96e2b756efd77c1716fcc670c94078e0ac471a2d887b3bb6bc124",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "49dd67d04665a060eebeed870df9045ee9e1e8bcb9826158d386dc85cbd18dda",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/driver-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/driver-session.ts",
+      "sourceBlob": "520fcb68152dd54155f8241879d97ffd873fd2c1",
+      "sourceSha256": "4af3ee54e2f6001558be68f9fdb62bfd14aab199c576ac1a31d1753debbfe349",
+      "targetSha256": "a8086d2aa31fb0b20f66a579805cb172f92584dc1bf0cf5d03e4705460c8cab0",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "1b99ce6af0b9763069d0f2fa186279b6e840b1286b32f4841d4909d8a2706a7c",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/events.ts",
+      "targetPath": "src/features/provider-session-implementation/contracts/codex-events.ts",
+      "sourceBlob": "52c7dca32ecb7a86927e728811b3c608cf0e547d",
+      "sourceSha256": "118c30b61ea1d2c8863c8236d709e966dc9a24fe4553d2b475bc6ce60d1f236e",
+      "targetSha256": "118c30b61ea1d2c8863c8236d709e966dc9a24fe4553d2b475bc6ce60d1f236e",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "118c30b61ea1d2c8863c8236d709e966dc9a24fe4553d2b475bc6ce60d1f236e",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/exec-jsonl.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/exec-jsonl.ts",
+      "sourceBlob": "67d2bb30ccc25ac6c0ca9fc065bd58a1ca5c4047",
+      "sourceSha256": "3fc922f104d0218dc565705cbada951fb16c5f0e207e9448e8992051fb7b186c",
+      "targetSha256": "7c702222f524d4209bee3dc4e98e36eaafdbb9f9577f1f08645b1f640ab941c9",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "e99a20fedba95743054e3d88e398b1a08cecc22dc5c3e1378494806820e15218",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/index.ts",
+      "targetPath": "src/codex.ts",
+      "sourceBlob": "14cd990297a4e880644e7fa46640cc1d0ea33617",
+      "sourceSha256": "3214bce923395c1fc2163b15288af666556c444fe90fcedb15dc636da1c1d2e2",
+      "targetSha256": "3c1e2d4cb82257e40d8d51f012cae87f385f89488183dbf416e9285490347706",
+      "adaptation": "native-curated-facade-relocation",
+      "materializationAdaptation": "native-curated-facade-relocation",
+      "initialQualifiedWorkspaceSha256": "3c1e2d4cb82257e40d8d51f012cae87f385f89488183dbf416e9285490347706",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/notification-items.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/notification-items.ts",
+      "sourceBlob": "504221018a547de2ee9eb1dfab222b93d3e2a64a",
+      "sourceSha256": "e2752c31412155f9ba6022f9ed1f8156795452a5bf3f3f1d337acbb787a007d4",
+      "targetSha256": "804d67dbef79cc0f8bb41ded237499ca09cb4e6f422bae65d1e81f1f45e8c10c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "9509e234354b622a18eeecd14ffc941f54e6b0ef71d2994610011464bc6cdeb3",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/notification-mapper.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/notification-mapper.ts",
+      "sourceBlob": "6d5855c9aefa6c9196c58759237e0ea41882c3ac",
+      "sourceSha256": "90bad3980b2d798bababf2961f55f2c9a2ce82ba5d0fb7f7424c20c803e32d7a",
+      "targetSha256": "3f16f36d32f66daffa23197dadbf2fe7afee1f33220960812bff9e84306e0935",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "d5916654064ef365f663dd25368986228d1af6918f76438e4373d8033d8af1e1",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/rpc-client.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/rpc-client.ts",
+      "sourceBlob": "d2a8c08702d36034c651ab84ad2917d711d2dad6",
+      "sourceSha256": "816cb32f80c599184a29ac162054d1ff503b76f7905296ac186a745bf7d7ecf5",
+      "targetSha256": "a82fede724229d0a44bcd88217e7a5f736f6a621403dd37f79c1027e949afd0c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "78edc72f9bb06d5806e08b5adc94baea8f75fb5e2eecafa32f990fda1a9b5725",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/rpc-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/rpc-types.ts",
+      "sourceBlob": "9b7b840316928a9f37cf9d060009b33265a140ea",
+      "sourceSha256": "32f871680e94357850056202caab1c7a4e8dfd11cf7b29671f80320cb8f0575c",
+      "targetSha256": "51e62fe4a6ddd9e8a91de07ecf2c344491dbbfcd765214cb7926d05a06fd3304",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "51e62fe4a6ddd9e8a91de07ecf2c344491dbbfcd765214cb7926d05a06fd3304",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/session-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/session-types.ts",
+      "sourceBlob": "0265bec2b4a688509f670e57de241f90fb78ab76",
+      "sourceSha256": "41038bb6195e5b7319249ae0c1a51290057a2cc1801eb8f0a7cbb8e4a70e93e2",
+      "targetSha256": "244b21be8eb79d707336bf903c2aeda7753d320d51decbbaf9d6af0bf92c2a56",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "6c1622b5e8ac94e516a10577ba1875943daf926dd92b692b02bffe46204346de",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/thread-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/thread-session.ts",
+      "sourceBlob": "e5c5bfb796132c54c49b37342adfe16a4f1cd2f7",
+      "sourceSha256": "a47d6dbf830b089204db3137387b82683e5b7693208bc693de1c20b10f669638",
+      "targetSha256": "93b9ba3cf8d8f0f4f47aad8450f1574b636bc5397df8de1bf205c2480205a549",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "15c5337ddb37293ae302d4b02ace7abb5c1dd6e6e93266d2f1e619d753680c3b",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/codex-protocol/wire-frames.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/codex-protocol/wire-frames.ts",
+      "sourceBlob": "90b1c51135a2ed9605bbd9b800f0bda837f20cff",
+      "sourceSha256": "158ac1d837a21c1e483fa4b4801d518dc379a57a372ac2394a01fcea44f92a38",
+      "targetSha256": "e11b3ab42b60f4be932de9358c695c75cf8bfaeb1ed5ff255674f522ea5ecf01",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "158ac1d837a21c1e483fa4b4801d518dc379a57a372ac2394a01fcea44f92a38",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/OpenCodeBoundedHttpResponse.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/OpenCodeBoundedHttpResponse.ts",
+      "sourceBlob": "849035cba36ba476a6f42c44c5b276d2878c1744",
+      "sourceSha256": "c42624f50cb3a30537f9b345af3d74bae49ee158fd30b67838244ca0d43d643e",
+      "targetSha256": "d87df768ad7b851ba1386f04758037e741c370fb1a3dc2736bc9339285b6fd90",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "c42624f50cb3a30537f9b345af3d74bae49ee158fd30b67838244ca0d43d643e",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/OpenCodeClientFactory.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/OpenCodeClientFactory.ts",
+      "sourceBlob": "031f91f88613819c502823460638513d2ab29f78",
+      "sourceSha256": "5c3f586ec6f3dc9e85279688e3293f467d1c395fb41942ef020ed994ed03eb0e",
+      "targetSha256": "5c3f586ec6f3dc9e85279688e3293f467d1c395fb41942ef020ed994ed03eb0e",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "5c3f586ec6f3dc9e85279688e3293f467d1c395fb41942ef020ed994ed03eb0e",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/OpenCodeClientRequestContext.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/OpenCodeClientRequestContext.ts",
+      "sourceBlob": "7e1b9376914f937c739da620bf7bd0c47763dabc",
+      "sourceSha256": "8bd99540d8f05bd0b62e5cf978431f85eb08a09f448d416b468198e7886a3a0d",
+      "targetSha256": "8bd99540d8f05bd0b62e5cf978431f85eb08a09f448d416b468198e7886a3a0d",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "8bd99540d8f05bd0b62e5cf978431f85eb08a09f448d416b468198e7886a3a0d",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/OpenCodeMessageIds.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/OpenCodeMessageIds.ts",
+      "sourceBlob": "fcbbf02d6b704aa6f8df065c14c71417e183fa85",
+      "sourceSha256": "e324a7e86fc02198f8a4d86eebbfef5a7e4cee92a7faca57f9b84bc2db4dafc5",
+      "targetSha256": "9105f9acc2bdf37bb9d68cff0c674179675aa2efbc24f0fa8ded7173a54c7bc2",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "e324a7e86fc02198f8a4d86eebbfef5a7e4cee92a7faca57f9b84bc2db4dafc5",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/OpenCodeSseEventStream.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/OpenCodeSseEventStream.ts",
+      "sourceBlob": "038547b446009af5cfd3d2cf08db60eb94c5b492",
+      "sourceSha256": "2b1e8a8bc202b633242701d62030ab1fcedfd357629b7ebee7b0f645ab064fb8",
+      "targetSha256": "db25ac64a2e132c2ed266b089cb8739a3af39f58d7f5854e1373f4db47000d09",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-and-strict-optional-type-adaptation",
+      "initialQualifiedWorkspaceSha256": "791124a05c0cb590cbf0a27733dd90d6111ceb04d93cfa6151c740ddca620b30",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/README.md",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/README.md",
+      "sourceBlob": "37d2e98352253a6bbabfb2dee12a5285d1cfb06e",
+      "sourceSha256": "7c4426190e2658eb12f58bab42edf421aa87d4c937ce140b1fb506d6bf26154a",
+      "targetSha256": "7c4426190e2658eb12f58bab42edf421aa87d4c937ce140b1fb506d6bf26154a",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/bound-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/bound-session.ts",
+      "sourceBlob": "21d7c1085fe787cc69782b344f445e96f8b35b48",
+      "sourceSha256": "fdf20c06dca75d4b46e013dc9b97f55dbf53b013e5f855aa5e68f07224433846",
+      "targetSha256": "2c82e7e1b47f58eaf2807807e66634e468279a4de6fa410e8d20359097406f85",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "fdf20c06dca75d4b46e013dc9b97f55dbf53b013e5f855aa5e68f07224433846",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/canonical-message-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/canonical-message-types.ts",
+      "sourceBlob": "5b71b45e75751a8e1c39135f98f9397695e093df",
+      "sourceSha256": "de68dc0b8302e425fcd9d419228166422aa5538dca249f24a2190641133bca7a",
+      "targetSha256": "de68dc0b8302e425fcd9d419228166422aa5538dca249f24a2190641133bca7a",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "de68dc0b8302e425fcd9d419228166422aa5538dca249f24a2190641133bca7a",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/catalog-operations.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/catalog-operations.ts",
+      "sourceBlob": "c23b6d4c4094053fc2b81d069fa1c3b29391740b",
+      "sourceSha256": "7e2a55e57da79e87db03fc32a1423229c8b456fef4b829f6724b411109daea63",
+      "targetSha256": "c531cc8a95e13c5ddd90e12fbbc1565fc54f688a0084a6f386d54003ad24c169",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "7e2a55e57da79e87db03fc32a1423229c8b456fef4b829f6724b411109daea63",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/client-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/client-types.ts",
+      "sourceBlob": "b4f75da9596e8a926229e26d072bd5347e3f7979",
+      "sourceSha256": "d5222759eb9cc59f477a20b9410c1b73fad6354b140e2a3b9171078b52474f79",
+      "targetSha256": "65c5d8680e787437d54ef071f3254bd0e2f298e06d06bdf2a89f24141cd43ef5",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "d5222759eb9cc59f477a20b9410c1b73fad6354b140e2a3b9171078b52474f79",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/driver-protocol.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/driver-protocol.ts",
+      "sourceBlob": "5e6a4a3554054a76d641aed5d0d26358eb8c2277",
+      "sourceSha256": "53bff69735f274af4b5825176d004d0c62238dcafe605080a400b4d34dcae682",
+      "targetSha256": "64f8832fadfad734bd7ccfad6365267b67ffdc9a01a8058abd8646ee99d92f86",
+      "adaptation": "relative-module-paths-and-strict-optional-type-adaptation",
+      "materializationAdaptation": "relative-module-paths-and-strict-optional-type-adaptation",
+      "initialQualifiedWorkspaceSha256": "64f8832fadfad734bd7ccfad6365267b67ffdc9a01a8058abd8646ee99d92f86",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/driver-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts",
+      "sourceBlob": "32e990b4f3dcd74416d337171667ce5cd851c903",
+      "sourceSha256": "85739ce0e2283ec3232f1096b9795ed44e9b0f000a36d4a5bad762b78223c8aa",
+      "targetSha256": "43cd05135a33e53443036f9edb473811e960860891e06efe63d12d03fe16d128",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "3c9180b559a7a0bdc8fdc1c8f02b570dc8b85985b073a1e9d8af77bc189f54bb",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/extraction-manifest.json",
+      "targetPath": "provenance/opencode-protocol-extraction.json",
+      "sourceBlob": "d5fd7342056651ce1d5eddf2b090f199f9577b3a",
+      "sourceSha256": "446bb212eb274debae43b88daeddca9706f4aebc615e2e25d1ca5e203661ec1c",
+      "targetSha256": "446bb212eb274debae43b88daeddca9706f4aebc615e2e25d1ca5e203661ec1c",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/http-request.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/http-request.ts",
+      "sourceBlob": "f0021a01554299b16f80b2368c5ecae1e131fbf1",
+      "sourceSha256": "1f24d66567cbd78a8e9ff00ec3b28ad8b9ce580a7149dcb09427f858ebad1662",
+      "targetSha256": "322f0d8dd2b606ade6d29ea8073744496bb4d8983ff3e61f16298248e392f58a",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "1f24d66567cbd78a8e9ff00ec3b28ad8b9ce580a7149dcb09427f858ebad1662",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/index.ts",
+      "targetPath": "src/opencode.ts",
+      "sourceBlob": "68a948e55281ca1d8567aef8e68fd2d0a73d5d19",
+      "sourceSha256": "b6b5bcad21219fc7e1320b74b215f5e0a40b76343378aa4783e399a1b495745a",
+      "targetSha256": "2471aeaa8d2603f72a94fa91e9fae655309a23cb475458465474a03a5f6b1a05",
+      "adaptation": "native-curated-facade-relocation",
+      "materializationAdaptation": "native-curated-facade-relocation",
+      "initialQualifiedWorkspaceSha256": "2471aeaa8d2603f72a94fa91e9fae655309a23cb475458465474a03a5f6b1a05",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/parity.md",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/parity.md",
+      "sourceBlob": "1ec9931a6c974119289b8e568eef77d99853dee3",
+      "sourceSha256": "46c47db45bb81b41f9a50beeefe18f9cf4b8b6f5c637320333ef1f28b87cc9fa",
+      "targetSha256": "46c47db45bb81b41f9a50beeefe18f9cf4b8b6f5c637320333ef1f28b87cc9fa",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/query-path.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/query-path.ts",
+      "sourceBlob": "952be2176c31b50f48f0e20d195a118de4cae0bd",
+      "sourceSha256": "52b69b46c77c6a9ea0d18dbd326e60e59dbcbc29d9250a049cbc74b22ab79ce3",
+      "targetSha256": "f3c7ab2fb281cb4b13368913af8ea33b416cb7a3775aaa215c7c984f5c3aa42d",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "52b69b46c77c6a9ea0d18dbd326e60e59dbcbc29d9250a049cbc74b22ab79ce3",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/request-limits.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/request-limits.ts",
+      "sourceBlob": "ca688972a1e43ddc16f76233231c1d257ef31660",
+      "sourceSha256": "591f69ad3999cef3b022e9a2829b8d01bbda96fce73ce92e6fe7976bcf6ceab0",
+      "targetSha256": "591f69ad3999cef3b022e9a2829b8d01bbda96fce73ce92e6fe7976bcf6ceab0",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "591f69ad3999cef3b022e9a2829b8d01bbda96fce73ce92e6fe7976bcf6ceab0",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/session-binding-codec.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/session-binding-codec.ts",
+      "sourceBlob": "24a48d00ff2181b5fa6add30f9c881e89adeb432",
+      "sourceSha256": "ed3adf51da8d5eca337954dfca3f3d15bce29e2d8ca6f45559b030ccdd1753ec",
+      "targetSha256": "8a566e7ff5dd051662e2b824eb3612fb17555284d72b8d5e29c1d274dcf5fa39",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "ed3adf51da8d5eca337954dfca3f3d15bce29e2d8ca6f45559b030ccdd1753ec",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/session-binding-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/session-binding-types.ts",
+      "sourceBlob": "fd427845c58858fb66c16d6de8343ff0439b4416",
+      "sourceSha256": "87180262a122cbb9716d95f5b2ee0a42be9cb52f6017f9f2a0b46218da33782e",
+      "targetSha256": "87180262a122cbb9716d95f5b2ee0a42be9cb52f6017f9f2a0b46218da33782e",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "87180262a122cbb9716d95f5b2ee0a42be9cb52f6017f9f2a0b46218da33782e",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/session-bindings.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/session-bindings.ts",
+      "sourceBlob": "b2174419013a510c434f7bd4d7a5a191709aa6f1",
+      "sourceSha256": "7c8f1924c6ef78dafb322e64f3574ba0dafdcdc63d101c8aaf2dca415116e0b5",
+      "targetSha256": "c852a70516f2b271cfbfb4856f7ce0a1666bc2f066dd07da3c4d1dc7d0ce75a9",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "7c8f1924c6ef78dafb322e64f3574ba0dafdcdc63d101c8aaf2dca415116e0b5",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/session-operations.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/session-operations.ts",
+      "sourceBlob": "2c4180f15d8c193653aebd6ae27af7fa08db47e3",
+      "sourceSha256": "0d0f143b4c4033fee2bceb9125dca83067ac4cccba2cba0dda98175cda7dc3fe",
+      "targetSha256": "817e7fe39d48f2f3c2143f3009976d9d441a525c7ed85c4e6614f435833a3450",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "0d0f143b4c4033fee2bceb9125dca83067ac4cccba2cba0dda98175cda7dc3fe",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/terminal-proof.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/terminal-proof.ts",
+      "sourceBlob": "697e1a6ba3cedae8e86b11bc65029fe95ad76e02",
+      "sourceSha256": "136ced2ed00321bf31d96adf7bb64d072fb1c1e84d971f779b24cc0722989de4",
+      "targetSha256": "baf9d2ba767087b9ba480657f3e82ad551044197056849267c28972780685a6c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "136ced2ed00321bf31d96adf7bb64d072fb1c1e84d971f779b24cc0722989de4",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/types.ts",
+      "sourceBlob": "f922713213bf7912031f552531f9aa33fc4f5446",
+      "sourceSha256": "ab81c81a34014caa617b85aac3ff8511042b7a7d68cdd4cf466fea30207ac673",
+      "targetSha256": "360b999251079dc4e3d3757a59cad99cc12ff20be08979d4834a20efe92fa89c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "ab81c81a34014caa617b85aac3ff8511042b7a7d68cdd4cf466fea30207ac673",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-backend.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-backend.ts",
+      "sourceBlob": "9b3d8c33b4e945a061e42228fd69942f34fb3fcd",
+      "sourceSha256": "0f4302e0a0a639ca96ef068f4409067de9b49d5c3d9ba60914e7276ac2b61dee",
+      "targetSha256": "7c24c1b9e9025e5e103dee1656499ef3e4fac8094dd195f2d6b783f590b4a248",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "0f4302e0a0a639ca96ef068f4409067de9b49d5c3d9ba60914e7276ac2b61dee",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-config.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-config.ts",
+      "sourceBlob": "ba67e83220c77166312df61baeaa0457e38c3bf2",
+      "sourceSha256": "0f3d1d4235b91380755a61696bf518a0a7da9f7f105c7bd190185a19460f134d",
+      "targetSha256": "0e7c67ba5b487e4c5d6f1cd5334767d4e9662faa29fd4c8212ee04109075c936",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "0f3d1d4235b91380755a61696bf518a0a7da9f7f105c7bd190185a19460f134d",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-cut.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-cut.ts",
+      "sourceBlob": "5f528ea15b6b2f3d0c7df134f2c74188b061e47b",
+      "sourceSha256": "3aff654d20944e53963acf178acd4413a070e4caff7f16eed3a3991df1bd76f9",
+      "targetSha256": "bc836dab48ba580fd6c67483068efa4644982109c7966b858f0710674309d1e6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "3aff654d20944e53963acf178acd4413a070e4caff7f16eed3a3991df1bd76f9",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-factory.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-factory.ts",
+      "sourceBlob": "5ca9a97225890a79f1b2c2f750c4fead614c6b53",
+      "sourceSha256": "d3cffe7e2a07c13ba2795efd6917eebd509921609aacb154e6084752753cbb84",
+      "targetSha256": "4450d3efd98bad248d2a79e3c3d168ba18a68397622acb59c1110b454e108f1b",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "d3cffe7e2a07c13ba2795efd6917eebd509921609aacb154e6084752753cbb84",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-output.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-output.ts",
+      "sourceBlob": "5e9da4ca715dc4131872b1576beb01d8cf2b26a5",
+      "sourceSha256": "d483fdbdcac5f952e63d17947379b859765e43161a44f2843c8491f5f6cadd42",
+      "targetSha256": "d4fe580e1114590f6c5a84a4678d6ad043f0c7f1b67fa0bc382c1a3a3d130f9c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "d483fdbdcac5f952e63d17947379b859765e43161a44f2843c8491f5f6cadd42",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-driver-wire.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-driver-wire.ts",
+      "sourceBlob": "e950728f94ee1ac934c74d8e9e164a7f28fc694f",
+      "sourceSha256": "6e441bcb2609b6fe1793966dc5e9dc6132eff4f840adb835bc933da082a875d6",
+      "targetSha256": "f5c9f3338c2fae67d3295327402e5f606a9a805805e400c89200cb97e35c0bd6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "6e441bcb2609b6fe1793966dc5e9dc6132eff4f840adb835bc933da082a875d6",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-native-read.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-native-read.ts",
+      "sourceBlob": "7504efd97c9076f3e687db3673d11adc2b5c12a7",
+      "sourceSha256": "14a7917f49aebd28fa7ec149fe8d9212ec5cc2c326d40e41c6a5392a172865af",
+      "targetSha256": "4f948b04bc2364a378a8ccd7187adaf8ac938bdd4f1d0e776dd9ad78f2ac47a9",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "14a7917f49aebd28fa7ec149fe8d9212ec5cc2c326d40e41c6a5392a172865af",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-permission-normalizer.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-permission-normalizer.ts",
+      "sourceBlob": "305036fb70a3547d669567ab026ecbce44beb309",
+      "sourceSha256": "9ac399ec69401c60c17825ef169ead6ca778ac30658ad216da71499e17921084",
+      "targetSha256": "43c6238d2872eae458b54b79088f66a8d1a95e4addf6e091a7daf813e701a16e",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "9ac399ec69401c60c17825ef169ead6ca778ac30658ad216da71499e17921084",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v1-transcript-projector.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v1-transcript-projector.ts",
+      "sourceBlob": "486fb0fb07fa60a053edec3a6d90d37623641450",
+      "sourceSha256": "20ab7af68e34925edadf1a111c45ab551eab40c688c88fe71ff91a4691818eab",
+      "targetSha256": "29e2b75f01161f7a39fc4ebfbbe6e46dab0ba78ce404695d7dfcae31e087ca18",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "20ab7af68e34925edadf1a111c45ab551eab40c688c88fe71ff91a4691818eab",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-assistant-projection.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-assistant-projection.ts",
+      "sourceBlob": "5dab361b74ce2b5b177038ef6dad0c894ccc80b9",
+      "sourceSha256": "4cbb7d27123419c6a3538a68926a61c316fb7369264e8f88e933764917907476",
+      "targetSha256": "63d45f84c0a027fd1015f21c136e3c50bf796b0f6ece934639296a717292c7bf",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "4cbb7d27123419c6a3538a68926a61c316fb7369264e8f88e933764917907476",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-bounded-await.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-bounded-await.ts",
+      "sourceBlob": "175b3e19ee6056d1d9a262ef2aa1fbe471a6d6b9",
+      "sourceSha256": "ac7a1e6fbf31c1937f23137e0854fa328dff24948f49924adc01f24d82c25ab9",
+      "targetSha256": "8b036594d2d2baa98beaf744253ab3f26ef15bdc5ccd3d12c36f681501d3ffbe",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "ac7a1e6fbf31c1937f23137e0854fa328dff24948f49924adc01f24d82c25ab9",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-canonical-json.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-canonical-json.ts",
+      "sourceBlob": "94258e0fec77f4ed149bdc2325f84bc280207105",
+      "sourceSha256": "93e145e6e82405464aa1770717d18af206716fbd23835038220837eb46e1113a",
+      "targetSha256": "63488cd178fa358eaedd03ae4f83112191ccfb3854e89f0533bc617feb8ce9ab",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "93e145e6e82405464aa1770717d18af206716fbd23835038220837eb46e1113a",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-control-transport.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts",
+      "sourceBlob": "dbbbe2079c7b8898d20577c1336d1d77a2ae56ec",
+      "sourceSha256": "ab4f631cc1f66eb00f0d94e78ab602e9ded4ac9a2c35cc3f1ba0a2a3aacbd89f",
+      "targetSha256": "58d22f5cc8b555670783c6fe7e8fa3c48b06573934e59b15a346bd62e12ab7e2",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "ab4f631cc1f66eb00f0d94e78ab602e9ded4ac9a2c35cc3f1ba0a2a3aacbd89f",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-cut-codecs.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-cut-codecs.ts",
+      "sourceBlob": "ffef4f2fe5dc8c86404680ae91fc263fee50e511",
+      "sourceSha256": "217dfd29b370669e932c47e804b25533c2a1040e18a84b76c65736d55ce80f0e",
+      "targetSha256": "dd96a53ee2dc82e64049b94bfb2ecd57806d0a49358bd3746d83497e50cd1875",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "217dfd29b370669e932c47e804b25533c2a1040e18a84b76c65736d55ce80f0e",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-backend.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-backend.ts",
+      "sourceBlob": "5aa2c4bbf332999c39a8a0e5830b9437864be602",
+      "sourceSha256": "9a82ab8f349ad1eafbaddfa07c3184e23404c8896b2804061eae588cbf550e75",
+      "targetSha256": "039f81275f10ca2daaed3849821f85a5a39d1892ec2bf9dbf92ef8c2fb60961a",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "9a82ab8f349ad1eafbaddfa07c3184e23404c8896b2804061eae588cbf550e75",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-config.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-config.ts",
+      "sourceBlob": "2289f11a4b0a09ca897b00e439d1a66a8c0f56b2",
+      "sourceSha256": "c8caaa05570bf7a46bdeffb4ba235cb54320d731028a64306b2062a9eaeea24a",
+      "targetSha256": "8367d65c73221d211de190bffd712c11747b169233963e46e0a14e465dadf44d",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "c8caaa05570bf7a46bdeffb4ba235cb54320d731028a64306b2062a9eaeea24a",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-factory.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-factory.ts",
+      "sourceBlob": "82d1b07accd35f244011f7bc3e2bc7b22a28251f",
+      "sourceSha256": "eae8fac353b9943644823e10ba1ca8622093df758943a1622e9b3b1fb790e3a6",
+      "targetSha256": "8bfd2753746566a2bffe0fbcf72632df634f7526510d589195e76534468a82ee",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "eae8fac353b9943644823e10ba1ca8622093df758943a1622e9b3b1fb790e3a6",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-native.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-native.ts",
+      "sourceBlob": "d207e25097edb86201f596c57f8927e7ba78215e",
+      "sourceSha256": "8b30a6ab114fa681ba7701555975379386330a60503fdb1aed6dc5dec75451a0",
+      "targetSha256": "babbbcdee405e4db66427cb397523dec66af1e6d235a69a6e369e3fb2d485b7b",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "8b30a6ab114fa681ba7701555975379386330a60503fdb1aed6dc5dec75451a0",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-output.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-output.ts",
+      "sourceBlob": "63018e160c5b830c50e99713af565c7eb9399df4",
+      "sourceSha256": "a5b02d6ad7df05347b4f3f29cf403c56594c2a33a04baf5ed22cdadf99796ec7",
+      "targetSha256": "1ab3a1f9941928bca0ece800521970e6da8b2371199cb8978f9ec5657c8644f2",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "a5b02d6ad7df05347b4f3f29cf403c56594c2a33a04baf5ed22cdadf99796ec7",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-driver-session.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-session.ts",
+      "sourceBlob": "632cc4487fb6d0d5ed9b0950f43e6c1dce494fea",
+      "sourceSha256": "5af66a82bd2019104ab9c984f0d5708304b4ab701cdc63324be60f6d38cfe920",
+      "targetSha256": "5af66a82bd2019104ab9c984f0d5708304b4ab701cdc63324be60f6d38cfe920",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "5af66a82bd2019104ab9c984f0d5708304b4ab701cdc63324be60f6d38cfe920",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-execution-transport.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts",
+      "sourceBlob": "2ea3b150bb9d84cb2dab0315235059539c159977",
+      "sourceSha256": "5851f7ceb79a81c364607f94cb8cca8e5670768729c14bf90120a2cd61a317e9",
+      "targetSha256": "57b21336a577b01e5231e9ee7ddd83c42a1a1f546af0839defc682011aeb4cb1",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-and-strict-optional-type-adaptation",
+      "initialQualifiedWorkspaceSha256": "9d5b9fce8f3d6251a0682c45ed6b20d2e15c3f73ab7ee99d700ed837e8f59115",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-failures.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-failures.ts",
+      "sourceBlob": "3659bdce7abed3d477b0c3b4f4a355b35ae4e57a",
+      "sourceSha256": "6c779f4964cbf1b8b1741a1ab2c3672c33df302826323414fdf6b0cb38c4ce91",
+      "targetSha256": "d3e8c716706af47870f23f2ef58773edf5c919e58a68536907b513d2db3563ef",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "6c779f4964cbf1b8b1741a1ab2c3672c33df302826323414fdf6b0cb38c4ce91",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-json-budget.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-json-budget.ts",
+      "sourceBlob": "011f8ba3257a067a9842e3cecbda9122bd440701",
+      "sourceSha256": "343d3a2c0492bb03b73cfd8e1870cad28a78fba15a5994bba15d4ce8c2f6a2d0",
+      "targetSha256": "dc74f216c095749efd93b71ac5902cf6cfd317959e4c5541fbac67280e613585",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "343d3a2c0492bb03b73cfd8e1870cad28a78fba15a5994bba15d4ce8c2f6a2d0",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-native-cut.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+      "sourceBlob": "fdea6e3ee317827c1c90a1a141038107eaf381b4",
+      "sourceSha256": "79006531c4db208c00186209bb5f72107208b99b115b620fd60ff3bf12ec4a5f",
+      "targetSha256": "d930e52342ef19ac55dc056e043b115ed5ebf2e66ef84ddd41ef7e055350c5ec",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "79006531c4db208c00186209bb5f72107208b99b115b620fd60ff3bf12ec4a5f",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-projection-helpers.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-projection-helpers.ts",
+      "sourceBlob": "2074c65a07496447faf12e14d0b5603b98ff56fd",
+      "sourceSha256": "38a4a88f8750de03e537f3fb421e4b8c864c43ae4136dea108bfc69e6c182168",
+      "targetSha256": "8b8578d00e1afd356cd3d9a022c0250014639c3c9d82be474869a2f7749a58fb",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "38a4a88f8750de03e537f3fb421e4b8c864c43ae4136dea108bfc69e6c182168",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-projection-types.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-projection-types.ts",
+      "sourceBlob": "bcba9cc0956c5594c7d6eaa1d04409ec65afb61b",
+      "sourceSha256": "313cbe736e8059e822f1e083284d7df418d90929780a357377129cd82c44c9cb",
+      "targetSha256": "313cbe736e8059e822f1e083284d7df418d90929780a357377129cd82c44c9cb",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "313cbe736e8059e822f1e083284d7df418d90929780a357377129cd82c44c9cb",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-session-control.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-session-control.ts",
+      "sourceBlob": "19ac3484072ce08b40c8c236f5f5c71563008af9",
+      "sourceSha256": "4d4eb1407f64f97499dfca8f7459b487b82974cf4321e3aa978610d1c13124fc",
+      "targetSha256": "4e4a9a5a7d9a0adb387264a86a05eaeafd293f7cc36cc25af38211accbeb4ce0",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-and-strict-optional-type-adaptation",
+      "initialQualifiedWorkspaceSha256": "1d4f547b5bafd3d2d5abf164cb98c1eecad9ca1890977a3703c8bfadcc3a369d",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/opencode-protocol/v2-turn-projection.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-turn-projection.ts",
+      "sourceBlob": "cc949de0b179f3ff76c57e47427736f9ffe55912",
+      "sourceSha256": "95a7fa262e9fbdbbbb147ad20440fbb62c7d762ca1259c50e04bd5c6c9ed3172",
+      "targetSha256": "fcf5e4cbeee9a8b28935263f09f049bc69644b13ca95fc02e0c79fa1a70f1741",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "95a7fa262e9fbdbbbb147ad20440fbb62c7d762ca1259c50e04bd5c6c9ed3172",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "src/features/provider-session-io/README.md",
+      "targetPath": "src/features/provider-session-implementation/adapters/provider-session-io/README.md",
+      "sourceBlob": "d3cd31ceeaa8fd8a6837a2f7f44082c6a9fc439e",
+      "sourceSha256": "6486c4a1f924b65819df08dea753b1c5331e9ef3d20644c252005bd85b4ac788",
+      "targetSha256": "6486c4a1f924b65819df08dea753b1c5331e9ef3d20644c252005bd85b4ac788",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/provider-session-io/extraction-manifest.json",
+      "targetPath": "provenance/provider-session-io-extraction.json",
+      "sourceBlob": "be3faa03f1a907a4ac48c7da37b790b0e35d06ad",
+      "sourceSha256": "92dae5fa33e4d1c08199c58a09c84db95b48cc296e8bd3bdd7d435248d63234d",
+      "targetSha256": "92dae5fa33e4d1c08199c58a09c84db95b48cc296e8bd3bdd7d435248d63234d",
+      "adaptation": "unchanged-relocation",
+      "materializationAdaptation": "unchanged-relocation"
+    },
+    {
+      "sourcePath": "src/features/provider-session-io/index.ts",
+      "targetPath": "src/features/provider-session-implementation/adapters/provider-session-io/io.ts",
+      "sourceBlob": "2d439fd6bdd1ed7442a8e7f4f7049219f686a003",
+      "sourceSha256": "453e2fd8ae33d00a85e46d5816518941bcd2417f47d0c709443a72def9a0f099",
+      "targetSha256": "220262032c00ce58ba2d52931b07f7b1ed727d034e5ef40f8895deafccfdab81",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "453e2fd8ae33d00a85e46d5816518941bcd2417f47d0c709443a72def9a0f099",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/claude-sdk/factory.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/claude-sdk/factory.test.ts",
+      "sourceBlob": "35df3c9e3a82a347637864db7c06eedde8e3d845",
+      "sourceSha256": "3dc6faae1a2348243a9b3bbe13b4c780528464dd496014376747036a7bce7ee7",
+      "targetSha256": "7dfe388600f05eee27d5623fd7a3fbb05f35eee4cbb03799354ff0e39a6e7392",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "0cee208f9ce6dcb5ebd2a031e533994e802f6d216f6ff472a902239a5d2bcc5a",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/claude-sdk/support.ts",
+      "targetPath": "tests/features/provider-session-implementation/claude-sdk/support.ts",
+      "sourceBlob": "df29db733e4ab56625693f831e90abe03ff6a824",
+      "sourceSha256": "20600e95c23c7c7586ee19ebe45c6cd083389a68f791ae04402c988b8ca8412c",
+      "targetSha256": "b8ca69b39fc6ff8a99d8939994296dfe0560084612a849553ee8653890c7eab6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "2cadbbcb8b910a09c6dfcc41b775663838c6da4f726ec2b7d9b57d69613311d4",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/claude-sdk/tool-binding.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/claude-sdk/tool-binding.test.ts",
+      "sourceBlob": "d4e312bb00a5efb266a1f06d8988c46516456954",
+      "sourceSha256": "3af042d5c65b49b5754fcfaa1d41bf7fc5f03fc124323bdf65246a86dd16dafe",
+      "targetSha256": "d3af0c3953482c47b6785a341715421230cec23a98d868be4578b0accb7ec5c8",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "055daf9a8a7041ab40da370d6b56b4a67152d36f8ee722a1ff660be632e6156f",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/app-server.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/app-server.test.ts",
+      "sourceBlob": "05f93161e7a17e86341e0af265bd7be15922443e",
+      "sourceSha256": "c16cc7a080e8a789e2c4892959a6bfbe17d1e52d8c105e220a026067b47e9cba",
+      "targetSha256": "5ce4743c5301901806b8e4b48603c121848668cf5c99aed738f505f07f135b2d",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "c231db7193a49331585d6f066738380052186048ad2763c012b6459d23f51ee6",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-checkpoint.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-checkpoint.test.ts",
+      "sourceBlob": "b041f33026bd1e361fadec75e21d7c3a5b109978",
+      "sourceSha256": "4b82acdc0f28ef3aa2f15adb5daab021aafc8906e88fd9406ce98b29996e0ce1",
+      "targetSha256": "20d08bd8ef73f3efa6d6e2765760240cc4018b66d12a64b1a53760f292e91486",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "4b82acdc0f28ef3aa2f15adb5daab021aafc8906e88fd9406ce98b29996e0ce1",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-factory.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-factory.test.ts",
+      "sourceBlob": "5719eef85c8816621805a9bc3826ae99b3802db4",
+      "sourceSha256": "b9b5360f08c4c1c39914309dd8a78bb62fee398e586379b31f6768b8146e24c5",
+      "targetSha256": "07ff01a4042cecf4163a168123fa564ef5750fa723b62ebf2e443981ac97d5ad",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "638840c6ceed4f297b2bdb6e53b8d1669877d7bcf0dc9f9e07bc48e010ad940d",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-limits.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-limits.test.ts",
+      "sourceBlob": "00f59a6ae5244e9985dcc25ace3e84ab44dbdee5",
+      "sourceSha256": "f978e9206905004178aba3907e6cf172bbf0a7421a9be9ce2872fd6eeb7906bf",
+      "targetSha256": "2a30bdb5aee3ccda79c28f2ec450eafca51c3fb2a05ca9b17f79bba57d769275",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-and-delayed-thread-regression",
+      "initialQualifiedWorkspaceSha256": "719f8f4099942eaed9354b0805da392d023f2d51aa2707e3c21c9ad3870880c9",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-permissions.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-permissions.test.ts",
+      "sourceBlob": "28d3387ac12f3c82b1e3fa8d618388f4ee78c11b",
+      "sourceSha256": "8438bf4189ed6c87775f0122812926d7ea65aca23efb9a968a1c5e8e96466c2f",
+      "targetSha256": "b8573bf6e7fdfc64a6af3b74dbf3575315f08c3e1d6cc97b174b7f6fc0738e42",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "bbf83d954b3ca474b7bf3630bb803ba844ed8515a0f4309e41062d065d56f535",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-session.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-session.test.ts",
+      "sourceBlob": "26a706ef7ee82e512933b344e6bc2abea9ae7322",
+      "sourceSha256": "33eabccd4d14458e4bff6b1e3cfbc128b9631289b9a7b67e7d1499b0c98af5a5",
+      "targetSha256": "10baddf6f8b6e1dd05ab21e743515bc41890d301ee83def05f341165b8573bab",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "33eabccd4d14458e4bff6b1e3cfbc128b9631289b9a7b67e7d1499b0c98af5a5",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/driver-support.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/driver-support.ts",
+      "sourceBlob": "4a7af25a1f9fd86d833d5d36be9e23e313e2a9cf",
+      "sourceSha256": "fb3bbec6da52a1060b36f4938de65ee65e10e522b7d2ec86f205a9f07872e9fc",
+      "targetSha256": "9eb6e20a7df5ccfc254ccef16bb761b039a5d52d97f5bf3221bcc1e9d98622d7",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "15de874de4228aae4f5a57e7101aeced03b8887b2861f8b621f249bde2cd6099",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/framing.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/framing.test.ts",
+      "sourceBlob": "d23f799ae87a78499c07bf2f11be71d862f77326",
+      "sourceSha256": "02adf5d9dd255dafd3a86c5b7c8a642416ca1b043e2c46903d915ff2cb5164d4",
+      "targetSha256": "11f7fbd9b92d01b257a5b40266105079703c4fb88c6eaee209b813a3154b2866",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "a0cc88556451b102bc54f69afb1542a7bad1035a493fea15e37b6cf11cc85e4b",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/protocol.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/protocol.test.ts",
+      "sourceBlob": "cbb7d234669987a89b35f3adc221bed337e96a42",
+      "sourceSha256": "28f9e5c0588bdb45ee885e764656c62386a8fd7958cdb24b90c1653c2789e24e",
+      "targetSha256": "732001f058d6710a332ccefd45710280b3661c223046f4955cafd67ee2c6d927",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "aa553c3f9649fbc7ba701adad1a02daa1d6fccb9b908300a850168b33d42c438",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/codex-protocol/subprocess-fixture.ts",
+      "targetPath": "tests/features/provider-session-implementation/codex-protocol/subprocess-fixture.ts",
+      "sourceBlob": "423284b34cc3c6b7dcee9f00cff0cd3a8c0026e3",
+      "sourceSha256": "8b38156165228abaa781eb2cfbe9021a72b3eb5ac2008522c485fbee5b5c72f1",
+      "targetSha256": "c2f846702a5c19251ed1a95c796aa31cadaefc99463a4a110eec5ca689dfaebb",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "df771d937ed666fc9a70fad94f7e41123f794f469aeec5f165fc7a8ae266a28c",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/protocol.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/protocol.test.ts",
+      "sourceBlob": "38dd192be7fdde5199cafefed408acbfcb280b9a",
+      "sourceSha256": "03c7f9686299a5b0b901b6a128358d60ce3a385b6c0775463f8fc2426a860595",
+      "targetSha256": "59c1eeea18328ffa62dd0ec874b707cbff57403fe733d2bdf9908e5920cd25d8",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "51dddb6159539c211ce368d7c3598581de30753344677d3cf9e0a4cfc32dc3a3",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/session-bindings.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/session-bindings.test.ts",
+      "sourceBlob": "f81f9c050b469b970c832203948384b430409700",
+      "sourceSha256": "4b100fef808e2011094723c006500b6164dcf3ec6fc98bdf93ed8e71b16bb8be",
+      "targetSha256": "371acd18e1e448cf7b7c1efac56c3ca400504235079293b6d1ca6a169e116423",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "74f95f7956aa3ffb32723301ab3b920bba9cfcbfbb0a49529b76cda6bab700dd",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/terminal-proof.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/terminal-proof.test.ts",
+      "sourceBlob": "16b782f262665621744c4ab3aafb7c3a1d6ea140",
+      "sourceSha256": "55d06d075cbabbc973ce924df42ef49fd66041333812cd5c0012062784deb6f7",
+      "targetSha256": "1546c011b8b44f0f2cab52c324e6a0c9dd30a0ec974648db47311f6b3af373bb",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "1546c011b8b44f0f2cab52c324e6a0c9dd30a0ec974648db47311f6b3af373bb",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v1-driver-peer.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v1-driver-peer.ts",
+      "sourceBlob": "97369a479dcaf0d11b1ee84c49605570b23a765b",
+      "sourceSha256": "551fbf603a1ce2df3228872148c1834ae784070753e22a51cbf6aa29893f2360",
+      "targetSha256": "0aaae7a462c335dc554af7ea3d12c9e12f132fb3314ff90c7f682115af0b68c6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "a3b204f0e966866361e055ed73f489f3827a702aa5cf2f71f8c0850c1ec5fd79",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v1-driver.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v1-driver.test.ts",
+      "sourceBlob": "09da020ada2f88071120c60e33b73387d383f8a4",
+      "sourceSha256": "01004ee86742975a9ff2dace5d77bed816d8e67c9065ed42ce24cbd705ac2ac5",
+      "targetSha256": "994e8c6292be86d27168aed3bb54661871fc59aa8627ab5f4b7be36be2081d84",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "43597219f10b25e380a177a80b0a90e04a5ae22ba4a79b2247795c585a80e9f3",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-control.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-control.test.ts",
+      "sourceBlob": "45a5b3f77a3dae5a38e6db0ab4b03ef2efe3be8e",
+      "sourceSha256": "f64301f79ba78a9d6d1d39e840de4d3e1a205c6d3f9d26818fd6b0f5e93953a0",
+      "targetSha256": "7e98f4691b6e788782aea25e7a37058987d3f6ff2cd2894587997aee3d13f731",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "1d491164b0d9a1955b98c483e2000a81ac477db96f62cb8a7bb97b350ae1c6df",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-cut-fixture.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-cut-fixture.ts",
+      "sourceBlob": "49d62d8e59d49521f52f5d3fb148ce32834dc89c",
+      "sourceSha256": "04636f4d433fe7ba3e8d276971ab3f635082622cf929379382805c125a4b27d1",
+      "targetSha256": "25d8c59832c7b6256a51c5ae879b0d4445c4e1da5dbdecbf98346e24b6f264f8",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "25d8c59832c7b6256a51c5ae879b0d4445c4e1da5dbdecbf98346e24b6f264f8",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-factory.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-factory.test.ts",
+      "sourceBlob": "f6aa6ef0e061cf77e67f6666db360cfde0494b97",
+      "sourceSha256": "747160618aa03d99e5c85c9b80fcef3108f051f0ab9d91805224ddddade6604f",
+      "targetSha256": "928e36b92ca9b3b7a3454931aab82b1101f85b2c7850f6a1c9298422ddb76eb2",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "5af9b64e5bbbbe56aa6fdfb5f44dae714aff6552c3a5852e27d00466ac7b264c",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-native.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-native.test.ts",
+      "sourceBlob": "6619073f73184080026521a5b882e266a9160c3d",
+      "sourceSha256": "695ce54fbc1d1aa46c6f4b63ff24ba6e677495e0cbdfd4dfd05ba0209d188999",
+      "targetSha256": "30c4a6b58d77eab039f49e7f201c047fd83c07cc346c5a1f57083b77bf257288",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "cc68bd3e1610319e2eaf1f699e268b0bc9a7712b7a31f5dc0552685d067e59ed",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-output.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-output.test.ts",
+      "sourceBlob": "546f1f3f4ce2f1ca49805bc0b09363c9a84c69b0",
+      "sourceSha256": "6ebb16e2774dd477ee40c573604b0acc75eed40fa542c59668de7321066409b2",
+      "targetSha256": "a6aff4cc7a444973cfc15fc2ced9d4c703276dfc3ff68dbdbf5300785b81fc8b",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "a6aff4cc7a444973cfc15fc2ced9d4c703276dfc3ff68dbdbf5300785b81fc8b",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-peer.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-peer.ts",
+      "sourceBlob": "e8f6c377771c5384d770cf24867f2e1460145f35",
+      "sourceSha256": "85efe80dc4df579e4ecb488d4b938e28bdbae00e606c305b14ed5b8370e1f16c",
+      "targetSha256": "3bd72c4a4853324ae088acda0b35c4ec7349f940431f79d8a63b5ec957777163",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "unchanged-relocation",
+      "initialQualifiedWorkspaceSha256": "85efe80dc4df579e4ecb488d4b938e28bdbae00e606c305b14ed5b8370e1f16c",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-session.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-session.test.ts",
+      "sourceBlob": "ca1418db567108af653cbcaa316157aea33ef060",
+      "sourceSha256": "b8178eab8f7a99fdeff5a4ee64f31d747b536d71076b8083fc0fd766fb501f7c",
+      "targetSha256": "204bcf06fb017621cfac09845221c47cd33dfd6af17c3ab61d6da1ebe8a835f3",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "3111bfb0b94d69789066b578adc75b270b45841f3d1c02fb2410a8fa153b6321",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-driver-support.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-driver-support.ts",
+      "sourceBlob": "2f1afc2f2da1da104f23c91c416bc329788d8821",
+      "sourceSha256": "3024be01c92aa0e546be973e786e305c55281505b39c9a67228b50268e7cc856",
+      "targetSha256": "60367d7f155c060ca9ec64c696ac29a1dd02f2906a11526f3ba1b4efa40907ff",
+      "adaptation": "relative-module-paths-only",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "60367d7f155c060ca9ec64c696ac29a1dd02f2906a11526f3ba1b4efa40907ff",
+      "nativeAdoption": "none"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-native-cut.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-native-cut.test.ts",
+      "sourceBlob": "05ecf315b10c28e3457ed0fee27447687baf2809",
+      "sourceSha256": "32688a021f016ea925588a318fe0277b4ebcec6b72b710741cde33ed3f3b383d",
+      "targetSha256": "f6a33b8ed146dde4aacd842f14c03b3787af922c7164640ed02a7779f300df94",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "7599b3c7c40857327285373dc118b0371ae93934a4fcfcf4800029ba331b984f",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-projection.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-projection.test.ts",
+      "sourceBlob": "031a8d51306e45f1619906ad2fcebdc7eb33c4c3",
+      "sourceSha256": "386ef5b75e300892bc018dda98a292ce55e1fdcaeebfcf1e47ee71668b22657a",
+      "targetSha256": "d989cab2c8188f3eb3d0ec09db70d432a9ead4d2f5cbc2b4447851a3fcb7937e",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "5f85e9eb55aca81f271369accb58710e8829175d2c8a83711773b60305774959",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/opencode-protocol/v2-transport.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/opencode-protocol/v2-transport.test.ts",
+      "sourceBlob": "285b8fbcac18a03fa223a645777ac351f39fe1b7",
+      "sourceSha256": "8ee19e48e0f4ea1851495be3d37c418178502a0ba54873cd166a6c85dc05fe21",
+      "targetSha256": "15d04d7851aad6e20e8b16dcb99926be90a1f9cce93a9192ddc70698747aca0c",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "fe1cd2f1f1b37fdbc7ead19456fcb3065d71141317d0dc70d8e5068b2353aeef",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/features/provider-session-io/io.test.ts",
+      "targetPath": "tests/features/provider-session-implementation/provider-session-io/io.test.ts",
+      "sourceBlob": "386a82b0bb028b573c6facaed966dacf5fb5c1cb",
+      "sourceSha256": "aae988f19a14b3281c58f411d80df010b9d6b9e0e52f258edcf80852203aaf3b",
+      "targetSha256": "396671e9c6178e9cbd3d923e39da8c6766ba6abe93e566732a6781ef073559f6",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "relative-module-paths-only",
+      "initialQualifiedWorkspaceSha256": "50703c1808e5a9edcbc72678a8f7a435889de8264cc8fc4993ff0b839f8e26ad",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "tests/fixtures/codex-app-server.ts",
+      "targetPath": "tests/fixtures/codex-app-server.ts",
+      "sourceBlob": "46204a1cb99eae007c5d69b4e925d349212f7a63",
+      "sourceSha256": "75aa7700fb6a333d4842e2e10ce64707337914bf7d8977b0f5593a5c25c9959d",
+      "targetSha256": "8727f25036160061cfff0936655439c91bfaac8770acdb746e6ee2383002312d",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "strict-tooling-return-annotation-and-delayed-thread-fixture",
+      "initialQualifiedWorkspaceSha256": "1ec6d6ea41c0be4778ccf2b8d35fe07745739300d22da0d057b7b54d3532bb34",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    },
+    {
+      "sourcePath": "scripts/qualify-claude-migration.ts",
+      "targetPath": "scripts/qualify-claude-migration.ts",
+      "sourceBlob": "f4cd828db7121b6f7ec42c4e3a548d638c56282c",
+      "sourceSha256": "e099ee9b25df4fe2d90ce9e37d8159a043ac1ded0abc0a1faeefe365f872cdff",
+      "targetSha256": "daf39a43810c7ae076c354bb0b73b04f3fe75fb4e65085ad901375a3466ce3d2",
+      "adaptation": "materialization-plus-reviewed-native-adoption",
+      "materializationAdaptation": "actual-workspace-C-archive-qualification-binding",
+      "initialQualifiedWorkspaceSha256": "6c66a1a5b78687238aa8202d3577ffa28f6b1e96930655e8c0b026c3580445b7",
+      "nativeAdoption": "reviewed-typed-style-and-private-helper-adoption"
+    }
+  ],
+  "runtimeReviewedSource": "8b1735d716491445d8d9b97efec4adb40557ea5b",
+  "reviewedBehaviorChange": {
+    "patchSha256": "3b6aac5ca6bca54814a870915f70304df9ae5044947c5ab1e1dd5c8c1350dc2c",
+    "reason": "Delayed valid thread/started must stay a thread lifecycle fact instead of consuming the active turn output budget. Deterministic subprocess regression failed before the six-line routing change and passed afterward.",
+    "scope": "One native notification route; no budget, terminal, permission or custody change."
+  },
+  "summary": {
+    "transferredFiles": 118,
+    "adaptations": {
+      "provenance-relative-link-relocation": 1,
+      "materialization-plus-reviewed-native-adoption": 90,
+      "unchanged-relocation": 17,
+      "native-curated-facade-relocation": 3,
+      "relative-module-paths-only": 6,
+      "relative-module-paths-and-strict-optional-type-adaptation": 1
+    },
+    "nativeFiles": 14
+  },
+  "nativeAdoption": {
+    "priorLayoutArchiveSha256": "44d9692559e27ef8ab060db26a900545f33bb38926a37fdc7014d648cc3d82f9",
+    "priorReceiptSha256": "26bb57ffaf386e16133b6b5aa1a3ee9ff962c5466ff1c3afd248f93c762bc829",
+    "qualifiedCurrentArchiveSha256": "3d547879a7ea0d5af48dccec285e8c6afca3eddde13a4a77ab15588650db0e8d",
+    "scope": "Native organization style/type/maintainability adoption with strict original presets; no suppression, ignored root or extra product/core/custody ownership. The Codex checkpoint bound regression was corrected before final qualification.",
+    "baselineArchiveTiming": "3ae106... is an intermediate cross-provider safe-brace snapshot; only the 28 Codex/IO TypeScript inputs were independently matched to the initial qualification. Provider-specific before hashes and immutable qualified receipt retain the earlier source identity."
+  },
+  "nativeFiles": [
+    {
+      "path": "README.md",
+      "sha256": "c69d5fb3b2180866be0a62c83f39b1ac7dce8eff395c34613a262402bc787e2e",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "package.json",
+      "sha256": "73954df1521e6638c47de3987784b51e5e13081b6e3cb47057b1f001132cde55",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/composition.ts",
+      "sha256": "9d51402d45c213e4a8421640f930963d09aedd842892d51a7b9e1f0503cb5733",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/features/provider-session-implementation/README.md",
+      "sha256": "006275f931586633bbd153f892dcd48ce4fc78efb4b25379c1cbdeb8cdbb4fcc",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/features/provider-session-implementation/adapters/opencode-protocol/v2-input-validation.ts",
+      "sha256": "76ae82c17232e484e65f0b6b370badf3721041ab4c6659b8af59364dcbaeb0b7",
+      "role": "private-native-helper-derived-from-existing-v2-execution-transport"
+    },
+    {
+      "path": "src/features/provider-session-implementation/index.ts",
+      "sha256": "1281ec3430dc50ad9d379f79656c11a8cd79b18030ed811d779680b4c7c6ec9b",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/features/provider-session-implementation/internal.ts",
+      "sha256": "dd0d3e199e4b7b7d9dccbbbb3d1e3269d92350d16206dbcd174ae366f5036251",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "8416c97b6138d2c0b99f3828945f8ca2b073a2e9ab8ddc8cadfe7ec281238904",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "src/session-io.ts",
+      "sha256": "5124c3472289156e0662b65de49c7ca9a5f031f92d8b097f01bdbec667f64218",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "tests/features/provider-session-implementation/claude-sdk/normalize.test.ts",
+      "sha256": "39cdf6d4cc90ec89caf016af308e8ea68a58c019860b54881b412855423934ca",
+      "role": "focused-native-regression-test"
+    },
+    {
+      "path": "tests/package/install-consumer.ts",
+      "sha256": "a92f76270fc93f656075b6990c2ffbab8290d333b96a8456c45960559ce733a4",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "tests/package/packed-consumer.test.ts",
+      "sha256": "37a31fc007b58384319c5113922608894ce509d3c2cf52b38818c01971f1edb8",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "0feb2c3463748e6c6f839f61535902eb79104d4b50b0c3ba6ebf4e16a2c65160",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    },
+    {
+      "path": "tsconfig.test.json",
+      "sha256": "381a77cdc3c6b923776eaf6d439a1d5af2d379706cb686b3357f84fe05969eab",
+      "role": "native-workspace-composition-contract-manifest-or-qualification-adaptation"
+    }
+  ]
+}

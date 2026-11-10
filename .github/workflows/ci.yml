@@ -1,0 +1,49 @@
+name: CI
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.21.0', '26.11.1']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Setup Node24 Corepack source
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Setup selected Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Select pinned pnpm through selected Node
+        shell: bash
+        run: |
+          set -euo pipefail
+          selectedNode="$(node -p 'process.execPath')"
+          corepackJs="$RUNNER_TOOL_CACHE/node/24.21.0/$(node -p 'process.arch')/lib/node_modules/corepack/dist/corepack.js"
+          test -f "$corepackJs"
+          mkdir -p "$RUNNER_TEMP/toolchain/bin" "$RUNNER_TEMP/toolchain/corepack"
+          printf '#!/bin/sh\nexec "%s" "%s" pnpm@11.18.0 "$@"\n' "$selectedNode" "$corepackJs" > "$RUNNER_TEMP/toolchain/bin/pnpm"
+          chmod 755 "$RUNNER_TEMP/toolchain/bin/pnpm"
+          printf '%s\n' "$RUNNER_TEMP/toolchain/bin" >> "$GITHUB_PATH"
+          printf 'COREPACK_HOME=%s\n' "$RUNNER_TEMP/toolchain/corepack" >> "$GITHUB_ENV"
+          COREPACK_HOME="$RUNNER_TEMP/toolchain/corepack" "$selectedNode" "$corepackJs" pnpm@11.18.0 --version
+      - name: Install exact dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Types, controlled tests and packed consumers
+        run: pnpm check
