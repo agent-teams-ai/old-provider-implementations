@@ -1,5 +1,8 @@
 import { executionAssert } from './v2-failures.ts'
 
+// A finite byte cap must also limit the number of tiny injected stream chunks.
+export const MAX_V2_CHUNKS = 8192
+
 export function checkOpenCodeReadJson(text: string): void {
   let depth = 0, tokens = 0, quoted = false, escaped = false, atom = false
   for (const char of text) {
@@ -24,7 +27,14 @@ export function checkExecutionSse(text: string): void {
   executionAssert(frames.at(-1) === '', 'incomplete_stream')
   for (const frame of frames) {
     executionAssert(Buffer.byteLength(frame) <= 256 * 1024, 'frame_limit')
-    const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /, '')).join('\n')
-    if (data) { checkOpenCodeReadJson(data); JSON.parse(data) }
+    // Match the pinned native log decoder: do not silently ignore arbitrary
+    // SSE directives while relaying the original stream to a raw caller.
+    const lines = frame.split('\n')
+    executionAssert(lines.every(line => line === '' || line.startsWith(':') || line.startsWith('data:')), 'invalid_response')
+    const dataLines = lines.filter(line => line.startsWith('data:'))
+    if (dataLines.length === 0) continue // Native keep-alive comment.
+    const data = dataLines.map(line => line.slice(5).replace(/^ /, '')).join('\n')
+    executionAssert(data.length > 0, 'invalid_response')
+    checkOpenCodeReadJson(data); JSON.parse(data)
   }
 }

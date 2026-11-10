@@ -43,6 +43,23 @@ test('lost native handoff seals session, rejects unsent neighbor, and never repl
   } finally { await session.close() }
 })
 
+test('malformed post-ACK native V2 envelope seals original UNKNOWN and never replays or submits its neighbor', async t => {
+  const host = await driverPeer(); host.flatPrompt(); t.after(host.close)
+  const session = createV2DriverSession(nativeConfig(host)), events: Event[] = []
+  const observed = (async () => { for await (const event of session.observe()) {events.push(event)} })()
+  try {
+    const first = session.submit({ inputId: 'TEST-ack1', operationRef: 'TEST-op1', content: 'TEST first' })
+    const second = session.submit({ inputId: 'TEST-ack2', operationRef: 'TEST-op2', content: 'TEST second' })
+    assert.deepEqual(await first, { ok: false, code: 'unknown' })
+    assert.deepEqual(await second, { ok: false, code: 'unknown', delivery: 'known-not-sent' })
+    await observed
+    assert.equal(events.filter(event => event.kind === 'result' && event.outcome === 'unknown').length, 1)
+    assert.equal(session.checkpoint().ok, false)
+    assert.equal(host.counts().submitted, 1)
+    assert.equal(host.submittedIds.length, 1)
+  } finally { await session.close() }
+})
+
 test('actual native permission is independent of turn polling, bound to original input, and replied once', async t => {
   const host = await driverPeer(); host.permission(); t.after(host.close)
   const session = createV2DriverSession(nativeConfig(host)), events: Event[] = []
@@ -136,7 +153,7 @@ test('permission list held across a completed interrupt ACK cannot resurrect int
     host.releasePermissions()
     // The next cut starts only after the held permission response has been processed.
     await until(() => host.sessionReads() > reads)
-    const ref = host.submittedIds[0] + ':request_TESTpermission'
+    const ref = host.submittedIds[0] + ':per_TESTpermission'
     assert.deepEqual(await session.respondToInteraction(ref, { kind: 'permission', decision: 'allow' }), { ok: false, code: 'stale' })
     assert.equal(events.some(event => event.kind === 'interaction'), false)
     assert.equal(host.counts().replies, 0)
@@ -160,7 +177,7 @@ test('unqualified native execution lineage cannot authorize permissions, while t
     assert.equal((await session.submit({ inputId: 'TEST-unknown', operationRef: 'TEST-op', content: 'TEST unknown' })).ok, true)
     await until(() => host.sessionReads() >= 6)
     assert.equal(events.some(event => event.kind === 'interaction'), false)
-    const ref = host.submittedIds[0] + ':request_TESTpermission'
+    const ref = host.submittedIds[0] + ':per_TESTpermission'
     assert.deepEqual(await session.respondToInteraction(ref, { kind: 'permission', decision: 'allow' }), { ok: false, code: 'stale' })
     assert.equal(host.permissionLists(), 0); assert.equal(host.counts().replies, 0)
     host.validLineage(); host.complete()

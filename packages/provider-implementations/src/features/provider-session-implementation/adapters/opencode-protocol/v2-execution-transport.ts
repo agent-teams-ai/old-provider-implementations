@@ -1,5 +1,9 @@
+import { nativeV2ByteView } from './v2-native-byte-view.ts'
+import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
-import { checkExecutionSse, checkOpenCodeReadJson } from './v2-json-budget.ts'
+import { safeV2SessionID } from './v2-native-identifiers.ts'
+import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
+import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
@@ -8,6 +12,7 @@ export type OpenCodeV2TransportConfig = {
   endpoint: string
   version: '2.0.0' | '2.0.21'
   directory: string
+  nativeSessionId: string
   /** Private credential projection supplied by runtime custody; never emitted. */
   readPassword: () => string
   signal?: AbortSignal
@@ -16,7 +21,20 @@ export type OpenCodeV2TransportConfig = {
 }
 
 function executionResponseReader(response: Response) {
-  return response.body?.getReader()
+  // A native response with a present but unacquirable stream cannot establish
+  // owned cleanup. In particular, a locked WHATWG stream throws at getReader(),
+  // while an injected peer can return a missing or incomplete reader handle.
+  try {
+    const body = response.body
+    if (body === null) return undefined
+    if (!body || typeof body.getReader !== 'function') throw new Error('unowned reader')
+    const reader = body.getReader()
+    if (!reader || typeof reader.read !== 'function' || typeof reader.cancel !== 'function'
+      || typeof reader.releaseLock !== 'function') throw new Error('unowned reader')
+    return reader
+  } catch {
+    throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+  }
 }
 
 function missingSessionResponse(response: Response, request: Request, route: { session: boolean; url: URL }, chunks: Uint8Array[]): string | undefined {
@@ -33,12 +51,13 @@ function missingSessionResponse(response: Response, request: Request, route: { s
 }
 function transportFailure(error: unknown, invoked: boolean): ExecutionTransportFailure {
   const code = error instanceof ExecutionTransportFailure ? error.code : 'transport_failure'
-  const failure = new ExecutionTransportFailure(code, invoked ? 'unknown' : 'not_submitted')
+  const cleanupUnknown = code === 'cleanup_unknown'
+  const failure = new ExecutionTransportFailure(code, invoked || cleanupUnknown ? 'unknown' : 'not_submitted')
   if (error !== null && typeof error === 'object') {
     const sessionID = missingSessions.get(error)
     if (sessionID !== undefined) { missingSessions.set(failure, sessionID) }
   }
-  if (!invoked) { unsubmitted.add(failure) }
+  if (!invoked && !cleanupUnknown) { unsubmitted.add(failure) }
   return failure
 }
 /** Finite execution operations only. SSE is consumed within the same deadline,
@@ -51,17 +70,21 @@ class OpenCodeV2ExecutionFetch {
   private readonly endpoint: string
   private readonly pin: '2.0.0' | '2.0.21'
   private readonly directory: string
+  private readonly nativeSessionId: string
   private readonly readPassword: () => string
   private readonly context: { signal: AbortSignal | undefined; deadline: number }
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   constructor(config: OpenCodeV2TransportConfig) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
+    this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
-    executionAssert(/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(this.endpoint), 'authority_mismatch')
+
+    executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
-    executionAssert(Number.isFinite(this.context.deadline) && typeof this.directory === 'string' && this.directory.length > 0, 'deadline')
+    executionAssert(safeV2SessionID(this.nativeSessionId) && isCanonicalV2DriverDirectory(this.directory), 'authority_mismatch')
+    executionAssert(Number.isFinite(this.context.deadline), 'deadline')
   }
 
   check(): void {
@@ -93,8 +116,8 @@ class OpenCodeV2ExecutionFetch {
     controller: AbortController) {
     let reader
     try {
-      let request = new Request(input, init)
-      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint)
+      let request = new Request(input, { ...init, credentials: 'omit', redirect: 'error' })
+      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint, this.nativeSessionId)
       if (create || prompt) {
         const validationSignal = AbortSignal.any([controller.signal, request.signal,
           ...(this.context.signal ? [this.context.signal] : [])])
@@ -104,24 +127,33 @@ class OpenCodeV2ExecutionFetch {
         for (;;) {
           const part = await this.bound(this.track(reader.read()), validationSignal, this.context.deadline - Date.now())
           if (part.done) {break}
-          const chunk: unknown = part.value
-          executionAssert(chunk instanceof Uint8Array, 'invalid_input')
-          bodyBytes += chunk.byteLength; executionAssert(bodyBytes <= 1024 * 1024, 'body_limit')
-          pieces.push(chunk)
+          const chunk = nativeV2ByteView(part.value)
+          executionAssert(chunk !== null, 'invalid_input')
+          bodyBytes += chunk.byteLength
+          executionAssert(bodyBytes <= 1024 * 1024 && pieces.length < MAX_V2_CHUNKS, 'body_limit')
+          pieces.push(Buffer.from(chunk))
         }
         reader.releaseLock(); reader = undefined
         const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pieces))
         checkOpenCodeReadJson(body)
         const parsed: unknown = JSON.parse(body)
         validateExecutionBody(parsed, create, this.directory)
-        request = new Request(request.url, { method: request.method, headers: request.headers, body, signal: request.signal })
+        request = new Request(request.url, { method: request.method, headers: request.headers, body,
+          signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
       if (activation) {executionAssert(!request.body, 'capabilities_pending')}
-      return { request, url, session, log, activation }
+      return { request, url, session, log, activation, prompt }
     } finally {
       if (reader) {
-        await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000).catch(() => {})
-        reader.releaseLock()
+        // No native HTTP was invoked, but rejected local body cancellation
+        // cannot be presented as a fully cleaned not-submitted attempt.
+        let cleaned = false
+        try {
+          await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000)
+          reader.releaseLock()
+          cleaned = true
+        } catch { /* Caller-owned stream did not confirm cleanup. */ }
+        if (!cleaned) { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
       }
     }
   }
@@ -134,40 +166,55 @@ class OpenCodeV2ExecutionFetch {
       const part = await this.bound(this.track(reader.read()), signal, this.context.deadline - Date.now())
       this.check(); signal.throwIfAborted()
       if (part.done) { break }
-      const chunk: unknown = part.value
-      executionAssert(chunk instanceof Uint8Array, 'invalid_response')
-      bytes += chunk.byteLength; executionAssert(bytes <= 8 * 1024 * 1024, 'body_limit'); chunks.push(chunk)
+      const chunk = nativeV2ByteView(part.value)
+      executionAssert(chunk !== null, 'invalid_response')
+      bytes += chunk.byteLength
+      executionAssert(bytes <= 8 * 1024 * 1024 && chunks.length < MAX_V2_CHUNKS, 'body_limit')
+      chunks.push(Buffer.from(chunk))
     }
     return chunks
   }
   private requestHeaders(request: Request, signal: AbortSignal): Headers {
-    const headers = new Headers(request.headers), password = this.readPassword()
+    // Only the trusted native Basic credential and validated JSON media type
+    // may leave this boundary. Caller headers (Cookie/X-Forwarded-*/etc.)
+    // are not part of the session capability.
+    const headers = new Headers()
+    if (request.body !== null) headers.set('content-type', 'application/json')
+    const password = this.readPassword()
     executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
     headers.set('authorization', 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'))
     // Credential projection may synchronously dispose/abort; no fetch can precede these rechecks.
     this.check(); signal.throwIfAborted()
+    // An injected fetch may inspect Request rather than RequestInit. Sanitize
+    // both views so caller headers cannot cross this credential boundary.
+    for (const key of [...request.headers.keys()]) request.headers.delete(key)
+    for (const [key, value] of headers) request.headers.set(key, value)
     return headers
   }
   private async request(input: ExecutionFetchInput, init?: ExecutionFetchInit): Promise<Response> {
     let invoked = false
+    let response: Response | undefined
+    let metadataValidated = false
     let reader: ReturnType<typeof executionResponseReader> = undefined
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     this.controllers.add(controller)
     try {
       this.check()
-      const { request, url, session, log, activation } = await this.validateRequest(input, init, controller)
+      const { request, url, session, log, activation, prompt } = await this.validateRequest(input, init, controller)
       this.check(); request.signal.throwIfAborted()
       const signal = AbortSignal.any([controller.signal, request.signal, ...(this.context.signal ? [this.context.signal] : [])])
       timer = setTimeout(() =>{  controller.abort(); }, Math.min(30_000, this.context.deadline - Date.now()))
       const headers = this.requestHeaders(request, signal)
       invoked = true
-      const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error' }).then(async response => {
+      const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error', credentials: 'omit' }).then(async response => {
         if (signal.aborted) { await response.body?.cancel(); throw new Error('deadline') }
         return response
       }))
-      const response = await this.bound(responseWork, signal, this.context.deadline - Date.now())
-      executionAssert(!response.redirected && (!response.url || new URL(response.url).origin === this.endpoint), 'authority_mismatch')
+      response = await this.bound(responseWork, signal, this.context.deadline - Date.now())
+      const responseUrl = response.url
+      executionAssert(!response.redirected && (!responseUrl || new URL(responseUrl).origin === this.endpoint), 'authority_mismatch')
+      metadataValidated = true
       reader = executionResponseReader(response)
       const chunks = await this.readResponse(reader, signal)
       const bytes = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
@@ -188,19 +235,49 @@ class OpenCodeV2ExecutionFetch {
         throw failure
       }
       // No response body/tag from an SDK error escapes this boundary.
+      // Neither a partial GET nor an asynchronous/partial prompt 2xx can
+      // establish a complete native readback or acknowledged prompt handoff.
+      // A prompt may already have executed, so refusal remains UNKNOWN.
+      if (request.method === 'GET' || prompt) executionAssert(response.status === 200, 'invalid_response')
       executionAssert(response.status >= 200 && response.status < 300, 'http_failure')
       executionAssert(media === (log ? 'text/event-stream' : 'application/json'), 'media_type')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
       if (log) {checkExecutionSse(text)}
       else { checkOpenCodeReadJson(text); JSON.parse(text) }
-      return new Response(text, { status: response.status, headers: response.headers })
+      // Never relay arbitrary native response headers across the provider boundary.
+      // Only the validated media type is part of the pinned protocol contract.
+      return new Response(text, { status: response.status,
+        headers: { 'content-type': log ? 'text/event-stream' : 'application/json' } })
     } catch (error) {
       controller.abort()
-      if (reader) {await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000).catch(() => {})}
+      // A hostile native response can throw before a reader is acquired.
+      // A confirmed body cancellation is required before returning clean custody.
+      if (response && !metadataValidated) {
+        let cleaned = false
+        try {
+          const body = response.body
+          if (body) await this.bound(this.track(body.cancel()), new AbortController().signal, 1000)
+          cleaned = true
+        } catch { /* Unclaimed native response body has UNKNOWN custody. */ }
+        if (!cleaned) throw transportFailure(new ExecutionTransportFailure('cleanup_unknown', 'unknown'), true)
+      }
+      if (reader) {
+        let cleaned = false
+        try {
+          await this.bound(this.track(reader.cancel()), new AbortController().signal, 1000)
+          reader.releaseLock()
+          reader = undefined
+          cleaned = true
+        } catch { /* Native response reader did not confirm cancellation. */ }
+        if (!cleaned) { throw transportFailure(new ExecutionTransportFailure('cleanup_unknown', 'unknown'), true) }
+      }
       throw transportFailure(error, invoked)
     } finally {
       clearTimeout(timer); this.controllers.delete(controller)
-      reader?.releaseLock()
+      if (reader) {
+        try { reader.releaseLock() }
+        catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
+      }
     }
   }
   async dispose(): Promise<void> {

@@ -3,6 +3,8 @@ import type { OpenCodeV2SessionControlConfig } from './v2-control-transport.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
+import { decodeV2DataEnvelope } from './v2-cut-codecs.ts'
+import { safeV2MessageID, safeV2PermissionID } from './v2-native-identifiers.ts'
 
 export type OpenCodeV2Permission = Readonly<{
   requestId: string; sessionId: string; action: string; resources: readonly string[]
@@ -12,15 +14,24 @@ function text(value: unknown): string {
   if (typeof value !== 'string' || !value || value.length > 4096) {throw new Error('invalid_native_control_response')}
   return value
 }
+function denyUnsubmitted(): never {
+  const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
+  unsubmitted.add(failure)
+  throw failure
+}
 function permission(value: unknown, sessionId: string): OpenCodeV2Permission {
   const raw = record(value)
   if (!raw || raw.sessionID !== sessionId || !Array.isArray(raw.resources) || raw.resources.length > 256) {throw new Error('foreign_native_permission')}
+  const requestId = text(raw.id)
+  if (!safeV2PermissionID(requestId)) {throw new Error('invalid_native_permission_id')}
   const result: { requestId: string; sessionId: string; action: string; resources: string[]; source?: NonNullable<OpenCodeV2Permission['source']> } = {
-    requestId: text(raw.id), sessionId, action: text(raw.action), resources: raw.resources.map(text),
+    requestId, sessionId, action: text(raw.action), resources: raw.resources.map(text),
   }
   if (raw.source !== undefined) {
     const source = record(raw.source)
-    if (!source || source.type !== 'tool') {throw new Error('invalid_native_permission_source')}
+    if (!source || source.type !== 'tool' || !safeV2MessageID(source.messageID)) {
+      throw new Error('invalid_native_permission_source')
+    }
     result.source = { type: 'tool', messageID: text(source.messageID), id: text(source.id) }
   }
   return result
@@ -40,25 +51,30 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       if (typeof body?.interrupted !== 'boolean') {throw new Error('invalid_native_interrupt_receipt')}
       return { interrupted: body.interrupted }
     },
-    cancelInbox: async (inboxId: string) => { await wire.request(path + `/inbox/${encodeURIComponent(inboxId)}`, { method: 'DELETE' }) },
+    cancelInbox: async (inboxId: string) => {
+      if (!safeV2MessageID(inboxId)) denyUnsubmitted()
+      await wire.request(path + `/inbox/${encodeURIComponent(inboxId)}`, { method: 'DELETE' })
+    },
     pendingPermissions: async (): Promise<readonly OpenCodeV2Permission[]> => {
-      const body: unknown = await (await wire.request(path + '/permission')).json()
+      const body: unknown = decodeV2DataEnvelope(await (await wire.request(path + '/permission')).json() as unknown)
       if (!Array.isArray(body) || body.length > 4096) {throw new Error('invalid_native_permission_list')}
       const values = body.map(raw => permission(raw, sessionId))
       if (new Set(values.map(value => value.requestId)).size !== values.length) {throw new Error('duplicate_native_permission')}
       return values
     },
     replyPermission: async (requestId: string, decision: 'once' | 'always' | 'reject') => {
-      if (!['once', 'always', 'reject'].includes(decision)) {
-        const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
-        unsubmitted.add(failure); throw failure
-      }
+      // V2 `always` writes a durable project-scoped approval pattern. Until Host
+      // owns and proves that mutation, reject it before even reading native state.
+      if (typeof requestId !== 'string' || !safeV2PermissionID(requestId) || (decision !== 'once' && decision !== 'reject')) denyUnsubmitted()
       const requestPath = path + `/permission/${encodeURIComponent(requestId)}`
       try {
-        const current = permission(await (await wire.request(requestPath)).json() as unknown, sessionId)
+        const current = permission(decodeV2DataEnvelope(await (await wire.request(requestPath)).json() as unknown), sessionId)
         if (current.requestId !== requestId) {throw new Error('native_permission_identity_mismatch')}
-      } catch {
-        // This method's grant POST has not begun; a failed read cannot have granted permission.
+      } catch (error) {
+        // The grant POST has not begun, but a failed preflight reader cancellation
+        // still has UNKNOWN native custody. Never downgrade that to a clean refusal.
+        if (error instanceof ExecutionTransportFailure && error.code === 'cleanup_unknown') { throw error }
+        // Other preflight failures cannot have granted this permission.
         const failure = new ExecutionTransportFailure('native_permission_preflight', 'not_submitted')
         unsubmitted.add(failure); throw failure
       }
@@ -66,12 +82,17 @@ export function createOpenCodeV2SessionControl(config: OpenCodeV2SessionControlC
       await wire.request(requestPath + '/reply', { method: 'POST', body: JSON.stringify({ [key]: decision }) })
     },
     putInstruction: async (key: string, value: unknown) => {
-      const encoded = canonicalExecutionJSON(value)
-      if (Buffer.byteLength(encoded) > 256 * 1024) {throw new Error('native_instruction_byte_budget')}
+      // URL encoding does not escape '.' or '..'; reject non-canonical keys before PUT.
+      if (typeof key !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,255}$/.test(key)) denyUnsubmitted()
+      // These validations precede any native write, so a caller must not
+      // mistake a local validation failure for an UNKNOWN submission.
+      let encoded: string
+      try { encoded = canonicalExecutionJSON(value, 256 * 1024) } catch { denyUnsubmitted() }
+      if (Buffer.byteLength(encoded) > 256 * 1024) denyUnsubmitted()
       await wire.request(entries + '/' + encodeURIComponent(key), { method: 'PUT', body: '{"value":' + encoded + '}' })
     },
     instructions: async () => {
-      const raw: unknown = await (await wire.request(entries)).json()
+      const raw: unknown = decodeV2DataEnvelope(await (await wire.request(entries)).json() as unknown)
       if (!Array.isArray(raw) || raw.length > 256) {throw new Error('invalid_native_instructions')}
       const values = raw.map(value => {
         const entry = record(value), key = text(entry?.key)
