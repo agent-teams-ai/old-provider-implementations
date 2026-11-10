@@ -92,6 +92,10 @@ test('V2 rejects blank Host authority and invalid loopback ports before any nati
   const baseline = nativeConfig(host)
   const cases = [
     { trustedBinding: ' \t ' }, { accountBinding: '   ' },
+    // A forged trim() result previously admitted a non-string Host identity;
+    // checkpoint JSON would serialize these functions as an empty object.
+    { trustedBinding: { trim: () => 'TEST-forged' } },
+    { accountBinding: { trim: () => 'TEST-forged' } },
     { endpoint: 'http://127.0.0.1:0' },
     { endpoint: 'http://127.0.0.1:00080' },
     { endpoint: 'http://127.0.0.1:65536' },
