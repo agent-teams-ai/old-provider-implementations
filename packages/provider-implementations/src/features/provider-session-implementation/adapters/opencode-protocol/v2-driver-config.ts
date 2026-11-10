@@ -91,8 +91,8 @@ export function checkDriverCheckpoint(value: unknown, config: OpenCodeV2DriverCo
     if (keys.length !== expected.length || keys.some(key => typeof key !== 'string' || !expected.includes(key))) return false
     const fields = Object.getOwnPropertyDescriptors(value)
     if (expected.some(key => !fields[key]?.enumerable || !Object.hasOwn(fields[key], 'value'))) return false
-    return fields.version.value === 1 && fields.engine.value === 'opencode-v2'
-      && fields.nativeSessionId.value === config.nativeSessionId
-      && fields.compatibility.value === driverCompatibility(config)
+    return fields.version?.value === 1 && fields.engine?.value === 'opencode-v2'
+      && fields.nativeSessionId?.value === config.nativeSessionId
+      && fields.compatibility?.value === driverCompatibility(config)
   } catch { return false }
 }
