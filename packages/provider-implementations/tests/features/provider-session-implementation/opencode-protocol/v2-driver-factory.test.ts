@@ -158,3 +158,41 @@ test('private Host failures never project credential/configuration details into 
     assert.ok(error instanceof Error); assert.equal(error.message, 'opencode.driver.invalid-config'); return true
   })
 })
+
+test('V2 Host probe and physical stop attestation require primitive true, not truthy values', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const untyped of [1, 'true', { ok: false }, { ok: true }]) {
+      let probes = 0, passwordReads = 0
+      const config = { ...nativeConfig(host), version,
+        probe: async () => { probes++; return untyped as boolean },
+        readPassword: () => { passwordReads++; return 'TEST-private' },
+      }
+      const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
+        resolveConfiguration: async () => config, readCheckpoint: async () => {} })
+      await assert.rejects(factory.open(request), /opencode.driver.dependency-unavailable/)
+      assert.equal(probes, 1, 'one failed Host admission probe')
+      assert.equal(passwordReads, 0, 'no native credentials after invalid owner admission')
+      assert.equal(host.counts().submitted, 0)
+    }
+    for (const untyped of [1, 'true', { stopped: false }, { stopped: true }]) {
+      let stops = 0
+      const config = { ...nativeConfig(host), version,
+        confirmStopped: async () => { stops++; return untyped as boolean },
+      }
+      const factory = createOpenCodeV2DriverFactory({ capabilities: ['text'],
+        resolveConfiguration: async () => config, readCheckpoint: async () => {} })
+      const { driver } = await factory.open(request)
+      assert.deepEqual(await driver.close(), { logicallyClosed: true, cleanup: 'unknown' },
+        'truthy non-boolean cannot certify physical process custody')
+      assert.equal(stops, 1)
+      assert.equal(host.counts().submitted, 0)
+    }
+    const validConfig = nativeConfig(host)
+    validConfig.version = version
+    const positive = createOpenCodeV2DriverFactory({ capabilities: ['text'],
+      resolveConfiguration: async () => validConfig, readCheckpoint: async () => {} })
+    const { driver } = await positive.open(request)
+    assert.deepEqual(await driver.close(), { logicallyClosed: true, cleanup: 'confirmed' })
+  }
+})
