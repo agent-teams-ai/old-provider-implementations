@@ -52,7 +52,12 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
   const captured = { ...fields, binding: { ...fields.binding }, limits: { ...fields.limits } }
   // RegExp.exec coerces a one-element JSON array to a string: type-check the
   // captured values, never read the original Host object again.
-  if (captured.configRevision !== request.configRevision
+  if (typeof captured.configRevision !== 'string'
+    || typeof captured.binding.tenantId !== 'string'
+    || typeof captured.binding.projectId !== 'string'
+    || typeof captured.binding.sessionId !== 'string'
+    || !Number.isSafeInteger(captured.binding.generation)
+    || captured.configRevision !== request.configRevision
     // Only primitive strings can identify Host authority in a durable checkpoint.
     // Objects with a forged trim() method must never become opaque bindings.
     || typeof captured.trustedBinding !== 'string' || captured.trustedBinding.trim().length === 0

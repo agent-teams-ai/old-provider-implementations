@@ -200,3 +200,31 @@ test('V2 Host probe and physical stop attestation require primitive true, not tr
     assert.deepEqual(await driver.close(), { logicallyClosed: true, cleanup: 'confirmed' })
   }
 })
+
+test('V2 rejects nonprimitive revision and runtime bindings before owner probe or credentials', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  let probes = 0, passwordReads = 0
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const field of ['configRevision', 'tenantId', 'projectId', 'sessionId', 'generation'] as const) {
+      // A shared object previously passed strict equality and could forge
+      // its checkpoint identity through JSON.stringify/toJSON.
+      const forged = { toJSON: () => field === 'generation' ? 1 : 'TEST-forged' }
+      const supplied = { ...request, [field]: forged } as unknown as OpenConfig
+      const baseline = nativeConfig(host)
+      const config = {
+        ...baseline, version,
+        configRevision: field === 'configRevision' ? forged : baseline.configRevision,
+        binding: field === 'configRevision' ? baseline.binding : { ...baseline.binding, [field]: forged },
+        probe: async () => { probes++; return true },
+        readPassword: () => { passwordReads++; return 'TEST-private' },
+      } as unknown as ReturnType<typeof nativeConfig>
+      const factory = createOpenCodeV2DriverFactory({
+        capabilities: ['text'], resolveConfiguration: async () => config, readCheckpoint: async () => {},
+      })
+      await assert.rejects(factory.open(supplied), /opencode.driver.invalid-config/, `${version}:${field}`)
+    }
+  }
+  assert.equal(probes, 0)
+  assert.equal(passwordReads, 0)
+  assert.equal(host.counts().submitted, 0)
+})
