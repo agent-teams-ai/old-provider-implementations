@@ -11,6 +11,31 @@ import { artifact, attachedInput } from '../provider-session-io/attachment-suppo
 const request: OpenConfig = { tenantId: 'TEST-tenant', projectId: 'TEST-project', sessionId: 'TEST-runtime-session', generation: 1,
   configRevision: 'TEST-r1', requiredCapabilities: ['text'] }
 
+test('V2 refuses malformed checkpoint references before invoking Host storage or native admission', async t => {
+  const host = await driverPeer(); t.after(host.close)
+  let resolutions = 0, reads = 0, probes = 0, stringifications = 0
+  const factory = createOpenCodeV2DriverFactory({
+    capabilities: ['text', 'checkpoint'],
+    resolveConfiguration: async () => {
+      resolutions++
+      const config = nativeConfig(host)
+      config.probe = async () => { probes++; return true }
+      return config
+    },
+    readCheckpoint: async () => { reads++; return undefined },
+  })
+  const coercible = { toString: () => { stringifications++; return 'TEST-forged' } }
+  for (const checkpointRef of [null, 0, coercible, ['TEST-forged'], '', '\0', 'x'.repeat(4097), '🚀'.repeat(1500)]) {
+    await assert.rejects(factory.open({ ...request, checkpointRef } as unknown as OpenConfig),
+      /opencode.driver.invalid-config/)
+  }
+  assert.equal(resolutions, 0)
+  assert.equal(reads, 0)
+  assert.equal(probes, 0)
+  assert.equal(stringifications, 0)
+  assert.equal(host.counts().submitted, 0)
+})
+
 test('V2 Host getters cannot swap native authority between validation and config snapshot', async t => {
   const host = await driverPeer(); t.after(host.close)
   const original = nativeConfig(host), supplied = { ...original }

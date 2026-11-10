@@ -20,6 +20,14 @@ export function createOpenCodeV2DriverFactory(host: OpenCodeV2DriverHost): Drive
     async open(request: OpenConfig) {
       const selected = Object.freeze({ ...request, requiredCapabilities: Object.freeze([...request.requiredCapabilities]) })
       if (selected.requiredCapabilities.some(value => !capabilities.includes(value))) {throw new Error('opencode.driver.unsupported')}
+      // Never pass an untyped/coercible checkpoint reference to Host storage.
+      // The native identity gate must run before resolveConfiguration or readCheckpoint.
+      if (selected.checkpointRef !== undefined &&
+        (typeof selected.checkpointRef !== 'string' || selected.checkpointRef.length === 0 ||
+          selected.checkpointRef.length > 4096 || selected.checkpointRef.includes('\0') ||
+          Buffer.byteLength(selected.checkpointRef) > 4096)) {
+        throw new Error('opencode.driver.invalid-config')
+      }
       let config: OpenCodeV2DriverConfig
       try {
         const resolved = await host.resolveConfiguration(selected)
