@@ -383,8 +383,21 @@ test('typed V2 instruction preflight is not-submitted for over-budget and non-JS
     let getterCalls = 0
     const getterSlot = ['TEST']
     Object.defineProperty(getterSlot, '0', { enumerable: true, get: () => { getterCalls++; return 'FORGED' } })
+    const getterRecord = { rule: 'TEST' }
+    Object.defineProperty(getterRecord, 'rule', { enumerable: true, get: () => { getterCalls++; return 'FORGED' } })
+    const nestedGetterRecord = { policy: { effect: 'deny' } }
+    Object.defineProperty(nestedGetterRecord.policy, 'effect',
+      { enumerable: true, get: () => { getterCalls++; return 'allow' } })
+    const hiddenRecord = { rule: 'TEST' }
+    Object.defineProperty(hiddenRecord, 'shadow', { value: 'FORGED', enumerable: false })
+    const symbolRecord = { rule: 'TEST' }
+    Object.defineProperty(symbolRecord, Symbol('TEST-shadow'), { value: 'FORGED' })
+    const proxiedRecord = new Proxy({ rule: 'TEST' }, {
+      get(target, property, receiver) { getterCalls++; return Reflect.get(target, property, receiver) },
+    })
     for (const value of ['X'.repeat(256 * 1024 + 1), undefined, Number.POSITIVE_INFINITY,
-      Array(1), Object.assign(Array(1), { extra: 'TEST' }), replacedMap, inheritedMap, getterSlot]) {
+      Array(1), Object.assign(Array(1), { extra: 'TEST' }), replacedMap, inheritedMap, getterSlot,
+      getterRecord, nestedGetterRecord, hiddenRecord, symbolRecord, proxiedRecord]) {
       await assert.rejects(control.putInstruction('test.role', value), error => {
         assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
         return true
@@ -394,12 +407,16 @@ test('typed V2 instruction preflight is not-submitted for over-budget and non-JS
     assert.equal(credentialReads, 0)
     assert.equal(host.calls(), 0)
     assert.deepEqual(host.effects, [])
-    // Canonical dense JSON arrays must remain supported for native instructions.
+    // Dense arrays and nested plain JSON records remain supported.
     await control.putInstruction('test.role', ['TEST'])
-    assert.equal(host.calls(), 1)
+    await control.putInstruction('test.policy', { rules: [{ action: 'deny', resource: 'external_directory' }] })
+    assert.equal(host.calls(), 2)
     assert.deepEqual(host.effects, [{
       path: `${version === '2.0.0' ? '/api/session' : '/api/experimental/session'}/ses_A/instructions/entries/test.role`,
       body: { value: ['TEST'] },
+    }, {
+      path: `${version === '2.0.0' ? '/api/session' : '/api/experimental/session'}/ses_A/instructions/entries/test.policy`,
+      body: { value: { rules: [{ action: 'deny', resource: 'external_directory' }] } },
     }])
   }
 })

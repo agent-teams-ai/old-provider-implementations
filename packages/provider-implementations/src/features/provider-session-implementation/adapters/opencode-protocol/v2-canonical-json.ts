@@ -23,6 +23,15 @@ export function canonicalExecutionJSON(value: unknown): string {
     return '[' + items.join(',') + ']'
   }
   const object = canonicalRecord(value)
-  assertCanonical(Object.getPrototypeOf(object) === Object.prototype || Object.getPrototypeOf(object) === null)
-  return '{' + Object.keys(object).toSorted().map(key => JSON.stringify(key) + ':' + canonicalExecutionJSON(object[key])).join(',') + '}'
+  // A hostile Host-side object must not invoke getters, Proxy traps, or omit
+  // non-enumerable/symbol policy entries during durable native serialization.
+  assertCanonical(!nodeUtilTypes.isProxy(object)
+    && (Object.getPrototypeOf(object) === Object.prototype || Object.getPrototypeOf(object) === null))
+  const keys = Reflect.ownKeys(object)
+  assertCanonical(keys.every(key => typeof key === 'string'))
+  return '{' + (keys as string[]).toSorted().map(key => {
+    const entry = Object.getOwnPropertyDescriptor(object, key)
+    assertCanonical(entry !== undefined && entry.enumerable === true && 'value' in entry)
+    return JSON.stringify(key) + ':' + canonicalExecutionJSON(entry.value)
+  }).join(',') + '}'
 }
