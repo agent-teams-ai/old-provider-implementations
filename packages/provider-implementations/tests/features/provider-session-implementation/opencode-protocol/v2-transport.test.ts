@@ -632,3 +632,36 @@ test('V2 execution GET cannot certify cleanup when the native response reader is
     }
   }
 })
+
+
+test('V2 execution raw response accounts for physical bytes despite spoofed getters', async () => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    let calls = 0, cancels = 0, reads = 0
+    const oversized = new Uint8Array(8 * 1024 * 1024 + 1)
+    Object.defineProperties(oversized, {
+      byteLength: { get: () => 0 }, length: { get: () => 0 },
+    })
+    const wire = createOpenCodeV2ExecutionTransport({
+      ...config(endpoint, version),
+      fetchImpl: async () => {
+        calls++
+        return { status: 200, redirected: false, url: '',
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: { getReader: () => ({
+            async read() { return reads++ === 0
+              ? { done: false, value: oversized } : { done: true } },
+            async cancel() { cancels++ },
+            releaseLock() {},
+          }) },
+        } as unknown as Response
+      },
+    })
+    try {
+      const error = await captureFailure(wire.fetch(endpoint + '/api/session/ses_A'))
+      assert.equal((error as { code?: string }).code, 'body_limit')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+      assert.deepEqual({ calls, cancels, reads }, { calls: 1, cancels: 1, reads: 1 })
+    } finally { await wire.dispose() }
+  }
+})

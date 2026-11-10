@@ -1,3 +1,4 @@
+import { nativeV2ByteView } from './v2-native-byte-view.ts'
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
@@ -43,13 +44,14 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
         if (part.done) { break }
         // Injected streams are not runtime-typed: non-byte chunks must never
         // bypass the finite byte budget or force unbounded additional reads.
-        if (!(part.value instanceof Uint8Array)) throw new Error('invalid_native_read_response')
-        responseBytes += part.value.byteLength; budget.bytes += part.value.byteLength
+        const chunk = nativeV2ByteView(part.value)
+        if (chunk === null) throw new Error('invalid_native_read_response')
+        responseBytes += chunk.byteLength; budget.bytes += chunk.byteLength
         if (responseBytes > 8 * 1024 * 1024 || budget.bytes > 32 * 1024 * 1024 || chunks.length >= MAX_V2_CHUNKS) {
           // A byte cap alone permits millions of tiny chunks and unbounded array overhead.
           throw new Error('native_cut_byte_budget')
         }
-        chunks.push(part.value)
+        chunks.push(Buffer.from(chunk))
       }
     }
   } finally {

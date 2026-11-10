@@ -1,3 +1,4 @@
+import { nativeV2ByteView } from './v2-native-byte-view.ts'
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2SessionID, safeV2MessageID, safeV2PermissionID } from './v2-native-identifiers.ts'
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
@@ -120,11 +121,11 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
           if (part.done) {break}
           // Injected native response streams are untyped at runtime. Reject
           // non-byte chunks before arithmetic or Buffer.concat budget accounting.
-          const chunk: unknown = part.value
-          executionAssert(chunk instanceof Uint8Array, 'invalid_response')
+          const chunk = nativeV2ByteView(part.value)
+          executionAssert(chunk !== null, 'invalid_response')
           bytes += chunk.byteLength
           executionAssert(bytes <= maximum && parts.length < MAX_V2_CHUNKS, 'body_limit')
-          parts.push(chunk)
+          parts.push(Buffer.from(chunk))
         }
         reader.releaseLock(); reader = undefined
         return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts))

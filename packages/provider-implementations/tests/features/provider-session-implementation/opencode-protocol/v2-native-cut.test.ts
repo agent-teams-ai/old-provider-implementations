@@ -583,3 +583,35 @@ test('public native read cut refuses to claim cleanup for a rejected response wi
   (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
   assert.deepEqual({ fetches, cancellations }, { fetches: 1, cancellations: 1 })
 })
+
+
+test('V2 public read cut counts physical native bytes behind spoofed accessors', async () => {
+  const directory = resolve('TEST/native-cut')
+  for (const pin of ['2.0.0', '2.0.21'] as const) {
+    let reads = 0, cancels = 0, fetches = 0
+    const oversized = new Uint8Array(8 * 1024 * 1024 + 1)
+    Object.defineProperties(oversized, {
+      byteLength: { get: () => 0 }, length: { get: () => 0 },
+    })
+    const transport = {
+      check() {},
+      async fetch(): Promise<Response> {
+        fetches++
+        return { status: 200, redirected: false, url: '',
+          headers: new Headers({ 'content-type': 'application/json' }),
+          body: { getReader: () => ({
+            async read() { return reads++ === 0
+              ? { done: false, value: oversized } : { done: true } },
+            async cancel() { cancels++ },
+            releaseLock() {},
+          }) },
+        } as unknown as Response
+      },
+    }
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: 'http://127.0.0.1:12345', directory, sessionID, pin },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+    (error: unknown) => error instanceof Error && error.message === 'native_cut_byte_budget')
+    assert.deepEqual({ reads, cancels, fetches }, { reads: 1, cancels: 1, fetches: 1 })
+  }
+})

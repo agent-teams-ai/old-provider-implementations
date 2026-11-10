@@ -1,3 +1,4 @@
+import { nativeV2ByteView } from './v2-native-byte-view.ts'
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
@@ -126,11 +127,11 @@ class OpenCodeV2ExecutionFetch {
         for (;;) {
           const part = await this.bound(this.track(reader.read()), validationSignal, this.context.deadline - Date.now())
           if (part.done) {break}
-          const chunk: unknown = part.value
-          executionAssert(chunk instanceof Uint8Array, 'invalid_input')
+          const chunk = nativeV2ByteView(part.value)
+          executionAssert(chunk !== null, 'invalid_input')
           bodyBytes += chunk.byteLength
           executionAssert(bodyBytes <= 1024 * 1024 && pieces.length < MAX_V2_CHUNKS, 'body_limit')
-          pieces.push(chunk)
+          pieces.push(Buffer.from(chunk))
         }
         reader.releaseLock(); reader = undefined
         const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pieces))
@@ -165,11 +166,11 @@ class OpenCodeV2ExecutionFetch {
       const part = await this.bound(this.track(reader.read()), signal, this.context.deadline - Date.now())
       this.check(); signal.throwIfAborted()
       if (part.done) { break }
-      const chunk: unknown = part.value
-      executionAssert(chunk instanceof Uint8Array, 'invalid_response')
+      const chunk = nativeV2ByteView(part.value)
+      executionAssert(chunk !== null, 'invalid_response')
       bytes += chunk.byteLength
       executionAssert(bytes <= 8 * 1024 * 1024 && chunks.length < MAX_V2_CHUNKS, 'body_limit')
-      chunks.push(chunk)
+      chunks.push(Buffer.from(chunk))
     }
     return chunks
   }
