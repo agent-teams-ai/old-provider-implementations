@@ -48,6 +48,39 @@ test('invalid native queue input never reads Host credentials or performs prefli
   }
 })
 
+test('escaped native prompt body over 1 MiB is rejected before credentials and GET; subsequent valid input remains usable', async t => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const host = await driverPeer(); t.after(host.close)
+    const config = nativeConfig(host); config.version = version
+    let credentialReads = 0, nativeRequests = 0
+    config.readPassword = () => { credentialReads++; return 'TEST-private-password' }
+    config.fetchImpl = async (input, init) => { nativeRequests++; return fetch(input, init) }
+    const native = createDriverNative(config, new AbortController().signal)
+    // Raw text is within 256 KiB; JSON escaping expands NUL to six bytes.
+    const encodedText = '\\0'.repeat(200_000)
+    assert.ok(Buffer.byteLength(encodedText) < 256 * 1024)
+    assert.ok(Buffer.byteLength(JSON.stringify({ id: 'msg_TESToversize', text: encodedText,
+      resume: true, delivery: 'queue' })) > 1024 * 1024)
+    await assert.rejects(native.queue('msg_TESToversize', encodedText), error => {
+      assert.ok(error instanceof ExecutionTransportFailure)
+      assert.equal(error.code, 'invalid_input')
+      assert.equal(error.disposition, 'not_submitted')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(error), true)
+      return true
+    })
+    assert.equal(credentialReads, 0)
+    assert.equal(nativeRequests, 0)
+    assert.equal(host.counts().submitted, 0)
+    // A local rejection must not latch an uncertain prompt or poison this driver.
+    const accepted = await native.queue('msg_TESTnormal', 'TEST valid bounded prompt')
+    assert.equal(accepted.nativeInputID, 'msg_TESTnormal')
+    assert.equal(host.counts().submitted, 1)
+    assert.ok(credentialReads > 0)
+    assert.ok(nativeRequests > 0)
+    await native.dispose()
+  }
+})
+
 test('stock CLI sync-only log is not a durable execution preflight and cannot submit a model prompt', async t => {
   const host = await driverPeer(); t.after(host.close); host.syncOnlyLog()
   const native = createDriverNative(nativeConfig(host), new AbortController().signal)

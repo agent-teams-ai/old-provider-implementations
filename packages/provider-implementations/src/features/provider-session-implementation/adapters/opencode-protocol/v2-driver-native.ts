@@ -69,8 +69,13 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     // Reject malformed input before even the native session/log preflight GET:
     // these reads carry Host Basic credentials and cannot validate a bad queue.
     // The wire also checks the eventual POST, but that is too late for preflight.
-    if (!safeV2MessageID(nativeInputID) || typeof text !== 'string'
-      || text.trim().length === 0 || Buffer.byteLength(text) > 256 * 1024) {
+    const validText = safeV2MessageID(nativeInputID) && typeof text === 'string'
+      && text.trim().length > 0 && Buffer.byteLength(text) <= 256 * 1024
+    // A text under 256 KiB can exceed the raw transport's 1 MiB POST budget
+    // after JSON escaping (e.g. NUL). Admit the exact serialized body before
+    // reading Host credentials or preflighting the native session.
+    const promptBody = validText ? JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) : ''
+    if (!validText || Buffer.byteLength(promptBody) > 1024 * 1024) {
       const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
       unsubmitted.add(failure)
       throw failure
@@ -97,7 +102,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       assertUsable(true)
       mutation = true
       const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) })).json() as unknown))
+        headers: { 'content-type': 'application/json' }, body: promptBody })).json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
         || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text) {throw new Error('native_handoff_identity_mismatch')}
       // A close that raced the acknowledged POST cannot be reported as clean.
