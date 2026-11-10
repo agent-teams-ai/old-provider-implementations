@@ -103,8 +103,18 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       const remaining = () => Math.min(30_000, config.deadline - Date.now())
       timer = setTimeout(() =>{  controller.abort(); }, Math.max(0, remaining()))
       const consume = async (body: ReadableStream<Uint8Array> | null, maximum: number) => {
-        if (!body) {return ''}
-        reader = body.getReader(); let bytes = 0; const parts: Uint8Array[] = []
+        if (body === null) {return ''}
+        // A locked real native response throws on acquisition. An injected
+        // response can also return no usable reader without throwing. Neither
+        // establishes owned stream cleanup, even for a read-only permission GET.
+        try {
+          if (!body || typeof body.getReader !== 'function') throw new Error('unowned reader')
+          const acquired = body.getReader()
+          if (!acquired || typeof acquired.read !== 'function' || typeof acquired.cancel !== 'function'
+            || typeof acquired.releaseLock !== 'function') throw new Error('unowned reader')
+          reader = acquired
+        } catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
+        let bytes = 0; const parts: Uint8Array[] = []
         for (;;) {
           const part = await boundV2Request(track(reader.read()), remaining(), signal)
           if (part.done) {break}

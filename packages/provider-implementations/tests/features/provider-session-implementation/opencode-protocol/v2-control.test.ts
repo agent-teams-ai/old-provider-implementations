@@ -687,3 +687,69 @@ test('V2 raw control does not relay native diagnostic headers', async t => {
   assert.equal(result.headers.get('set-cookie'), null)
   assert.deepEqual(await result.json(), { data: [] })
 })
+
+test('V2 raw control cannot claim clean native reader custody on locked or malformed readbacks', async () => {
+  const endpoint = 'http://127.0.0.1:12345'
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    for (const mode of ['locked', 'null-reader', 'missing-cancel'] as const) {
+      const response = new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('{"data":[]}')) },
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+      const owned = mode === 'locked' ? response.body?.getReader() : undefined
+      const injected = mode === 'locked' ? response : {
+        status: 200, redirected: false, url: '',
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body: { getReader: () => mode === 'null-reader' ? null : { read: async () => ({ done: true }), releaseLock() {} } },
+      } as unknown as Response
+      let requests = 0
+      const wire = createV2ControlWire({
+        endpoint, directory: '/TEST/original', version, nativeSessionId: 'ses_A',
+        deadline: Date.now() + 10_000, readPassword: () => 'TEST-private',
+        fetchImpl: async () => { requests++; return injected },
+      })
+      try {
+        await assert.rejects(wire.request('/api/session/ses_A/permission'), error => {
+          assert(error instanceof Error)
+          assert.equal((error as { code?: string }).code, 'cleanup_unknown')
+          assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+          assert.doesNotMatch(error.message, /unowned reader|ERR_INVALID_STATE/)
+          return true
+        })
+        assert.equal(requests, 1)
+      } finally {
+        await owned?.cancel()
+        owned?.releaseLock()
+        await wire.dispose()
+      }
+    }
+  }
+})
+
+test('V2 typed permission preflight preserves unknown custody after locked native response', async () => {
+  for (const version of ['2.0.0', '2.0.21'] as const) {
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"data":{}}')) },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+    const owned = response.body!.getReader()
+    let requests = 0
+    const control = createOpenCodeV2SessionControl({
+      endpoint: 'http://127.0.0.1:12345', directory: '/TEST/original',
+      version, nativeSessionId: 'ses_A', deadline: Date.now() + 10_000,
+      readPassword: () => 'TEST-private',
+      fetchImpl: async () => { requests++; return response },
+    })
+    try {
+      await assert.rejects(control.replyPermission('per_TEST', 'once'), error => {
+        assert(error instanceof Error)
+        assert.equal((error as { code?: string }).code, 'cleanup_unknown')
+        assert.equal(wasOpenCodeV2InputNotSubmitted(error), false)
+        return true
+      })
+      assert.equal(requests, 1, 'a failed preflight must never submit a permission POST')
+    } finally {
+      await owned.cancel()
+      owned.releaseLock()
+      await control.dispose()
+    }
+  }
+})
