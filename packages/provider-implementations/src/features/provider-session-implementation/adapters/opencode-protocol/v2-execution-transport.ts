@@ -142,7 +142,7 @@ class OpenCodeV2ExecutionFetch {
           signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
       if (activation) {executionAssert(!request.body, 'capabilities_pending')}
-      return { request, url, session, log, activation }
+      return { request, url, session, log, activation, prompt }
     } finally {
       if (reader) {
         // No native HTTP was invoked, but rejected local body cancellation
