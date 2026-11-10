@@ -22,8 +22,8 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
     && fields.skills === undefined, 'capabilities_pending')
 }
 
-function executionMethodAllowed(method: string, flags: { session: boolean; list: boolean; log: boolean; scoped: boolean; identity: boolean; create: boolean; prompt: boolean; activation: boolean }): boolean {
-  return method === 'GET' && (flags.session || flags.list || flags.log || flags.scoped || flags.identity)
+function executionMethodAllowed(method: string, flags: { session: boolean; list: boolean; log: boolean; scoped: boolean; create: boolean; prompt: boolean; activation: boolean }): boolean {
+  return method === 'GET' && (flags.session || flags.list || flags.log || flags.scoped)
     || method === 'POST' && (flags.create || flags.prompt || flags.activation)
 }
 export function validateExecutionRoute(request: Request, pin: string, directory: string, endpoint: string, nativeSessionId: string) {
@@ -41,12 +41,15 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   // Real model-binding discovery/effective permission policy remains HOLD.
   const scoped = url.pathname === '/api/location'
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
-  const identity = (pin === '2.0.0' ? ['/api/health', '/api/server'] : ['/api/info']).includes(url.pathname), create = url.pathname === '/api/session'
+  // Native /api/info (2.0.21) exposes process paths and PID, and the
+  // 2.0.0 health/server routes are global. Session-owned credentials cannot
+  // attest these process-wide identities: Host custody owns that preflight.
+  const create = url.pathname === '/api/session'
   // The V2 Session SPI binds an already owned session. Native creation is a separate
   // Host-custody operation: this transport cannot prove effective ordered permissions
   // or prevent V2's default external_directory allow. Deny before any native fetch.
   executionAssert(!create, 'capabilities_pending')
-  executionAssert(executionMethodAllowed(request.method, { session, prompt, list, log, scoped, activation, identity, create }), 'capabilities_pending')
+  executionAssert(executionMethodAllowed(request.method, { session, prompt, list, log, scoped, activation, create }), 'capabilities_pending')
   const allowed = scoped || activation ? ['location[directory]'] : log ? ['after', 'follow'] : url.pathname.endsWith('/message') ? ['cursor', 'limit'] : []
   for (const key of url.searchParams.keys()) { executionAssert(allowed.includes(key) && url.searchParams.getAll(key).length === 1, 'authority_mismatch') }
   // These raw GET routes also carry Host credentials. Keep untrusted query

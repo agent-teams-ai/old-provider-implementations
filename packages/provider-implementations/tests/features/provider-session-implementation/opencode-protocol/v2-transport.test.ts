@@ -272,6 +272,9 @@ test('V2 raw execution wire refuses unqualified global discovery before projecti
       '/api/model',
       '/api/agent/default?location[directory]=/TEST/original',
       '/api/agent/default',
+      '/api/info',
+      '/api/health',
+      '/api/server',
     ]) {
       const failure = await captureFailure(transport.fetch(endpoint + route))
       assert.equal(wasOpenCodeV2InputNotSubmitted(failure), true, route)
