@@ -17,7 +17,7 @@ const config = (endpoint: string, version: '2.0.0' | '2.0.21' = '2.0.21',
   endpoint, version, nativeSessionId, directory: '/TEST/original',
   readPassword: () => 'TEST_PRIVATE_PASSWORD', deadline: Date.now() + 10_000,
 })
-const prompt = { id: 'msg_original', text: 'TEST input', delivery: 'queue', resume: true }
+const prompt = { id: 'msg_original', text: 'TEST input', delivery: 'queue', resume: false }
 async function captureFailure(work: Promise<unknown>): Promise<unknown> {
   try { await work } catch (error) { return error }
   assert.fail('expected failure')
@@ -110,11 +110,17 @@ test('V2 raw prompt refuses partial/asynchronous 2xx as a confirmed handoff', as
     })
     assert.equal(accepted.status, 200)
     assert.equal((await accepted.json() as { data?: { id?: string } }).data?.id, prompt.id)
-    assert.equal(calls, 4)
+    // Native TEST provenance distinguishes durable model-free resume:false from
+    // model-running resume:true. Both pinned protocol modes remain admitted.
+    const resumed = await transport.fetch(endpoint + '/api/session/ses_A/prompt', {
+      method: 'POST', body: JSON.stringify({ ...prompt, resume: true }),
+    })
+    assert.equal(resumed.status, 200)
+    assert.equal(calls, 5)
   }
 })
 
-test('V2 raw prompt rejects unqualified resume modes and attachments before credentials or native HTTP', async t => {
+test('V2 raw prompt rejects malformed resume types and unqualified attachments before credentials or native HTTP', async t => {
   for (const version of ['2.0.0', '2.0.21'] as const) {
     let credentialReads = 0
     let nativeCalls = 0
@@ -126,8 +132,8 @@ test('V2 raw prompt rejects unqualified resume modes and attachments before cred
     })
     t.after(() => wire.dispose())
     for (const forbidden of [
-      { resume: false }, // Host-qualified prompt mode is resumed, session-bound text queue only.
       { resume: 'true' },
+      { resume: null },
       { files: [{ uri: 'file:///TEST/foreign/private' }] },
       { agents: [{ name: 'unqualified_agent' }] },
       { skills: [{ id: 'unqualified_skill' }] },

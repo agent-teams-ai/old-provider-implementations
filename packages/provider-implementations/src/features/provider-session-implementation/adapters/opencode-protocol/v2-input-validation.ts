@@ -13,7 +13,7 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
   executionAssert(Object.keys(fields).every(key => ['id', 'text', 'files', 'agents', 'skills', 'delivery', 'resume'].includes(key))
     && typeof fields.id === 'string' && safeV2MessageID(fields.id)
     && typeof fields.text === 'string' && fields.text.trim().length > 0 && Buffer.byteLength(fields.text) <= 256 * 1024
-    && fields.delivery === 'queue' && fields.resume === true, 'invalid_input')
+    && fields.delivery === 'queue' && typeof fields.resume === 'boolean', 'invalid_input')
   // This TEST-only credential-bearing wire has no effective tool or external-
   // directory permission attestation. File, agent and skill attachments can
   // invoke unqualified native effects; only the private text-only queue path
