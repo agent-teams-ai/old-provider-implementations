@@ -41,7 +41,8 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   // a session-bound credential wire has no authority to read either endpoint.
   // A workspace query cannot authorize global model or agent inventories.
   // Real model-binding discovery/effective permission policy remains HOLD.
-  const scoped = url.pathname === '/api/location' || ownerScope && url.pathname === '/api/mcp'
+  const scoped = url.pathname === '/api/location' || ownerScope &&
+    (url.pathname === '/api/mcp' || url.pathname === '/api/plugin')
   const ownerRead = ownerScope && (url.pathname === '/api/info' || url.pathname === '/api/permission/saved')
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   // Native /api/info (2.0.21) exposes process paths and PID, and the

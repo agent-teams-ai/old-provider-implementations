@@ -200,6 +200,8 @@ try {
   check((await owner.instructions()).some(row => row.key === 'test-native-spi' && row.value === marker), 'instruction_readback')
   phase = 'owner_saved'
   check(await owner.savedPermissionsEmpty(), 'preexisting_saved_grants')
+  phase = 'owner_plugins'
+  check(await owner.builtinPluginsOnly(), 'non_builtin_or_failed_plugins')
   phase = 'owner_mcp'
   let mcpReady = false
   for (let attempt = 0; attempt < 100 && !mcpReady; attempt++) {
@@ -251,7 +253,7 @@ try {
   await runInput('interrupt')
   await until(() => streamOpen || fixtureFailure, 'active_stream_missing')
   check((await driver.interrupt('TEST-op-interrupt')).ok, 'interrupt_receipt')
-  await until(() => resultFor('interrupt') || fixtureFailure, 'interrupt_terminal_missing')
+  await until(() => resultFor('interrupt') && streamClosed || fixtureFailure, 'interrupt_terminal_or_stream_close_missing')
   check(resultFor('interrupt')?.outcome === 'cancelled' && streamClosed, 'interrupt_not_confirmed')
   await until(() => driver.checkpoint().ok, 'idle_checkpoint_missing')
   checkpoint = driver.checkpoint().value
@@ -267,6 +269,7 @@ try {
   owner = createOpenCodeV2OwnedSessionClient(transportConfig(restoredEndpoint))
   check((await owner.readSession()).id === created.id, 'cold_session_missing')
   check(await owner.savedPermissionsEmpty(), 'saved_grants_after_once')
+  check(await owner.builtinPluginsOnly(), 'non_builtin_plugins_after_restore')
   check((await owner.instructions()).some(row => row.key === 'test-native-spi' && row.value === marker), 'cold_instructions_missing')
   binding.generation++
   const previousEventCount = events.length
@@ -288,7 +291,7 @@ try {
   receipt.phase = phase
   receipt.lastNativeStatus = lastNativeStatus
   const refusal = ['authority_mismatch', 'native_identity_mismatch', 'invalid_response', 'http_failure', 'media_type',
-    'transport_failure', 'deadline', 'invalid_native_identity', 'invalid_native_permissions', 'native_selection_mismatch']
+    'transport_failure', 'deadline', 'invalid_native_identity', 'invalid_native_permissions', 'native_selection_mismatch', 'invalid_native_plugins']
   if (refusal.includes(error?.message)) receipt.refusal = error.message
 } finally {
   let cleaned = true

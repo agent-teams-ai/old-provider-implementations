@@ -83,6 +83,24 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
       executionAssert(Array.isArray(value) && value.length <= 4096, 'invalid_native_saved_permissions')
       return value.length === 0
     },
+    /** Only the pinned engine's active built-ins; never exports plugin paths or diagnostics. */
+    async builtinPluginsOnly(): Promise<boolean> {
+      const query = new URLSearchParams({ 'location[directory]': config.directory })
+      const value = record(await (await wire.fetch(config.endpoint + `/api/plugin?${query}`)).json() as unknown)
+      executionAssert(value !== null && record(value.location)?.directory === config.directory &&
+        Array.isArray(value.data) && value.data.length <= 256, 'invalid_native_plugins')
+      const accepted = (value.data as unknown[]).map(item => {
+        const row = record(item), source = record(row?.source), state = record(row?.state), features = record(row?.features)
+        executionAssert(row !== null && source !== null && state !== null && features !== null &&
+          typeof source.type === 'string' && ['builtin', 'package', 'local', 'sdk'].includes(source.type) &&
+          typeof state.status === 'string' && ['active', 'failed'].includes(state.status) &&
+          Object.entries(features).every(([key, enabled]) => ['server', 'tui', 'rpc'].includes(key) && enabled === true),
+        'invalid_native_plugins')
+        if (row.id !== undefined) text(row.id)
+        return source.type === 'builtin' && Object.keys(source).length === 1 && state.status === 'active'
+      })
+      return accepted.every(Boolean)
+    },
     async readMcp(): Promise<readonly Readonly<{ name: string; status: string }>[]> {
       const query = new URLSearchParams({ 'location[directory]': config.directory })
       const value = record(await (await wire.fetch(config.endpoint + `/api/mcp?${query}`)).json() as unknown)

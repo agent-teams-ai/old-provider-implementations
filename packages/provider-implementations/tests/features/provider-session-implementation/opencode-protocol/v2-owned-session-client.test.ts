@@ -111,13 +111,46 @@ test('ordinary 2.1.4 session transport retains zero-credential rejection of owne
     fetchImpl: async () => { requests++; return json({}) },
   })
   try {
-    for (const path of ['/api/info', '/api/permission/saved', '/api/mcp?location[directory]=' + encodeURIComponent(baseline.directory)]) {
+    for (const path of ['/api/info', '/api/permission/saved', '/api/mcp?location[directory]=' + encodeURIComponent(baseline.directory),
+      '/api/plugin?location[directory]=' + encodeURIComponent(baseline.directory)]) {
       await assert.rejects(wire.fetch(baseline.endpoint + path), /capabilities_pending/)
     }
     await assert.rejects(wire.fetch(baseline.endpoint + '/api/session', { method: 'POST',
       body: JSON.stringify({ id: baseline.nativeSessionId, location: { directory: baseline.directory }, ...selected }) }), /capabilities_pending/)
     assert.deepEqual({ credentials, requests }, { credentials: 0, requests: 0 })
   } finally { await wire.dispose() }
+})
+
+test('owned plugin readback attests only active native builtins in the exact location', async () => {
+  const builtin = { id: 'TEST-native', source: { type: 'builtin' }, state: { status: 'active' }, features: { server: true } }
+  for (const [data, expected] of [
+    [[], true],
+    [[builtin], true],
+    [[builtin, { ...builtin, id: 'TEST-external', source: { type: 'local', path: 'TEST-private' } }], false],
+    [[{ ...builtin, source: { type: 'package', target: 'TEST-private' } }], false],
+    [[{ ...builtin, source: { type: 'sdk' } }], false],
+    [[{ ...builtin, state: { status: 'failed', error: 'TEST-private' } }], false],
+  ] as const) {
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+      const request = input as Request, url = new URL(request.url)
+      assert.equal(request.method, 'GET'); assert.equal(url.pathname, '/api/plugin')
+      assert.equal(url.searchParams.get('location[directory]'), baseline.directory)
+      return json({ location: { directory: baseline.directory }, data })
+    } })
+    try { assert.equal(await client.builtinPluginsOnly(), expected) }
+    finally { await client.dispose() }
+  }
+  for (const value of [
+    { location: { directory: 'TEST-foreign' }, data: [builtin] },
+    { location: { directory: baseline.directory }, data: null },
+    { location: { directory: baseline.directory }, data: [{ ...builtin, state: { status: 'unknown' } }] },
+    { location: { directory: baseline.directory }, data: [{ ...builtin, source: null }] },
+    { location: { directory: baseline.directory }, data: [{ ...builtin, features: { server: false } }] },
+  ]) {
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async () => json(value) })
+    try { await assert.rejects(client.builtinPluginsOnly(), /invalid_native_plugins/) }
+    finally { await client.dispose() }
+  }
 })
 
 test('owned saved grants attest only exact native empty list and expose no grant details', async () => {
