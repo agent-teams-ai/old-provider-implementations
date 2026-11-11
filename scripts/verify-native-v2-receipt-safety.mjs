@@ -9,7 +9,7 @@ const filenames = readdirSync('.').filter(name =>
 const expectedProof = process.env.OPENCODE_V2_EXPECTED_TEST_PROOF
 const acceptedProofs = new Set([
   'lifecycle', 'model', 'embedded', 'embedded-model', 'embedded-interrupt',
-  'embedded-target-interrupt',
+  'embedded-target-interrupt', 'embedded-target-spi',
   'embedded-mcp', 'embedded-target-mcp', 'embedded-floor', 'embedded-target',
   'embedded-target-model', 'embedded-target-tool', 'embedded-pinned-tool',
 ])

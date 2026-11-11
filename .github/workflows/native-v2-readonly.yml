@@ -25,6 +25,7 @@ on:
       - scripts/native-v2-model-candidate.mjs
       - scripts/verify-native-v2-cli-hold.mjs
       - scripts/native-v2-embedded-proof.mjs
+      - scripts/native-v2-spi-proof.mjs
       - scripts/verify-native-v2-embedded-floor-hold.mjs
       - scripts/verify-native-v2-interrupt-proof.mjs
       - scripts/native-v2-mcp-proof.mjs
@@ -49,6 +50,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Actual 2.1.4 Session SPI over owned TEST HTTP server + persistent events.
+          # Product Host/graph/process and packaged Desktop remain separate gates.
+          - { os: ubuntu-24.04, proof: embedded-target-spi }
+          - { os: macos-15, proof: embedded-target-spi }
+          - { os: macos-15-intel, proof: embedded-target-spi }
+          - { os: windows-2022, proof: embedded-target-spi }
+          - { os: windows-11-arm, proof: embedded-target-spi }
           - { os: ubuntu-24.04, proof: lifecycle }
           - { os: ubuntu-24.04, proof: model }
           - { os: ubuntu-24.04, proof: embedded }
@@ -129,6 +137,7 @@ jobs:
           node --check scripts/native-v2-model-candidate.mjs
           node --check scripts/verify-native-v2-cli-hold.mjs
           node --check scripts/native-v2-embedded-proof.mjs
+          node --check scripts/native-v2-spi-proof.mjs
           node --check scripts/verify-native-v2-embedded-floor-hold.mjs
           node --check scripts/verify-native-v2-interrupt-proof.mjs
           node --check scripts/native-v2-mcp-proof.mjs
@@ -202,7 +211,7 @@ jobs:
           fi
           node scripts/verify-native-v2-embedded-floor-hold.mjs
       - name: TEST embedded V2 persistent event log through cold host restart
-        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt' && matrix.proof != 'embedded-target-interrupt' && matrix.proof != 'embedded-mcp' && matrix.proof != 'embedded-target-mcp'
+        if: startsWith(matrix.proof, 'embedded') && matrix.proof != 'embedded-floor' && matrix.proof != 'embedded-interrupt' && matrix.proof != 'embedded-target-interrupt' && matrix.proof != 'embedded-mcp' && matrix.proof != 'embedded-target-mcp' && matrix.proof != 'embedded-target-spi'
         env:
           OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
           OPENCODE_V2_EMBEDDED_RECEIPT: ${{ github.workspace }}/native-v2-${{ matrix.proof }}-proof.json
@@ -232,6 +241,13 @@ jobs:
           OPENCODE_V2_MCP_VERSION: ${{ matrix.proof == 'embedded-target-mcp' && '2.1.4' || '2.0.21' }}
           OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
         run: node scripts/native-v2-mcp-proof.mjs
+      - name: TEST native 2.1.4 Session SPI model, MCP permission, interrupt and cold restore
+        if: matrix.proof == 'embedded-target-spi'
+        env:
+          OPENCODE_V2_EMBEDDED_NPM_PREFIX: ${{ runner.temp }}/opencode-v2-embedded
+          OPENCODE_V2_SPI_RECEIPT: ${{ github.workspace }}/native-v2-embedded-target-spi-proof.json
+          OPENCODE_V2_TEST_EXPECTED_PLATFORM: ${{ matrix.os == 'macos-15' && 'darwin-arm64' || matrix.os == 'macos-15-intel' && 'darwin-x64' || matrix.os == 'windows-2022' && 'win32-x64' || matrix.os == 'windows-11-arm' && 'win32-arm64' || 'linux-x64' }}
+        run: node scripts/native-v2-spi-proof.mjs
       - name: Refuse unsafe native TEST receipts before artifact publication
         id: receipt_safety
         if: always()
@@ -252,6 +268,7 @@ jobs:
             native-v2-embedded-model-proof.json
             native-v2-embedded-interrupt-proof.json
             native-v2-embedded-target-interrupt-proof.json
+            native-v2-embedded-target-spi-proof.json
             native-v2-embedded-mcp-proof.json
             native-v2-embedded-target-mcp-proof.json
             native-v2-embedded-floor-proof.json

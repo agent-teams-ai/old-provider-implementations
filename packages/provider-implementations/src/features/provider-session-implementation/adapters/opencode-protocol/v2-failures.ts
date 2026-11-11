@@ -1,10 +1,11 @@
+import type { V2ExecutionVersion } from './v2-protocol-version.ts'
 export class ExecutionTransportFailure extends Error {
   readonly code: string
   readonly disposition: 'not_submitted' | 'unknown'
   constructor(code: string, disposition: 'not_submitted' | 'unknown') { super(code); this.code = code; this.disposition = disposition }
 }
 export const unsubmitted = new WeakSet<object>()
-export type V2SessionAbsenceBinding = { sessionId: string; endpoint: string; directory: string; version: '2.0.0' | '2.0.21' }
+export type V2SessionAbsenceBinding = { sessionId: string; endpoint: string; directory: string; version: V2ExecutionVersion }
 export const missingSessions = new WeakMap<object, V2SessionAbsenceBinding>()
 export function executionSessionIsMissing(error: unknown, expected: V2SessionAbsenceBinding): boolean {
   if (error === null || typeof error !== 'object') {return false}

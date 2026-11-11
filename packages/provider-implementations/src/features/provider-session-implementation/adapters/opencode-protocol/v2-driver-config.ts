@@ -1,6 +1,7 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
+import { isV2ExecutionVersion } from './v2-protocol-version.ts'
 import { createHash } from 'node:crypto'
 import { types as nodeUtilTypes } from 'node:util'
 import { posix, win32 } from 'node:path'
@@ -66,7 +67,7 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
     || !safeV2SessionID(captured.nativeSessionId)
     || !isCanonicalV2DriverDirectory(captured.directory)
     || !isCanonicalOpenCodeV2LoopbackEndpoint(captured.endpoint)
-    || !['2.0.0', '2.0.21'].includes(captured.version)
+    || !isV2ExecutionVersion(captured.version)
     || typeof captured.readPassword !== 'function' || typeof captured.probe !== 'function' || typeof captured.confirmStopped !== 'function'
     || captured.beforeRequest !== undefined && typeof captured.beforeRequest !== 'function'
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
@@ -75,25 +76,43 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
   return captured
 }
 export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
-  return createHash('sha256').update(JSON.stringify({ version: config.version, endpoint: config.endpoint,
+  // The owned 2.1.4 process may use a new loopback port on cold restore. Its
+  // stable Host binding includes the engine graph and executable digests;
+  // fresh endpoint/PID custody is attested separately before every allocation.
+  // Preserve older checkpoints byte-for-byte for their original wire contracts.
+  return createHash('sha256').update(JSON.stringify({ version: config.version,
+    ...(config.version === '2.1.4' ? {} : { endpoint: config.endpoint }),
     directory: config.directory, nativeSessionId: config.nativeSessionId, trustedBinding: config.trustedBinding,
     accountBinding: config.accountBinding, configRevision: config.configRevision,
     tenantId: config.binding.tenantId, projectId: config.binding.projectId, sessionId: config.binding.sessionId })).digest('hex')
 }
-export function checkDriverCheckpoint(value: unknown, config: OpenCodeV2DriverConfig): boolean {
+function snapshotCheckpoint(value: unknown): { nativeSessionId: string; compatibility: string } | undefined {
   // Durable checkpoint bytes are untrusted. A getter or Proxy can forge the
   // identity on read or throw Host-private data out of open().
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || nodeUtilTypes.isProxy(value)) return false
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || nodeUtilTypes.isProxy(value)) return undefined
   try {
     const prototype = Object.getPrototypeOf(value)
-    if (prototype !== Object.prototype && prototype !== null) return false
+    if (prototype !== Object.prototype && prototype !== null) return undefined
     const expected = ['version', 'engine', 'nativeSessionId', 'compatibility']
     const keys = Reflect.ownKeys(value)
-    if (keys.length !== expected.length || keys.some(key => typeof key !== 'string' || !expected.includes(key))) return false
+    if (keys.length !== expected.length || keys.some(key => typeof key !== 'string' || !expected.includes(key))) return undefined
     const fields = Object.getOwnPropertyDescriptors(value)
-    if (expected.some(key => !fields[key]?.enumerable || !Object.hasOwn(fields[key], 'value'))) return false
-    return fields.version?.value === 1 && fields.engine?.value === 'opencode-v2'
-      && fields.nativeSessionId?.value === config.nativeSessionId
-      && fields.compatibility?.value === driverCompatibility(config)
-  } catch { return false }
+    if (expected.some(key => !fields[key]?.enumerable || !Object.hasOwn(fields[key], 'value'))) return undefined
+    const nativeSessionId: unknown = fields.nativeSessionId?.value, compatibility: unknown = fields.compatibility?.value
+    if (fields.version?.value !== 1 || fields.engine?.value !== 'opencode-v2' ||
+      !safeV2SessionID(nativeSessionId) || typeof compatibility !== 'string' || !/^[a-f0-9]{64}$/.test(compatibility)) return undefined
+    return { nativeSessionId: nativeSessionId as string, compatibility }
+  } catch { return undefined }
+}
+
+/** Read native identity before allocation; the Driver still checks complete compatibility. */
+export function readOpenCodeV2CheckpointSessionId(value: unknown): string {
+  const snapshot = snapshotCheckpoint(value)
+  if (!snapshot) throw new Error('opencode.v2.checkpoint-incompatible')
+  return snapshot.nativeSessionId
+}
+export function checkDriverCheckpoint(value: unknown, config: OpenCodeV2DriverConfig): boolean {
+  const checkpoint = snapshotCheckpoint(value)
+  return checkpoint !== undefined && checkpoint.nativeSessionId === config.nativeSessionId &&
+    checkpoint.compatibility === driverCompatibility(config)
 }

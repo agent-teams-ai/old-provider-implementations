@@ -62,6 +62,9 @@ export type { OpenCodeV2Permission } from './adapters/opencode-protocol/v2-sessi
 export { createOpenCodeV2DriverFactory } from './adapters/opencode-protocol/v2-driver-factory.ts'
 export type { OpenCodeV2DriverHost } from './adapters/opencode-protocol/v2-driver-factory.ts'
 export type { OpenCodeV2DriverConfig } from './adapters/opencode-protocol/v2-driver-config.ts'
+export { readOpenCodeV2CheckpointSessionId } from './adapters/opencode-protocol/v2-driver-config.ts'
+export { createOpenCodeV2OwnedSessionClient } from './adapters/opencode-protocol/v2-owned-session-client.ts'
+export type { OpenCodeV2OwnedSessionSelection, OpenCodeV2SessionPermissionRule } from './adapters/opencode-protocol/v2-owned-session-client.ts'
 
 export { createOpenCodeV1DriverFactory, readOpenCodeV1CheckpointSessionId } from './adapters/opencode-protocol/v1-driver-factory.ts'
 export type { OpenCodeV1DriverHost } from './adapters/opencode-protocol/v1-driver-factory.ts'

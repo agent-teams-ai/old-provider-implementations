@@ -36,8 +36,11 @@ if (typeof factory !== 'function' || typeof openClaudeSession !== 'function' || 
 type ConsumerSession = Pick<Session, 'submit' | 'observe' | 'interrupt' | 'close'>;
 export type { ConsumerSession };
 import type { CodexApprovalReply, CodexNativeNormalizedEvent } from '@agent-teams/provider-implementations/codex';
-import { createOpenCodeV1DriverFactory, createOpenCodeV2DriverFactory, isCanonicalOpenCodeAscendingMessageId } from '@agent-teams/provider-implementations/opencode';
-import type { OpenCodeV1DriverHost, OpenCodeV2DriverHost } from '@agent-teams/provider-implementations/opencode';
+import { createOpenCodeV1DriverFactory, createOpenCodeV2DriverFactory, createOpenCodeV2OwnedSessionClient, readOpenCodeV2CheckpointSessionId, isCanonicalOpenCodeAscendingMessageId } from '@agent-teams/provider-implementations/opencode';
+import type { OpenCodeV1DriverHost, OpenCodeV2DriverHost, OpenCodeV2TransportConfig, OpenCodeV2OwnedSessionSelection } from '@agent-teams/provider-implementations/opencode';
+const nativeVersion: OpenCodeV2TransportConfig['version'] = '2.1.4';
+const nativeSelection: OpenCodeV2OwnedSessionSelection = { agent: 'build', model: { providerID: 'TEST-provider', id: 'TEST-model' }, permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' }] };
+if (typeof createOpenCodeV2OwnedSessionClient !== 'function' || typeof readOpenCodeV2CheckpointSessionId !== 'function' || nativeVersion !== '2.1.4' || nativeSelection.agent !== 'build') throw Error('OpenCode owned native API');
 const openCodeFactory: (host: OpenCodeV2DriverHost) => DriverFactory = createOpenCodeV2DriverFactory;
 const openCodeV1Factory: (host: OpenCodeV1DriverHost) => DriverFactory = createOpenCodeV1DriverFactory;
 if (typeof openCodeFactory !== 'function') throw Error('OpenCode canonical adapter');
@@ -112,14 +115,14 @@ try {
   assert.equal((checkpoint.value as Record<string, unknown>).nativeThreadId, 'thread-1');
 } finally { await driver?.close(); canonical.child.kill('SIGTERM'); }
 // Exercise the EXACT installed V2 Session SPI package across the packed boundary.
-// A serialized product 2.1.4 profile must fail before a native probe or secret read.
+// A serialized future 2.1.5 profile must fail before a native probe or secret read.
 let v2ProbeCalls = 0, v2CredentialReads = 0, v2CheckpointReads = 0;
-const v2Config = (version: '2.0.21' | '2.1.4') => ({
+const v2Config = (version: '2.0.21' | '2.1.5') => ({
   binding: { tenantId: request.tenantId, projectId: request.projectId,
     sessionId: request.sessionId, generation: request.generation },
   configRevision: request.configRevision,
   endpoint: 'http://127.0.0.1:19991',
-  // Deliberately cast the untrusted serialized 2.1.4 value through the public
+  // Deliberately cast the untrusted serialized 2.1.5 value through the public
   // type to exercise the runtime security guard rather than TS assignability.
   version: version as '2.0.21',
   directory: process.cwd(), nativeSessionId: 'ses_PACKED001',
@@ -132,7 +135,7 @@ const v2Config = (version: '2.0.21' | '2.1.4') => ({
 });
 const unsupportedV2 = createOpenCodeV2DriverFactory({
   capabilities: ['text', 'checkpoint'],
-  async resolveConfiguration() { return v2Config('2.1.4'); },
+  async resolveConfiguration() { return v2Config('2.1.5'); },
   async readCheckpoint() { v2CheckpointReads++; return undefined; },
 });
 await assert.rejects(unsupportedV2.open(request), /opencode\\.driver\\.invalid-config/);

@@ -8,6 +8,7 @@ import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-fa
 import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createV2RequestAdmission } from './v2-request-admission.ts'
+import { isV2ExecutionVersion } from './v2-protocol-version.ts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
 export type OpenCodeV2SessionControlConfig = OpenCodeV2TransportConfig & {
@@ -86,7 +87,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
   executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(config.endpoint)
     && isCanonicalV2DriverDirectory(config.directory)
     && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
-  executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
+  executionAssert(isV2ExecutionVersion(config.version), 'unqualified_version')
   executionAssert(config.beforeRequest === undefined || typeof config.beforeRequest === 'function', 'invalid_admission')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)
     && Date.now() < config.deadline && config.signal?.aborted !== true, 'authority_or_deadline'); }
