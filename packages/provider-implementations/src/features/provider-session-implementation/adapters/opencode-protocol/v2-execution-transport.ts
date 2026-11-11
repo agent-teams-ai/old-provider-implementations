@@ -5,6 +5,8 @@ import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
+import { createV2RequestAdmission } from './v2-request-admission.ts'
+import type { V2RequestAdmission } from './v2-request-admission.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
 type ExecutionFetchInit = RequestInit | undefined
@@ -15,6 +17,8 @@ export type OpenCodeV2TransportConfig = {
   nativeSessionId: string
   /** Private credential projection supplied by runtime custody; never emitted. */
   readPassword: () => string
+  /** Await Host re-attestation before credentials; optional release holds admission through cleanup. */
+  beforeRequest?: V2RequestAdmission
   signal?: AbortSignal
   deadline: number
   fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -51,13 +55,13 @@ function missingSessionResponse(response: Response, request: Request, route: { s
 }
 function transportFailure(error: unknown, invoked: boolean): ExecutionTransportFailure {
   const code = error instanceof ExecutionTransportFailure ? error.code : 'transport_failure'
-  const cleanupUnknown = code === 'cleanup_unknown'
-  const failure = new ExecutionTransportFailure(code, invoked || cleanupUnknown ? 'unknown' : 'not_submitted')
+  const uncertain = code === 'cleanup_unknown' || error instanceof ExecutionTransportFailure && error.disposition === 'unknown'
+  const failure = new ExecutionTransportFailure(code, invoked || uncertain ? 'unknown' : 'not_submitted')
   if (error !== null && typeof error === 'object') {
     const sessionID = missingSessions.get(error)
     if (sessionID !== undefined) { missingSessions.set(failure, sessionID) }
   }
-  if (!invoked && !cleanupUnknown) { unsubmitted.add(failure) }
+  if (!invoked && !uncertain) { unsubmitted.add(failure) }
   return failure
 }
 /** Finite execution operations only. SSE is consumed within the same deadline,
@@ -72,12 +76,14 @@ class OpenCodeV2ExecutionFetch {
   private readonly directory: string
   private readonly nativeSessionId: string
   private readonly readPassword: () => string
+  private readonly beforeRequest: V2RequestAdmission | undefined
   private readonly context: { signal: AbortSignal | undefined; deadline: number }
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   constructor(config: OpenCodeV2TransportConfig) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
     this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
+    this.beforeRequest = config.beforeRequest
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
 
@@ -85,6 +91,7 @@ class OpenCodeV2ExecutionFetch {
     executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
     executionAssert(safeV2SessionID(this.nativeSessionId) && isCanonicalV2DriverDirectory(this.directory), 'authority_mismatch')
     executionAssert(Number.isFinite(this.context.deadline), 'deadline')
+    executionAssert(this.beforeRequest === undefined || typeof this.beforeRequest === 'function', 'invalid_admission')
   }
 
   check(): void {
@@ -196,6 +203,7 @@ class OpenCodeV2ExecutionFetch {
     let response: Response | undefined
     let metadataValidated = false
     let reader: ReturnType<typeof executionResponseReader> = undefined
+    let admission: ReturnType<typeof createV2RequestAdmission> | undefined
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     this.controllers.add(controller)
@@ -205,6 +213,10 @@ class OpenCodeV2ExecutionFetch {
       this.check(); request.signal.throwIfAborted()
       const signal = AbortSignal.any([controller.signal, request.signal, ...(this.context.signal ? [this.context.signal] : [])])
       timer = setTimeout(() =>{  controller.abort(); }, Math.min(30_000, this.context.deadline - Date.now()))
+      admission = createV2RequestAdmission(this.beforeRequest, signal, this.context.deadline,
+        work => this.track(work))
+      await admission.acquire()
+      this.check(); signal.throwIfAborted()
       const headers = this.requestHeaders(request, signal)
       invoked = true
       const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error', credentials: 'omit' }).then(async response => {
@@ -273,11 +285,13 @@ class OpenCodeV2ExecutionFetch {
       }
       throw transportFailure(error, invoked)
     } finally {
-      clearTimeout(timer); this.controllers.delete(controller)
-      if (reader) {
-        try { reader.releaseLock() }
-        catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
-      }
+      try {
+        clearTimeout(timer); this.controllers.delete(controller)
+        if (reader) {
+          try { reader.releaseLock() }
+          catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
+        }
+      } finally { admission?.close() }
     }
   }
   async dispose(): Promise<void> {

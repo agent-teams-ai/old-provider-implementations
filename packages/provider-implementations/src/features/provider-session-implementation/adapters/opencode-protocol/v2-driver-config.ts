@@ -68,6 +68,7 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
     || !isCanonicalOpenCodeV2LoopbackEndpoint(captured.endpoint)
     || !['2.0.0', '2.0.21'].includes(captured.version)
     || typeof captured.readPassword !== 'function' || typeof captured.probe !== 'function' || typeof captured.confirmStopped !== 'function'
+    || captured.beforeRequest !== undefined && typeof captured.beforeRequest !== 'function'
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
     || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => captured.binding[key as keyof typeof captured.binding] === request[key as keyof typeof captured.binding]))
     {throw new Error('opencode.driver.invalid-config')}

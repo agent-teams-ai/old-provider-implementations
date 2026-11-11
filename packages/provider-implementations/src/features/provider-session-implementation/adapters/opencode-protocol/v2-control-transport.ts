@@ -7,6 +7,7 @@ import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { ExecutionTransportFailure, executionAssert, unsubmitted } from './v2-failures.ts'
 import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { record } from './v2-projection-helpers.ts'
+import { createV2RequestAdmission } from './v2-request-admission.ts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 
 export type OpenCodeV2SessionControlConfig = OpenCodeV2TransportConfig & {
@@ -86,6 +87,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
     && isCanonicalV2DriverDirectory(config.directory)
     && safeV2SessionID(config.nativeSessionId), 'authority_mismatch')
   executionAssert(['2.0.0', '2.0.21'].includes(config.version), 'unqualified_version')
+  executionAssert(config.beforeRequest === undefined || typeof config.beforeRequest === 'function', 'invalid_admission')
   const check = () =>{  executionAssert(!closed && Number.isFinite(config.deadline)
     && Date.now() < config.deadline && config.signal?.aborted !== true, 'authority_or_deadline'); }
   const track = <T>(work: Promise<T>): Promise<T> => {
@@ -96,6 +98,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
     let response: Response | undefined, metadataValidated = false
     const controller = new AbortController(); controllers.add(controller)
     let timer: ReturnType<typeof setTimeout> | undefined
+    let admission: ReturnType<typeof createV2RequestAdmission> | undefined
     try {
       check()
       let native = new Request(config.endpoint + path, { ...init, credentials: 'omit', redirect: 'error' })
@@ -139,6 +142,9 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       } else {executionAssert(!native.body, 'unsupported_input')}
       // Stream admission may outlive the original deadline or revoke the Host lease.
       // Revalidate before projecting credentials, not only before native fetch.
+      check(); signal.throwIfAborted()
+      admission = createV2RequestAdmission(config.beforeRequest, signal, config.deadline, track)
+      await admission.acquire()
       check(); signal.throwIfAborted()
       if (native.method !== 'GET') config.beforeMutation?.()
       // The Host owner may synchronously revoke its lease inside the callback.
@@ -192,6 +198,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       if (!invoked && !uncertain) {unsubmitted.add(failure)}
       throw failure
     } finally {
+      try {
       clearTimeout(timer); controllers.delete(controller)
       if (reader) {
         // A failed or timed-out reader cancellation is NOT verified cleanup.
@@ -206,6 +213,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
         }
         if (!cleanupConfirmed) {throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')}
       }
+      } finally { admission?.close() }
     }
   }
   return {
