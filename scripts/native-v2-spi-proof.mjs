@@ -13,6 +13,7 @@ const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
 const receiptPath = resolve(process.env.OPENCODE_V2_SPI_RECEIPT || 'native-v2-embedded-target-spi-proof.json')
 const receipt = { kind: 'TEST_V2_NATIVE_SESSION_SPI', version: '2.1.4', qualified: false,
   completed: false, cleanup: false, steps: [] }
+const originalDirectory = process.cwd()
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-spi-'))
 for (const name of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) mkdirSync(join(root, name))
 const workspace = join(root, 'workspace'), effectPath = join(workspace, 'effect.txt')
@@ -78,10 +79,13 @@ try {
   check(serverEntry.startsWith(serverRoot + sep), 'native_export_escape')
   const effectEntry = realpathSync(createRequire(join(serverRoot, 'package.json')).resolve('effect'))
   check(effectEntry.startsWith(modules + sep), 'effect_export_escape')
+  phase = 'provider_import'
+  const { createOpenCodeV2DriverFactory, createOpenCodeV2OwnedSessionClient,
+    readOpenCodeV2CheckpointSessionId } = await import('../packages/provider-implementations/dist/opencode.js')
+  phase = 'native_import'
   const { Effect, Scope, Exit } = await import(pathToFileURL(effectEntry).href)
   const { start } = await import(pathToFileURL(serverEntry).href)
-  const { createOpenCodeV2DriverFactory, createOpenCodeV2OwnedSessionClient,
-    readOpenCodeV2CheckpointSessionId } = await import('../packages/provider-implementations/src/opencode.ts')
+  phase = 'boot'
   mcp = createServer(async (request, response) => {
     try {
       if (request.method === 'GET') { response.writeHead(405).end(); return }
@@ -293,7 +297,10 @@ try {
     async () => { if (driver) check((await driver.close()).cleanup === 'confirmed', 'final_driver_cleanup') },
     async () => { await observer }, async () => { await owner?.dispose() },
     async () => { await stopNative() }, async () => { await stopServer(model) },
-    async () => { await stopServer(mcp) }, async () => { rmSync(root, { recursive: true, force: true }) },
+    async () => { await stopServer(mcp) },
+    // Windows refuses to remove the process's current directory. Leave the
+    // disposable workspace only after the native engine and servers are closed.
+    async () => { process.chdir(originalDirectory); rmSync(root, { recursive: true, force: true }) },
   ]) {
     try { await close() } catch { cleaned = false }
   }

@@ -131,6 +131,13 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
+      - name: Build exact workspace provider for native Session SPI
+        if: matrix.proof == 'embedded-target-spi'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm exec --yes --package=pnpm@11.18.0 -- pnpm install --frozen-lockfile --ignore-scripts
+          npm exec --yes --package=pnpm@11.18.0 -- pnpm build
       - name: Validate native TEST harness syntax
         run: |
           node --check scripts/native-v2-readonly-proof.mjs

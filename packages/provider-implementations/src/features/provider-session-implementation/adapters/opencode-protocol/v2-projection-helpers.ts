@@ -1,5 +1,5 @@
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
-import type { OpenCodeV2NativeLogEvent } from './v2-projection-types.ts'
+import type { OpenCodeV2NativeLogEvent, OpenCodeV2NativeToolFact, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
 export const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
@@ -9,6 +9,20 @@ export const terminal = (event: OpenCodeV2NativeLogEvent): boolean =>
 export const messageIDFromEvent = (id: string): string => id.replace(/^evt_/, 'msg_')
 export const same = (left: unknown, right: unknown): boolean => {
   try { return canonicalExecutionJSON(left) === canonicalExecutionJSON(right) } catch { return false }
+}
+/** 2.1.4 records a completed shell invocation even when its process exits nonzero. */
+export function nativeShellExitCode(pin: OpenCodeV2NativeTurnCut['pin'], tool: OpenCodeV2NativeToolFact):
+  { kind: 'none' } | { kind: 'invalid' } | { kind: 'exit'; code: number } {
+  if (pin !== '2.1.4' || tool.status !== 'completed' || tool.toolName !== 'shell'
+    || tool.providerExecuted !== false || tool.metadata === null) { return { kind: 'none' } }
+  const metadata = record(tool.metadata)
+  if (!metadata) { return { kind: 'invalid' } }
+  try {
+    const exit = Object.getOwnPropertyDescriptor(metadata, 'exit')
+    if (!exit) { return { kind: 'none' } }
+    if (!('value' in exit) || !Number.isSafeInteger(exit.value)) { return { kind: 'invalid' } }
+    return { kind: 'exit', code: exit.value as number }
+  } catch { return { kind: 'invalid' } }
 }
 function validAssistantRetry(previous: { event: OpenCodeV2NativeLogEvent; index: number; count: number }, event: OpenCodeV2NativeLogEvent, interval: readonly OpenCodeV2NativeLogEvent[], index: number): boolean {
   const retry = interval.at(index - 1), error = record(retry?.data.error)
