@@ -15,6 +15,8 @@ import type { CodexRuntimeIdentity, CodexAccountMetadata, CodexModelListRequest,
 import { record, string } from './wire-frames.ts'
 import { captureMcpStatusRequest, decodeMcpStatusPage } from './mcp-status.ts'
 import type { CodexMcpStatusRequest, CodexMcpServerStatusPage } from './mcp-status.ts'
+import { captureAccountLoginId, captureAccountLoginType, decodeAccountLoginStart, decodeAccountLoginCancel, decodeAccountLoginCompleted } from './account-login.ts'
+import type { CodexAccountLoginType, CodexAccountLoginStart, CodexAccountLoginCompleted, CodexAccountLoginCancel } from './account-login.ts'
 
 export type CodexAppServerOptions = {
   readonly transport: CodexAppServerTransport
@@ -24,6 +26,8 @@ export type CodexAppServerOptions = {
   readonly onServerRequest?: () => void
   /** Attributed native item fact, including delta-only items. No permission authority is transferred. */
   readonly onItem?: (ref: CodexTurnRef, itemId: string) => void
+  /** Installed before start. The caller buffers early facts and correlates only an exact loginId. */
+  readonly onAccountLoginCompleted?: (completion: CodexAccountLoginCompleted) => void
   readonly limits?: Partial<CodexRpcLimits>
   readonly maxThreads?: number
   readonly maxQueuedTurns?: number
@@ -135,6 +139,19 @@ export class CodexAppServerClient {
     if (!response || Object.keys(response).length !== 0) { throw new CodexProtocolError('codex.protocol.invalid-metadata-response') }
   }
 
+  /** Explicit login only. No browser, replay, credential storage or process lifecycle is owned here. */
+  async startAccountLogin(type: CodexAccountLoginType, signal?: AbortSignal): Promise<CodexAccountLoginStart> {
+    const captured = captureAccountLoginType(type)
+    if (!this.options.onAccountLoginCompleted) { throw new CodexProtocolError('codex.protocol.login-observer-required', 'not-sent') }
+    return decodeAccountLoginStart(await this.nativeAccountRequest('account/login/start', { type: captured }, signal), captured)
+  }
+
+  /** Cancels this exact native login only; never logs out or claims process cleanup. */
+  async cancelAccountLogin(loginId: string, signal?: AbortSignal): Promise<CodexAccountLoginCancel> {
+    const captured = captureAccountLoginId(loginId)
+    return decodeAccountLoginCancel(await this.nativeAccountRequest('account/login/cancel', { loginId: captured }, signal))
+  }
+
   /** Read-only account quota summary; no auth refresh or inference is requested. */
   async readAccountRateLimits(signal?: AbortSignal): Promise<CodexRateLimitSnapshot> {
     return decodeRateLimits(await this.nativeAccountRequest('account/rateLimits/read', undefined, signal))
@@ -204,6 +221,10 @@ export class CodexAppServerClient {
   }
 
   private notification(method: string, params: Record<string, unknown>): void {
+    if (method === 'account/login/completed') {
+      this.options.onAccountLoginCompleted?.(decodeAccountLoginCompleted(params))
+      return // Private auth facts never enter conversation events or their raw payloads.
+    }
     const threadId = nativeThreadId(params)
     // Thread lifecycle can arrive after a turn starts. It has no turn identity
     // and must never enter that turn's notification buffer or output budget.
