@@ -1,7 +1,7 @@
 import { nativeV2ByteView } from './v2-native-byte-view.ts'
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
 import { validateExecutionBody, validateExecutionRoute } from './v2-input-validation.ts'
-import { safeV2SessionID } from './v2-native-identifiers.ts'
+import { safeV2MessageID, safeV2SessionID } from './v2-native-identifiers.ts'
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
@@ -9,6 +9,8 @@ import { createV2RequestAdmission } from './v2-request-admission.ts'
 import type { V2RequestAdmission } from './v2-request-admission.ts'
 import { isV2ExecutionVersion } from './v2-protocol-version.ts'
 import type { V2ExecutionVersion } from './v2-protocol-version.ts'
+import { snapshotV2InlinePngs } from './v2-attachments.ts'
+import type { V2InlinePng } from './v2-attachments.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
 type ExecutionFetchInit = RequestInit | undefined
@@ -82,7 +84,9 @@ class OpenCodeV2ExecutionFetch {
   private readonly context: { signal: AbortSignal | undefined; deadline: number }
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   private readonly ownerScope: boolean
-  constructor(config: OpenCodeV2TransportConfig, ownerScope = false) {
+  private readonly pngInput: Readonly<{ id: string; files: readonly V2InlinePng[] }> | undefined
+  constructor(config: OpenCodeV2TransportConfig, ownerScope = false,
+    pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
     this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
@@ -90,6 +94,8 @@ class OpenCodeV2ExecutionFetch {
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
     this.ownerScope = ownerScope
+    executionAssert(pngInput === undefined || config.version === '2.1.4' && !ownerScope && safeV2MessageID(pngInput.id), 'capabilities_pending')
+    this.pngInput = pngInput === undefined ? undefined : { id: pngInput.id, files: snapshotV2InlinePngs(pngInput.files) }
 
     executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(isV2ExecutionVersion(this.pin), 'unqualified_version')
@@ -149,7 +155,7 @@ class OpenCodeV2ExecutionFetch {
         const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pieces))
         checkOpenCodeReadJson(body)
         const parsed: unknown = JSON.parse(body)
-        validateExecutionBody(parsed, create, this.directory, this.nativeSessionId)
+        validateExecutionBody(parsed, create, this.directory, this.nativeSessionId, this.pngInput)
         request = new Request(request.url, { method: request.method, headers: request.headers, body,
           signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
@@ -311,6 +317,11 @@ class OpenCodeV2ExecutionFetch {
 
 export function createOpenCodeV2ExecutionTransport(config: OpenCodeV2TransportConfig) {
   return new OpenCodeV2ExecutionFetch(config)
+}
+
+/** Private prepared-input wire; intentionally absent from public package exports. */
+export function createV2PngTransport(config: OpenCodeV2TransportConfig, id: string, files: readonly V2InlinePng[]) {
+  return new OpenCodeV2ExecutionFetch(config, false, { id, files })
 }
 
 /** Internal owner-client wire. Never exposed as a raw Session SPI capability. */

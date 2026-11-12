@@ -9,7 +9,7 @@ export type OpenCodeV2DriverHost = {
   /** Qualified subset of this implementation's finite capabilities for the exact Host. */
   capabilities: readonly string[]
 }
-const supported = new Set(['text', 'tools', 'permission', 'interrupt', 'checkpoint'])
+const supported = new Set(['text', 'tools', 'permission', 'interrupt', 'checkpoint', 'attachments'])
 
 /** Existing Host-selected session only. Runtime owns materialization and durable recovery. */
 export function createOpenCodeV2DriverFactory(host: OpenCodeV2DriverHost): DriverFactory {
@@ -33,6 +33,10 @@ export function createOpenCodeV2DriverFactory(host: OpenCodeV2DriverHost): Drive
         const resolved = await host.resolveConfiguration(selected)
         if (!resolved) {throw new Error('missing')}
         config = snapshotDriverConfig(resolved, selected)
+        if (Boolean(config.attachments) !== capabilities.includes('attachments') ||
+            capabilities.includes('attachments') && (config.version !== '2.1.4' || !config.attachments?.mimeTypes.includes('image/png'))) {
+          throw new Error('unsupported')
+        }
       } catch { throw new Error('opencode.driver.invalid-config') }
       if (selected.checkpointRef !== undefined) {
         let checkpoint: unknown

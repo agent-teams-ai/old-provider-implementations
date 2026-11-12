@@ -1,7 +1,11 @@
 import { safeV2MessageID } from './v2-native-identifiers.ts'
 import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
-export function validateExecutionBody(parsed: unknown, create: boolean, directory: string, nativeSessionId?: string): void {
+import { canonicalExecutionJSON } from './v2-canonical-json.ts'
+import { snapshotV2InlinePngs } from './v2-attachments.ts'
+import type { V2InlinePng } from './v2-attachments.ts'
+export function validateExecutionBody(parsed: unknown, create: boolean, directory: string, nativeSessionId?: string,
+  pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>): void {
   executionAssert(typeof parsed === 'object' && parsed !== null)
   if (create) {
     executionAssert('location' in parsed)
@@ -16,12 +20,12 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
     && typeof fields.id === 'string' && safeV2MessageID(fields.id)
     && typeof fields.text === 'string' && fields.text.trim().length > 0 && Buffer.byteLength(fields.text) <= 256 * 1024
     && fields.delivery === 'queue' && typeof fields.resume === 'boolean', 'invalid_input')
-  // This TEST-only credential-bearing wire has no effective tool or external-
-  // directory permission attestation. File, agent and skill attachments can
-  // invoke unqualified native effects; only the private text-only queue path
-  // is currently admitted. Refuse even empty arrays until Host qualification.
-  executionAssert(fields.files === undefined && fields.agents === undefined
-    && fields.skills === undefined, 'capabilities_pending')
+  // Public raw wires remain text-only. The private 2.1.4 driver can admit only
+  // this already prepared input's exact inline PNG bytes, never file/network URIs.
+  executionAssert(fields.agents === undefined && fields.skills === undefined, 'capabilities_pending')
+  if (!pngInput) executionAssert(fields.files === undefined, 'capabilities_pending')
+  else executionAssert(fields.id === pngInput.id &&
+    canonicalExecutionJSON(snapshotV2InlinePngs(fields.files)) === canonicalExecutionJSON(pngInput.files), 'authority_mismatch')
 }
 
 function executionMethodAllowed(method: string, flags: { session: boolean; list: boolean; log: boolean; scoped: boolean; create: boolean; prompt: boolean; activation: boolean }): boolean {

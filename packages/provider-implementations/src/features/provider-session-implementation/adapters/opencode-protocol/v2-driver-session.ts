@@ -13,6 +13,7 @@ export function createV2DriverSession(config: OpenCodeV2DriverConfig) {
     probe: async signal => (await config.probe(signal)) === true,
     confirmStopped: async () => (await config.confirmStopped()) === true,
   }
-  return new OpenCodeDriverSession({ ...qualified, engine: 'opencode-v2', compatibility: driverCompatibility(config) },
+  return new OpenCodeDriverSession({ ...qualified, ...(qualified.attachments ? { attachmentModel: qualified.attachments.model } : {}),
+    engine: 'opencode-v2', compatibility: driverCompatibility(config) },
     signal => createV2DriverBackend(qualified, signal))
 }

@@ -26,8 +26,8 @@ export function createV2DriverBackend(config: OpenCodeV2DriverConfig, signal: Ab
     pollIntervalMs: 20,
     dispose: () => native.dispose(),
     replyPermission: (requestId, decision, revoked) => native.control(wire => wire.replyPermission(requestId, decision === 'allow' ? 'once' : 'reject'), revoked),
-    async queue(nativeInputID, text) {
-      const original = await native.queue(nativeInputID, text)
+    async queue(nativeInputID, text, attachments = []) {
+      const original = await native.queue(nativeInputID, text, attachments)
       let facts: EventPayload[] = []
       const output = new OpenCodeV2DriverOutput(event => { facts.push(event) })
       return {

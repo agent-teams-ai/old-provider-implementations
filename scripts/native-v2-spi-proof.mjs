@@ -65,8 +65,13 @@ const readJSON = async request => {
 }
 const marker = 'TEST_NATIVE_SPI_INSTRUCTIONS_EFFECTIVE'
 const outputMarker = 'TEST_NATIVE_SPI_REPLY'
+const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8DwHwQBEPgD/U6VwW8AAAAASUVORK5CYII='
+const pngBytes = Buffer.from(pngBase64, 'base64'), pngURI = 'data:image/png;base64,' + pngBase64
+const pngReference = { artifactId: 'TEST-native-PNG', mimeType: 'image/png', byteLength: pngBytes.length,
+  digest: createHash('sha256').update(pngBytes).digest('hex') }
 let model, mcp, native, owner, driver, observer
 let modelCalls = 0, mcpCalls = 0, fixtureFailure, streamOpen = false, streamClosed = false
+let pngResolutions = 0, pngInference = false, pngColdHistory = false
 let instructionsSeen = false, catalogSeen = false, allowInference = false
 const calledPhases = new Set(), events = []
 const captureRequests = []
@@ -126,6 +131,15 @@ try {
       const messages = Array.isArray(value.messages) ? value.messages : []
       const lastUser = messages.filter(row => row.role === 'user').at(-1)
       const targeted = JSON.stringify(lastUser ?? {}).includes('TEST native SPI')
+      const imageParts = messages.flatMap(row => Array.isArray(row.content) ? row.content : [])
+        .filter(part => part.type === 'image_url')
+      if (targeted && ['image', 'resumed'].includes(phase)) {
+        check(imageParts.length === 1 && imageParts[0].image_url?.url === pngURI, 'native_PNG_model_bytes')
+        const currentImages = (Array.isArray(lastUser?.content) ? lastUser.content : []).filter(part => part.type === 'image_url')
+        check(currentImages.length === (phase === 'image' ? 1 : 0), 'native_PNG_current_or_history')
+        if (phase === 'image') pngInference = true
+        else pngColdHistory = true
+      }
       const names = (value.tools ?? []).map(tool => tool?.function?.name).filter(name => typeof name === 'string')
       const base = { id: 'chatcmpl_TEST_' + modelCalls, object: 'chat.completion.chunk',
         created: Math.floor(Date.now() / 1000), model: 'TEST-model' }
@@ -164,7 +178,7 @@ try {
       model: 'test-native/TEST-model', providers: { 'test-native': {
         package: '@opencode/ai/providers/openai-compatible',
         settings: { baseURL: endpoint(model) + '/v1', apiKey: 'TEST-non-secret' },
-        models: { 'TEST-model': { capabilities: { tools: true, input: ['text'], output: ['text'] },
+        models: { 'TEST-model': { capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
           limit: { context: 8192, output: 1024 } } },
       } }, mcp: { servers: { testteams: { type: 'remote', url: endpoint(mcp) + '/mcp', oauth: false, codemode: false, protocol: 'legacy' } } },
       policies: [{ action: 'tool.use', resource: 'external_directory:*', effect: 'deny' }],
@@ -225,7 +239,8 @@ try {
   }
   check(catalog.provider?.id === 'test-native' && catalog.provider.activation !== 'disabled', 'catalog_provider')
   check(catalog.defaultModel?.providerId === 'test-native' && catalog.defaultModel.modelId === 'TEST-model', 'catalog_default')
-  check(catalog.models.some(row => row.id === 'TEST-model' && row.enabled && row.inputModalities.includes('text')), 'catalog_model')
+  check(catalog.models.some(row => row.id === 'TEST-model' && row.enabled && row.inputModalities.includes('text')
+    && row.inputModalities.includes('image')), 'catalog_model')
   phase = 'owner_mcp'
   let mcpReady = false
   for (let attempt = 0; attempt < 100 && !mcpReady; attempt++) {
@@ -247,6 +262,19 @@ try {
       pendingInteractions: 4, timeoutMs: 30_000 },
     probe: async () => running && (await owner.identity()).pid === process.pid,
     confirmStopped: async () => { await stopNative(); return !running },
+    attachments: { model: 'test-native/TEST-model', revision: 'TEST-PNG-policy-v1', mimeTypes: ['image/png'],
+      async resolve(request, signal) {
+        signal.throwIfAborted()
+        check(request.trustedBinding === 'TEST-stable-owned-2.1.4-engine-graph'
+          && request.sessionRef === binding.sessionId && request.inputId === 'TEST-image'
+          && request.operationRef === 'TEST-op-image' && JSON.stringify(request.reference) === JSON.stringify(pngReference), 'native_PNG_binding')
+        const expected = createHash('sha256').update(JSON.stringify(['TEST native SPI image',
+          [[pngReference.artifactId, pngReference.mimeType, pngReference.byteLength, pngReference.digest]]])).digest('hex')
+        check(request.fingerprint === expected && pngResolutions === 0, 'native_PNG_original_input')
+        pngResolutions++
+        return { binding: request, bytes: pngBytes }
+      },
+    },
     capture: { observe(value) {
       if (value.inputId !== 'TEST-edit') return
       captureRequests.push(value)
@@ -254,14 +282,15 @@ try {
       if (value.phase === 'after') capturedAfter = readFileSync(editPath, 'utf8')
     } },
   })
-  const factory = selectedEndpoint => createOpenCodeV2DriverFactory({ capabilities: ['text', 'tools', 'permission', 'interrupt', 'checkpoint'],
+  const factory = selectedEndpoint => createOpenCodeV2DriverFactory({ capabilities: ['text', 'tools', 'permission', 'interrupt', 'checkpoint', 'attachments'],
     resolveConfiguration: async () => driverConfig(selectedEndpoint), readCheckpoint: async () => checkpoint })
-  const request = () => ({ ...binding, configRevision: 'TEST-r1', requiredCapabilities: ['text', 'tools', 'permission', 'interrupt', 'checkpoint'] })
+  const request = () => ({ ...binding, configRevision: 'TEST-r1', requiredCapabilities: ['text', 'tools', 'permission', 'interrupt', 'checkpoint', 'attachments'] })
   const observe = () => { observer = (async () => { for await (const event of driver.observe()) events.push(event) })() }
   driver = (await factory(firstEndpoint).open(request())).driver; observe(); allowInference = true
   const runInput = async inputPhase => {
     phase = inputPhase
-    const reply = await driver.submit({ inputId: 'TEST-' + phase, operationRef: 'TEST-op-' + phase, content: 'TEST native SPI ' + phase })
+    const reply = await driver.submit({ inputId: 'TEST-' + phase, operationRef: 'TEST-op-' + phase, content: 'TEST native SPI ' + phase,
+      ...(phase === 'image' ? { attachments: [pngReference] } : {}) })
     check(reply.ok, 'submit_' + phase)
   }
   const interactionFor = current => events.find(event => event.kind === 'interaction' && event.inputId === 'TEST-' + current)
@@ -315,6 +344,10 @@ try {
     { mode: 0o600, flag: 'wx' })
   }
   receipt.steps.push('session_SPI_native_builtin_edit_immutable_input_window_and_real_log_anchors')
+  await runInput('image')
+  await until(() => resultFor('image') || fixtureFailure, 'native_PNG_terminal_missing')
+  check(resultFor('image')?.outcome === 'succeeded' && !fixtureFailure && pngInference && pngResolutions === 1, 'native_PNG_terminal')
+  receipt.steps.push('session_SPI_original_verified_PNG_native_ACK_history_and_actual_image_inference')
   await runInput('interrupt')
   await until(() => streamOpen || fixtureFailure, 'active_stream_missing')
   check((await driver.interrupt('TEST-op-interrupt')).ok, 'interrupt_receipt')
@@ -341,10 +374,13 @@ try {
   driver = (await factory(restoredEndpoint).open({ ...request(), checkpointRef: 'TEST-durable-checkpoint' })).driver; observe()
   await delay(200)
   check(modelCalls === callsBeforeRestore && mcpCalls === 1 && events.length === previousEventCount
-    && readFileSync(editPath, 'utf8') === editAfter && captureRequests.length === 2, 'cold_replay')
+    && readFileSync(editPath, 'utf8') === editAfter && captureRequests.length === 2 && pngResolutions === 1, 'cold_replay')
   await runInput('resumed')
   await until(() => resultFor('resumed') || fixtureFailure, 'resumed_terminal_missing')
   check(resultFor('resumed')?.outcome === 'succeeded' && mcpCalls === 1 && !fixtureFailure, 'resumed_result')
+  check(pngColdHistory && pngResolutions === 1, 'native_PNG_cold_history_without_resubmit')
+  receipt.nativePNG = { mimeType: 'image/png', sha256: pngReference.digest, byteLength: pngBytes.length,
+    resolutions: pngResolutions, actualInference: pngInference, coldHistory: pngColdHistory, resubmitted: false }
   receipt.steps.push('cold_same_session_new_endpoint_checkpoint_no_replay_and_fresh_input')
   receipt.modelRequests = modelCalls; receipt.mcpEffects = mcpCalls
   receipt.instructionsEffective = instructionsSeen; receipt.nativeCatalogEffective = catalogSeen
