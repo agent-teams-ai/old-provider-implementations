@@ -2,7 +2,7 @@ import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 
 export interface OpenCodeV2NativeCatalog {
-  provider: { id: string; name: string; activation: 'auto' | 'enabled' | 'disabled' } | null
+  provider: { id: string; name: string; activation: 'auto' | 'enabled' | 'disabled'; integrationId?: string } | null
   defaultModel: { providerId: string; modelId: string } | null
   models: { id: string; name: string; enabled: boolean; contextTokens: number | null;
     outputTokens: number | null; inputModalities: readonly string[] }[]
@@ -38,7 +38,8 @@ export async function readOpenCodeV2OwnedCatalog(
     executionAssert(!providerIds.has(id), 'invalid_native_catalog'); providerIds.add(id)
     if (id !== selectedProvider) continue
     executionAssert(row.activation === 'auto' || row.activation === 'enabled' || row.activation === 'disabled', 'invalid_native_catalog')
-    provider = { id, name: text(row.name), activation: row.activation }
+    provider = { id, name: text(row.name), activation: row.activation,
+      ...(row.integrationID === undefined ? {} : { integrationId: text(row.integrationID) }) }
   }
   const projected: OpenCodeV2NativeCatalog['models'] = [], ids = new Set<string>()
   for (const raw of models) {
