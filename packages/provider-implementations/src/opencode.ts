@@ -42,3 +42,5 @@ export type { OpenCodeV1DriverHost } from './features/provider-session-implement
 export type { OpenCodeV1DriverConfig } from './features/provider-session-implementation/internal.ts'
 
 export { captureOpenCodeExtraArgs } from './features/provider-session-implementation/internal.ts';
+export type { OpenCodeInputWindowPort, OpenCodeInputWindowRequest, OpenCodeInputWindowItem,
+  OpenCodeV1InputWindowItem, OpenCodeV2InputWindowItem } from './features/provider-session-implementation/internal.ts';

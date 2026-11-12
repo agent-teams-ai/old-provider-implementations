@@ -4,6 +4,8 @@ export { createClaudeDriverFactory } from './adapters/claude-sdk/factory.ts';
 export type { ClaudeDriverHost } from './adapters/claude-sdk/factory.ts';
 export type { ClaudeToolBinding, ClaudeToolBindingRequest } from './adapters/claude-sdk/tool-binding.ts';
 export type { ClaudeCapturePort, ClaudeCaptureRequest, ClaudeCaptureBatchRequest, ClaudeCaptureValue } from './adapters/claude-sdk/capture.ts';
+export type { OpenCodeInputWindowPort, OpenCodeInputWindowRequest, OpenCodeInputWindowItem,
+  OpenCodeV1InputWindowItem, OpenCodeV2InputWindowItem } from './adapters/opencode-protocol/input-window-capture.ts';
 export { readClaudeMetadata } from './adapters/claude-sdk/metadata.ts';
 export type { ClaudeMetadata, ClaudeMetadataConfig, ClaudeMetadataBoundary } from './adapters/claude-sdk/metadata.ts';
 export { probeClaudeModel } from './adapters/claude-sdk/model-probe.ts';

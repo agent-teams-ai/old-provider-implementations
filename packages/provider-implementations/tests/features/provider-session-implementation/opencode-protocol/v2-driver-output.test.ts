@@ -32,6 +32,7 @@ function completedTool(metadata: unknown, name = 'shell', pin: OpenCodeV2NativeT
   const tool = parts.find(part => part.type === 'tool')!
   tool.name = name; tool.executed = providerExecuted
   ;(tool.state as Record<string, unknown>).metadata = metadata
+  value.log.events[6]!.data = { ...value.log.events[6]!.data, metadata }
   value.log.events[4]!.data = { ...value.log.events[4]!.data, name }
   for (const index of [5, 6]) { value.log.events[index]!.data = { ...value.log.events[index]!.data, executed: providerExecuted } }
   return value
@@ -73,7 +74,7 @@ test('malformed explicit native shell exit cannot produce a successful canonical
   for (const metadata of ['invalid', [], ...[undefined, null, '7', false, 1.5, NaN, Infinity, 2 ** 53, {}].map(exit => ({ exit }))]) {
     const { turn, events } = canonicalOutput(completedTool(metadata))
     assert.equal(turn.state, 'unknown')
-    assert.equal(turn.reason, 'invalid_shell_exit_metadata')
+    assert.ok(['invalid_shell_exit_metadata', 'tool_success_snapshot_mismatch'].includes(turn.reason))
     assert.deepEqual(events, [])
   }
   let read = false

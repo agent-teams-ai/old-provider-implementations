@@ -150,10 +150,11 @@ export class OpenCodeDriverSession implements Session {
     } finally { this.feed.end() }
   }
   private async observeBefore(pending: Pending): Promise<boolean> {
-    if (this.config.engine === 'opencode-v1' && this.config.capture) {
+    if (this.config.capture) {
       pending.preparing = true
       pending.capture = new OpenCodeInputWindowCapture({ identity: { sessionRef: this.sessionRef, windowRef: randomUUID(),
-        inputId: pending.input.inputId, operationRef: pending.input.operationRef, nativeSessionId: this.config.nativeSessionId },
+        inputId: pending.input.inputId, operationRef: pending.input.operationRef, nativeSessionId: this.config.nativeSessionId,
+        ...(this.config.engine === 'opencode-v2' ? { dialect: 'v2' as const } : {}) },
         port: this.config.capture, abort: this.abort.signal, timeoutMs: this.config.limits.timeoutMs,
         maxItems: this.config.limits.outputEvents, maxBytes: this.config.limits.outputBytes })
       await pending.capture.before()

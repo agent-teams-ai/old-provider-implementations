@@ -6,6 +6,7 @@ import type { NativeDriverInput } from './v2-driver-native.ts'
 import { OpenCodeV2DriverOutput } from './v2-driver-output.ts'
 import { projectOpenCodeV2NativeTurn } from './v2-turn-projection.ts'
 import { terminal } from './v2-projection-helpers.ts'
+import type { OpenCodeV2InputWindowItem } from './input-window-capture.ts'
 
 export function createV2DriverBackend(config: OpenCodeV2DriverConfig, signal: AbortSignal): DriverProtocol {
   const native = createDriverNative(config, signal)
@@ -40,7 +41,15 @@ export function createV2DriverBackend(config: OpenCodeV2DriverConfig, signal: Ab
           const turn = projectOpenCodeV2NativeTurn(cut)
           facts = []; output.accept(cut, turn)
           if (turn.state === 'unknown') {return empty}
-          if (turn.state !== 'pending') {return { facts, terminal: turn.state, permissions: [] }}
+          if (turn.state !== 'pending') {return { facts, terminal: turn.state, permissions: [],
+            ...(config.capture ? { observations: turn.tools.map(tool => ({
+              dialect: 'v2', protocolRevision: cut.pin, messageId: tool.assistantMessageId,
+              callId: tool.toolCallId, tool: tool.toolName, status: tool.status as 'completed' | 'error',
+              providerExecuted: tool.providerExecuted!, input: tool.input, metadata: tool.metadata,
+              // Terminal projection already attests these original event anchors.
+              // A missing/malformed anchor fails capture validation as a gap, not native execution.
+              calledEvent: tool.calledEvent!, completedEvent: tool.completedEvent!,
+            } satisfies OpenCodeV2InputWindowItem)) } : {}) }}
           const permissions = await native.control(wire => wire.pendingPermissions())
           return { facts, permissions: permissions.filter(permission => {
             const source = permission.source
