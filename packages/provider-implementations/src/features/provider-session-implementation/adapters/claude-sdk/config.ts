@@ -44,6 +44,8 @@ export type ClaudeConfig = {
   subagents?: ClaudeSubagentPort;
   nativeTools: string[];
   autoAllowedTools: string[];
+  /** Selected native deny rules; never accepted through generic extra argv. */
+  disallowedTools?: readonly string[];
   mcpServers: Record<string, Exclude<McpServerConfig, { type: 'sdk' }>>;
   requiredTools: Record<string, string[]>;
   /** A read-only host handshake; no mutation and no model prompt. */
@@ -68,6 +70,7 @@ export function compatibility(config: ClaudeConfig): string {
     toolBindingTools: config.toolBinding?.matchedToolNames,
     ...(config.subagents ? { subagents: { mode: config.subagents.mode, tools: config.subagents.tools } } : {}),
     ...((config.extraArgs?.length ?? 0) > 0 ? { extraArgs: config.extraArgs } : {}),
+    ...(config.disallowedTools !== undefined ? { disallowedTools: config.disallowedTools } : {}),
     ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}),
     ...(config.nativeOptions ? { nativeOptions: selectedOptions(config) } : {}),
     ...(config.sessionPersistence ? { sessionPersistence: config.sessionPersistence } : {}),
@@ -81,7 +84,7 @@ export function validConfig(c: ClaudeConfig): boolean {
     validNativeOptions(c.nativeOptions) &&
     Object.values(c.limits).every((v) => Number.isSafeInteger(v) && v > 0) &&
     !Object.keys(c.environment).some((key) => /^(CLAUDE_CODE_TEAM|CLAUDE_TEAM|CLAUDE_AGENT_TEAMS|CLAUDE_CODE_RESUME|CLAUDE_CODE_CONTINUE)/.test(key)) &&
-    validTools(c) &&
+    validTools(c) && validDisallowedTools(c.disallowedTools) &&
     (!c.toolBinding || (c.toolBinding.matchedToolNames.length > 0 && c.toolBinding.matchedToolNames.every((name) => typeof name === 'string' && !!name) && typeof c.toolBinding.prepare === 'function')) &&
     validCapture(c.capture, c.observeClose) &&
     Object.keys(c.requiredTools).every((name) => Object.hasOwn(c.mcpServers, name)));
@@ -92,6 +95,7 @@ export function options(c: ClaudeConfig, nativeSession: string, restore: boolean
     cwd: c.cwd, model: c.model, env: { ...c.environment }, ...selectedOptions(c),
     ...(c.subagents ? subagentOptions(c.subagents) : {}),
     tools: [...c.nativeTools], allowedTools: [...c.autoAllowedTools],
+    ...(c.disallowedTools !== undefined ? { disallowedTools: [...c.disallowedTools] } : {}),
     mcpServers: c.mcpServers, strictMcpConfig: true,
     persistSession: c.sessionPersistence !== 'ephemeral', includePartialMessages: true,
     ...(restore ? { resume: nativeSession } : { sessionId: nativeSession }),
@@ -114,6 +118,7 @@ export function snapshotConfig(c: ClaudeConfig): ClaudeConfig {
     ...(c.capture ? { capture: Object.freeze({ observe: c.capture.observe, ...(c.capture.observeBatch ? { observeBatch: c.capture.observeBatch } : {}), ...(c.capture.observeBackground ? { observeBackground: c.capture.observeBackground } : {}) }) } : {}),
     ...(c.attachments !== undefined ? { attachments: snapshotAttachmentPort(c.attachments)! } : {}),
     ...(c.nativeOptions ? { nativeOptions: structuredClone(c.nativeOptions) } : {}),
+    ...(c.disallowedTools !== undefined ? { disallowedTools: Object.freeze([...c.disallowedTools]) } : {}),
     autoAllowedTools: [...c.autoAllowedTools], requiredTools: structuredClone(c.requiredTools),
     mcpServers: structuredClone(c.mcpServers), ...(c.toolBinding ? { toolBinding: { ...c.toolBinding, matchedToolNames: [...c.toolBinding.matchedToolNames] } } : {}), limits: { ...c.limits }, custody: { ...c.custody } };
 }
@@ -170,4 +175,10 @@ function validTools(c: ClaudeConfig): boolean {
   return !c.nativeTools.some(tool => /^(Team|Task|TodoWrite|Cron|Schedule|SendMessage$|ListAgents$)/.test(tool) ||
     (tool.startsWith('Agent') && (tool !== 'Agent' || !c.subagents))) &&
     validSubagents(c.subagents, c.nativeTools) && (!c.subagents || c.nativeOptions?.permissionMode !== 'plan');
+}
+
+function validDisallowedTools(value: unknown): boolean {
+  return value === undefined || (Array.isArray(value) && value.length <= 256 &&
+    value.every(tool => typeof tool === 'string' && tool.length > 0 && tool.length <= 256 &&
+      !/[\u0000-\u001f\u007f]/u.test(tool)));
 }

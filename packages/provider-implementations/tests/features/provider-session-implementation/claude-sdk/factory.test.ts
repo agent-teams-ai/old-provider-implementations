@@ -101,12 +101,14 @@ test('close during the awaited per-input readiness probe cannot release a late S
 
 test('selected trusted native configuration is forwarded, snapshotted and checked at initialization', async () => {
   const sdk = new QueryFixture(); const c = configuration();
+  const disallowedTools = ['Bash']; c.disallowedTools = disallowedTools;
   c.configNamespace = 'native-default'; delete c.environment.CLAUDE_CONFIG_DIR;
   c.nativeOptions = { permissionMode: 'acceptEdits', settingSources: ['user', 'project'],
     projectInstructions: { append: 'TEST trusted instructions' }, effort: 'high', fastMode: false, context: 'one-million' };
   const opened = await createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => c, readCheckpoint: async () => {} }, sdk.boundary).open(request);
   try {
     c.nativeOptions.settingSources?.push('local'); c.nativeOptions.projectInstructions!.append = 'mutated';
+    disallowedTools.push('Read'); assert.deepEqual(sdk.options.disallowedTools, ['Bash']);
     assert.equal(sdk.options.permissionMode, 'acceptEdits');
     assert.deepEqual(sdk.options.settingSources, ['user', 'project']);
     assert.deepEqual(sdk.options.systemPrompt, { type: 'preset', preset: 'claude_code', append: 'TEST trusted instructions' });
@@ -119,6 +121,25 @@ test('selected trusted native configuration is forwarded, snapshotted and checke
     await setImmediate();
     assert.equal((await opened.driver.submit({ inputId: 'selected', operationRef: 'selected', content: 'TEST' })).ok, true);
   } finally { await opened.driver.close(); }
+});
+
+test('native tool deny rules bind restore and reject invalid selections before SDK construction', async () => {
+  const c = configuration(); c.disallowedTools = ['Bash']; const sdk = new QueryFixture();
+  const first = await createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => c,
+    readCheckpoint: async () => {} }, sdk.boundary).open(request);
+  const checkpoint = first.driver.checkpoint(); assert.ok(checkpoint.ok); await first.driver.close();
+  for (const disallowedTools of [undefined, ['Read']]) {
+    const next = new QueryFixture(); const changed = { ...configuration(), ...(disallowedTools ? { disallowedTools } : {}) };
+    await assert.rejects(createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => changed,
+      readCheckpoint: async () => checkpoint.value }, next.boundary).open({ ...request, generation: 2, checkpointRef: 'TEST' }), /checkpoint-incompatible/u);
+    assert.equal(next.calls, 0);
+  }
+  for (const disallowedTools of [[''], ['Bash\0'], Array.from({ length: 257 }, () => 'Read')]) {
+    const next = new QueryFixture();
+    await assert.rejects(createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => ({ ...c, disallowedTools }),
+      readCheckpoint: async () => {} }, next.boundary).open(request), /invalid-config/u);
+    assert.equal(next.calls, 0);
+  }
 });
 
 test('default native configuration remains isolated and unoverridden', async () => {
