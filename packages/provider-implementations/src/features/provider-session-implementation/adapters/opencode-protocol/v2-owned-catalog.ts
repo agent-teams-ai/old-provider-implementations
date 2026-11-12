@@ -5,7 +5,8 @@ export interface OpenCodeV2NativeCatalog {
   provider: { id: string; name: string; activation: 'auto' | 'enabled' | 'disabled'; integrationId?: string } | null
   defaultModel: { providerId: string; modelId: string } | null
   models: { id: string; name: string; enabled: boolean; contextTokens: number | null;
-    outputTokens: number | null; supportsTools: boolean; inputModalities: readonly string[] }[]
+    outputTokens: number | null; supportsTools: boolean; inputModalities: readonly string[];
+    variants: readonly string[] }[]
 }
 function text(value: unknown): string {
   executionAssert(typeof value === 'string' && value.length > 0 && value.length <= 2048 && !/[\x00-\x1f\x7f]/.test(value),
@@ -49,13 +50,22 @@ export async function readOpenCodeV2OwnedCatalog(
     const id = text(model.id), limits = record(model.limit), capabilities = record(model.capabilities)
     executionAssert(!ids.has(id) && limits !== null && capabilities !== null &&
       typeof model.enabled === 'boolean' && typeof capabilities.tools === 'boolean' &&
-      Array.isArray(capabilities.input) && capabilities.input.length <= 16,
+      Array.isArray(capabilities.input) && capabilities.input.length <= 16 &&
+      Array.isArray(model.variants) && model.variants.length <= 256,
     'invalid_native_catalog')
+    const variants = (model.variants as unknown[]).map(value => {
+      const variant = record(value)
+      executionAssert(variant !== null, 'invalid_native_catalog')
+      const id = text(variant.id)
+      executionAssert(id.length <= 256, 'invalid_native_catalog')
+      return id
+    })
+    executionAssert(new Set(variants).size === variants.length, 'invalid_native_catalog')
     ids.add(id)
     projected.push({ id, name: text(model.name), enabled: model.enabled,
       contextTokens: positive(limits.context), outputTokens: positive(limits.output),
       supportsTools: capabilities.tools,
-      inputModalities: (capabilities.input as unknown[]).map(text) })
+      inputModalities: (capabilities.input as unknown[]).map(text), variants })
   }
   const nativeDefault = selected == null ? null : record(selected)
   executionAssert(selected == null || nativeDefault !== null, 'invalid_native_catalog')
