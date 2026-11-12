@@ -4,6 +4,7 @@ import { createOpenCodeV2SessionControl } from './v2-session-control.ts'
 import { decodeV2DataEnvelope, decodeV2Session } from './v2-cut-codecs.ts'
 import { record } from './v2-projection-helpers.ts'
 import { executionAssert } from './v2-failures.ts'
+import { readOpenCodeV2OwnedCatalog } from './v2-owned-catalog.ts'
 
 export type OpenCodeV2SessionPermissionRule = Readonly<{
   action: string; resource: string; effect: 'allow' | 'ask' | 'deny'
@@ -77,6 +78,7 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
     async readSession() {
       return session(await (await wire.fetch(config.endpoint + `/api/session/${config.nativeSessionId}`)).json() as unknown)
     },
+    readCatalog: (providerId: string) => readOpenCodeV2OwnedCatalog(wire.fetch, config.endpoint, config.directory, providerId),
     /** Isolated owner database only. Never exports saved grant details or mutates them. */
     async savedPermissionsEmpty(): Promise<boolean> {
       const value = decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + '/api/permission/saved')).json() as unknown)

@@ -112,13 +112,62 @@ test('ordinary 2.1.4 session transport retains zero-credential rejection of owne
   })
   try {
     for (const path of ['/api/info', '/api/permission/saved', '/api/mcp?location[directory]=' + encodeURIComponent(baseline.directory),
-      '/api/plugin?location[directory]=' + encodeURIComponent(baseline.directory)]) {
+      ...['plugin', 'provider', 'model', 'model/default'].map(route =>
+        '/api/' + route + '?location[directory]=' + encodeURIComponent(baseline.directory))]) {
       await assert.rejects(wire.fetch(baseline.endpoint + path), /capabilities_pending/)
     }
     await assert.rejects(wire.fetch(baseline.endpoint + '/api/session', { method: 'POST',
       body: JSON.stringify({ id: baseline.nativeSessionId, location: { directory: baseline.directory }, ...selected }) }), /capabilities_pending/)
     assert.deepEqual({ credentials, requests }, { credentials: 0, requests: 0 })
   } finally { await wire.dispose() }
+})
+
+test('owned native catalog preserves native selection and drops provider credentials and settings', async () => {
+  const requests: string[] = []
+  const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto',
+    settings: { apiKey: 'TEST-secret', url: 'TEST-private-endpoint' }, headers: { Authorization: 'TEST-secret' } }
+  const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
+    limit: { context: 8192, output: 512 }, capabilities: { input: ['text', 'image'] },
+    headers: { Authorization: 'TEST-secret' }, settings: { private: 'TEST-secret' } }
+  const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+    const request = input as Request, url = new URL(request.url)
+    requests.push(url.pathname)
+    assert.equal(request.method, 'GET')
+    assert.equal(url.searchParams.get('location[directory]'), baseline.directory)
+    const data = url.pathname === '/api/provider' ? [provider] : url.pathname === '/api/model' ? [model] : model
+    return json({ location: { directory: baseline.directory }, data })
+  } })
+  try {
+    const catalog = await client.readCatalog('TEST-provider')
+    assert.deepEqual(catalog, {
+      provider: { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto' },
+      defaultModel: { providerId: 'TEST-provider', modelId: 'TEST-model' },
+      models: [{ id: 'TEST-model', name: 'TEST Model', enabled: true, contextTokens: 8192,
+        outputTokens: 512, inputModalities: ['text', 'image'] }],
+    })
+    assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default'])
+    assert.equal(JSON.stringify(catalog).includes('TEST-secret'), false)
+  } finally { await client.dispose() }
+})
+
+test('owned catalog rejects foreign locations, duplicates and malformed model metadata', async () => {
+  const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'enabled' }
+  const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
+    limit: { context: 8192, output: 512 }, capabilities: { input: ['text'] } }
+  for (const mode of ['location', 'duplicate-provider', 'duplicate-model', 'activation', 'modalities', 'default'] as const) {
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+      const route = new URL((input as Request).url).pathname
+      let data: unknown = route === '/api/provider' ? [provider] : route === '/api/model' ? [model] : model
+      if (mode === 'duplicate-provider' && route === '/api/provider') data = [provider, provider]
+      if (mode === 'duplicate-model' && route === '/api/model') data = [model, model]
+      if (mode === 'activation' && route === '/api/provider') data = [{ ...provider, activation: 'unknown' }]
+      if (mode === 'modalities' && route === '/api/model') data = [{ ...model, capabilities: { input: [null] } }]
+      if (mode === 'default' && route === '/api/model/default') data = { id: 'TEST-model' }
+      return json({ location: { directory: mode === 'location' ? 'TEST-foreign' : baseline.directory }, data })
+    } })
+    try { await assert.rejects(client.readCatalog('TEST-provider'), /native_catalog/) }
+    finally { await client.dispose() }
+  }
 })
 
 test('owned plugin readback attests only active native builtins in the exact location', async () => {

@@ -202,6 +202,16 @@ try {
   check(await owner.savedPermissionsEmpty(), 'preexisting_saved_grants')
   phase = 'owner_plugins'
   check(await owner.builtinPluginsOnly(), 'non_builtin_or_failed_plugins')
+  phase = 'owner_catalog'
+  const catalogDeadline = Date.now() + 25_000
+  let catalog = await owner.readCatalog('test-native')
+  while ((!catalog.provider || !catalog.defaultModel || !catalog.models.some(row => row.id === 'TEST-model')) && Date.now() < catalogDeadline) {
+    await delay(50)
+    catalog = await owner.readCatalog('test-native')
+  }
+  check(catalog.provider?.id === 'test-native' && catalog.provider.activation !== 'disabled', 'catalog_provider')
+  check(catalog.defaultModel?.providerId === 'test-native' && catalog.defaultModel.modelId === 'TEST-model', 'catalog_default')
+  check(catalog.models.some(row => row.id === 'TEST-model' && row.enabled && row.inputModalities.includes('text')), 'catalog_model')
   phase = 'owner_mcp'
   let mcpReady = false
   for (let attempt = 0; attempt < 100 && !mcpReady; attempt++) {
