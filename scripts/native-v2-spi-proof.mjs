@@ -1,6 +1,7 @@
 // Exact 2.1.4 native HTTP + persistent events through the public Session SPI.
 // Disposable TEST engine only; product Host/process custody and Desktop are separate gates.
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -10,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 const prefix = process.env.OPENCODE_V2_EMBEDDED_NPM_PREFIX
 const expectedPlatform = process.env.OPENCODE_V2_TEST_EXPECTED_PLATFORM
+const editCapturePath = process.env.OPENCODE_V2_TEST_EDIT_CAPTURE
 const receiptPath = resolve(process.env.OPENCODE_V2_SPI_RECEIPT || 'native-v2-embedded-target-spi-proof.json')
 const receipt = { kind: 'TEST_V2_NATIVE_SESSION_SPI', version: '2.1.4', qualified: false,
   completed: false, cleanup: false, steps: [] }
@@ -17,6 +19,10 @@ const originalDirectory = process.cwd()
 const root = mkdtempSync(join(tmpdir(), 'TEST-v2-spi-'))
 for (const name of ['workspace', 'home', 'config', 'cache', 'data', 'state', 'temp']) mkdirSync(join(root, name))
 const workspace = join(root, 'workspace'), effectPath = join(workspace, 'effect.txt')
+const editPath = join(workspace, 'dirty.txt')
+const editBefore = 'TEST clean anchor\nTEST existing dirty\nTEST unchanged tail\n'
+const editAfter = 'TEST clean anchor\nTEST native authored\nTEST unchanged tail\n'
+writeFileSync(editPath, editBefore, { flag: 'wx', mode: 0o600 })
 // Native global read routes may select process.cwd(); it must be the same
 // disposable workspace, never the provider checkout or a user's project.
 process.chdir(workspace)
@@ -63,6 +69,8 @@ let model, mcp, native, owner, driver, observer
 let modelCalls = 0, mcpCalls = 0, fixtureFailure, streamOpen = false, streamClosed = false
 let instructionsSeen = false, catalogSeen = false, allowInference = false
 const calledPhases = new Set(), events = []
+const captureRequests = []
+let capturedBefore, capturedAfter
 let phase = 'boot', failed = false, lastNativeStatus
 const toolName = 'testteams_TEST_touch'
 let stopNative = async () => {}
@@ -133,10 +141,15 @@ try {
         response.write('data: ' + JSON.stringify(chunk({ role: 'assistant' })) + '\n\n')
         return
       }
-      const invoke = targeted && names.includes(toolName) && ['deny', 'allow'].includes(phase) && !calledPhases.has(phase)
+      const selectedTool = phase === 'edit' ? 'edit' : toolName
+      if (targeted && phase === 'edit') check(names.includes('edit'), 'native_edit_not_offered')
+      const invoke = targeted && names.includes(selectedTool) && ['deny', 'allow', 'edit'].includes(phase) && !calledPhases.has(phase)
       if (invoke) calledPhases.add(phase)
+      const argumentsText = phase === 'edit'
+        ? JSON.stringify({ path: editPath, oldString: 'TEST existing dirty', newString: 'TEST native authored' })
+        : '{"marker":"TEST_ONCE"}'
       const frames = invoke ? [chunk({ role: 'assistant' }), chunk({ tool_calls: [{ index: 0,
-        id: 'call_TEST_' + phase, type: 'function', function: { name: toolName, arguments: '{"marker":"TEST_ONCE"}' } }] }),
+        id: 'call_TEST_' + phase, type: 'function', function: { name: selectedTool, arguments: argumentsText } }] }),
       chunk({}, 'tool_calls')] : [chunk({ role: 'assistant' }), chunk({ content: outputMarker }), chunk({}, 'stop')]
       frames.push({ ...base, choices: [], usage: { prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 } })
       response.end(frames.map(row => 'data: ' + JSON.stringify(row)).concat('data: [DONE]').join('\n\n') + '\n\n')
@@ -176,6 +189,7 @@ try {
   const firstEndpoint = await startNative()
   const selection = { agent: 'build', model: { providerID: 'test-native', id: 'TEST-model', variant: 'default' }, permissions: [
     { action: '*', resource: '*', effect: 'deny' }, { action: toolName, resource: '*', effect: 'ask' },
+    { action: 'edit', resource: '*', effect: 'allow' },
     { action: 'external_directory', resource: '*', effect: 'deny' },
   ] }
   const transportConfig = selectedEndpoint => ({ endpoint: selectedEndpoint, version: '2.1.4', directory: workspace,
@@ -233,6 +247,12 @@ try {
       pendingInteractions: 4, timeoutMs: 30_000 },
     probe: async () => running && (await owner.identity()).pid === process.pid,
     confirmStopped: async () => { await stopNative(); return !running },
+    capture: { observe(value) {
+      if (value.inputId !== 'TEST-edit') return
+      captureRequests.push(value)
+      if (value.phase === 'before') capturedBefore = readFileSync(editPath, 'utf8')
+      if (value.phase === 'after') capturedAfter = readFileSync(editPath, 'utf8')
+    } },
   })
   const factory = selectedEndpoint => createOpenCodeV2DriverFactory({ capabilities: ['text', 'tools', 'permission', 'interrupt', 'checkpoint'],
     resolveConfiguration: async () => driverConfig(selectedEndpoint), readCheckpoint: async () => checkpoint })
@@ -260,6 +280,41 @@ try {
   check(instructionsSeen && catalogSeen, 'effective_context_or_catalog_missing')
   check(readFileSync(effectPath, 'utf8') === 'TEST_ONCE', 'actual_file_effect')
   receipt.steps.push('session_SPI_native_model_tool_permission_deny_then_once_actual_MCP_effect')
+  await runInput('edit')
+  await until(() => resultFor('edit') || fixtureFailure, 'native_edit_terminal_missing')
+  check(resultFor('edit')?.outcome === 'succeeded' && !fixtureFailure, 'native_edit_terminal')
+  check(capturedBefore === editBefore && capturedAfter === editAfter && readFileSync(editPath, 'utf8') === editAfter, 'native_edit_before_after')
+  check(captureRequests.length === 2 && captureRequests[0].phase === 'before' && captureRequests[1].phase === 'after', 'native_edit_capture_order')
+  const window = captureRequests[1], item = window.items?.[0]
+  check(window.dialect === 'v2' && window.beforeObserved && window.gapReason === undefined && window.outcome === 'succeeded', 'native_edit_capture_window')
+  check(window.windowRef === captureRequests[0].windowRef && window.nativeSessionId === created.id && window.items.length === 1, 'native_edit_capture_identity')
+  check(item?.dialect === 'v2' && item.protocolRevision === '2.1.4' && item.tool === 'edit'
+    && item.status === 'completed' && item.providerExecuted === false && item.input?.path === editPath, 'native_edit_capture_tool')
+  check(typeof item.calledEvent?.id === 'string' && typeof item.completedEvent?.id === 'string'
+    && item.calledEvent.id !== item.completedEvent.id && item.calledEvent.seq < item.completedEvent.seq
+    && item.completedEvent.type === 'session.tool.success' && !Object.hasOwn(item, 'partId'), 'native_edit_capture_log_anchors')
+  check(Object.isFrozen(window) && Object.isFrozen(item) && Object.isFrozen(item.metadata), 'native_edit_capture_immutable')
+  const file = item.metadata?.files?.[0]
+  check(Array.isArray(item.metadata?.files) && item.metadata.files.length === 1 && resolve(workspace, file?.file ?? '') === editPath
+    && file.status === 'modified' && file.additions === 1 && file.deletions === 1
+    && typeof file.patch === 'string' && file.patch.includes('-TEST existing dirty\n+TEST native authored'), 'native_edit_capture_patch')
+  receipt.nativeEditCapture = { dialect: 'v2', protocolRevision: '2.1.4', immutable: true,
+    beforeSha256: createHash('sha256').update(capturedBefore).digest('hex'),
+    afterSha256: createHash('sha256').update(capturedAfter).digest('hex'),
+    patchSha256: createHash('sha256').update(file.patch).digest('hex'),
+    calledEvent: item.calledEvent, completedEvent: item.completedEvent,
+    filePathFlavor: isAbsolute(file.file) ? 'absolute' : 'workspace-relative',
+    unifiedIndexEnvelope: file.patch.startsWith('Index: ') && file.patch.includes('\n--- ') && file.patch.includes('\n+++ ') }
+  if (editCapturePath !== undefined) {
+    check(isAbsolute(editCapturePath), 'edit_capture_path_not_absolute')
+    // Optional local TEST evidence only; the public CI receipt remains free of
+    // native paths and raw observations. Never overwrite an existing artifact.
+    const { signal: _signal, ...capturedWindow } = window
+    writeFileSync(editCapturePath, JSON.stringify({ kind: 'TEST_NATIVE_V2_EDIT_CAPTURE', workspace,
+      before: capturedBefore, after: capturedAfter, window: capturedWindow }, null, 2) + '\n',
+    { mode: 0o600, flag: 'wx' })
+  }
+  receipt.steps.push('session_SPI_native_builtin_edit_immutable_input_window_and_real_log_anchors')
   await runInput('interrupt')
   await until(() => streamOpen || fixtureFailure, 'active_stream_missing')
   check((await driver.interrupt('TEST-op-interrupt')).ok, 'interrupt_receipt')
@@ -285,7 +340,8 @@ try {
   const previousEventCount = events.length
   driver = (await factory(restoredEndpoint).open({ ...request(), checkpointRef: 'TEST-durable-checkpoint' })).driver; observe()
   await delay(200)
-  check(modelCalls === callsBeforeRestore && mcpCalls === 1 && events.length === previousEventCount, 'cold_replay')
+  check(modelCalls === callsBeforeRestore && mcpCalls === 1 && events.length === previousEventCount
+    && readFileSync(editPath, 'utf8') === editAfter && captureRequests.length === 2, 'cold_replay')
   await runInput('resumed')
   await until(() => resultFor('resumed') || fixtureFailure, 'resumed_terminal_missing')
   check(resultFor('resumed')?.outcome === 'succeeded' && mcpCalls === 1 && !fixtureFailure, 'resumed_result')

@@ -1,4 +1,6 @@
 import { isCanonicalOpenCodeV2LoopbackEndpoint } from './v2-loopback-endpoint.ts'
+import { snapshotOpenCodeCapture } from './input-window-capture.ts'
+import type { OpenCodeInputWindowPort } from './input-window-capture.ts'
 import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { record } from './v2-projection-helpers.ts'
 import { isV2ExecutionVersion } from './v2-protocol-version.ts'
@@ -16,6 +18,7 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
   trustedBinding: string
   accountBinding: string
   limits: Limits
+  capture?: OpenCodeInputWindowPort
   /** Read-only host/package/MCP/model/custody qualification for this exact binding. */
   probe: (signal: AbortSignal) => Promise<boolean>
   /** Confirms this owned execution stopped; never stops a shared host. */
@@ -73,7 +76,9 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
     || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => captured.binding[key as keyof typeof captured.binding] === request[key as keyof typeof captured.binding]))
     {throw new Error('opencode.driver.invalid-config')}
-  return captured
+  const { capture: suppliedCapture, ...base } = captured
+  const capture = snapshotOpenCodeCapture(suppliedCapture)
+  return { ...base, ...(capture ? { capture } : {}) }
 }
 export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
   // The owned 2.1.4 process may use a new loopback port on cold restore. Its

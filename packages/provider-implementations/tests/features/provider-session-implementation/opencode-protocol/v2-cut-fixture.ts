@@ -28,3 +28,19 @@ export function cut(pin: '2.0.0' | '2.0.21' | '2.1.4' = '2.0.21'): OpenCodeV2Nat
     ] },
   }
 }
+
+export function editCut(): OpenCodeV2NativeTurnCut {
+  const value = cut('2.1.4'), path = '/TEST/native-driver/dirty.txt'
+  const input = { path, oldString: 'TEST existing dirty', newString: 'TEST native authored' }
+  // Observed from the actual 2.1.4 built-in edit in native-v2-spi-proof.mjs.
+  // The input is absolute, while native FileDiff preserves a workspace-relative resource.
+  const metadata = { files: [{ file: 'dirty.txt', patch: 'Index: dirty.txt\n===================================================================\n--- dirty.txt\n+++ dirty.txt\n@@ -1,3 +1,3 @@\n TEST clean anchor\n-TEST existing dirty\n+TEST native authored\n TEST unchanged tail\n',
+    status: 'modified', additions: 1, deletions: 1 }], truncated: false }
+  const parts = value.messages.data.find(row => row.id === assistantID)!.data.content as Record<string, unknown>[]
+  const tool = parts.find(row => row.type === 'tool')!
+  tool.name = 'edit'; tool.state = { ...(tool.state as object), input, metadata }
+  value.log.events[4]!.data = { ...value.log.events[4]!.data, name: 'edit' }
+  value.log.events[5]!.data = { ...value.log.events[5]!.data, input }
+  value.log.events[6]!.data = { ...value.log.events[6]!.data, metadata }
+  return value
+}

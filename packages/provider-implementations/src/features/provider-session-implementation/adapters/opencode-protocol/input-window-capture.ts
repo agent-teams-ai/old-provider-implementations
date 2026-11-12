@@ -1,14 +1,22 @@
 export type OpenCodeCaptureValue = null | boolean | number | string | readonly OpenCodeCaptureValue[] | { readonly [key: string]: OpenCodeCaptureValue }
-export type OpenCodeInputWindowItem = Readonly<{ messageId: string; partId: string; callId: string; tool: string; status: string;
+export type OpenCodeV1InputWindowItem = Readonly<{ dialect?: never; messageId: string; partId: string; callId: string; tool: string; status: string;
   input: unknown; metadata: unknown; startedAt: number | null; completedAt: number | null }>
-type Identity = Readonly<{ sessionRef: string; windowRef: string; inputId: string; operationRef: string; nativeSessionId: string }>
+export type OpenCodeV2InputWindowItem = Readonly<{ dialect: 'v2'; protocolRevision: '2.0.0' | '2.0.21' | '2.1.4';
+  messageId: string; callId: string; tool: string; status: 'completed' | 'error'; providerExecuted: boolean;
+  input: unknown; metadata: unknown; calledEvent: Readonly<{ id: string; seq: number }>;
+  completedEvent: Readonly<{ id: string; seq: number; type: 'session.tool.success' | 'session.tool.failed' }>;
+  partId?: never; startedAt?: never; completedAt?: never }>
+export type OpenCodeInputWindowItem = OpenCodeV1InputWindowItem | OpenCodeV2InputWindowItem
+type Identity = Readonly<{ sessionRef: string; windowRef: string; inputId: string; operationRef: string; nativeSessionId: string; dialect?: 'v2' }>
 type Gap = 'capture-failed' | 'timeout' | 'aborted' | 'transport' | 'limit'
-export type OpenCodeInputWindowRequest = Readonly<Identity & { signal: AbortSignal } & (
+type Phase<Item> =
   | { phase: 'before' }
-  | { phase: 'after'; nativeInputId: string; beforeObserved: boolean; gapReason?: Gap; outcome: 'succeeded' | 'failed' | 'cancelled'; items: readonly OpenCodeInputWindowItem[] }
+  | { phase: 'after'; nativeInputId: string; beforeObserved: boolean; gapReason?: Gap; outcome: 'succeeded' | 'failed' | 'cancelled'; items: readonly Item[] }
   | { phase: 'gap'; beforeObserved: boolean; reason: Gap }
-)>
-/** Private V1 input-window observation; no per-tool barrier, full-image proof or product writes. */
+export type OpenCodeInputWindowRequest =
+  | Readonly<Identity & { dialect?: never; signal: AbortSignal } & Phase<OpenCodeV1InputWindowItem>>
+  | Readonly<Identity & { dialect: 'v2'; signal: AbortSignal } & Phase<OpenCodeV2InputWindowItem>>
+/** Private native input-window observation; no per-tool barrier, full-image proof or product writes. */
 export interface OpenCodeInputWindowPort { observe(request: OpenCodeInputWindowRequest): void | Promise<void> }
 export function snapshotOpenCodeCapture(port: OpenCodeInputWindowPort | undefined): OpenCodeInputWindowPort | undefined {
   if (port === undefined) {return}
@@ -18,7 +26,7 @@ export function snapshotOpenCodeCapture(port: OpenCodeInputWindowPort | undefine
   if (typeof observe !== 'function') {throw new Error('opencode.v1.invalid-capture')}
   return Object.freeze({ observe: observe.bind(receiver) as OpenCodeInputWindowPort['observe'] })
 }
-type Request = OpenCodeInputWindowRequest extends infer R ? R extends OpenCodeInputWindowRequest ? Omit<R, 'signal'> : never : never
+type Request = Readonly<Identity & Phase<OpenCodeInputWindowItem>>
 function freeze(value: unknown, depth = 0): OpenCodeCaptureValue {
   if (depth > 16) {throw new Error('capture-depth')}
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)) {return value}
@@ -26,18 +34,31 @@ function freeze(value: unknown, depth = 0): OpenCodeCaptureValue {
   if (value && typeof value === 'object') {return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, freeze(item, depth + 1)])))}
   throw new Error('capture-value')
 }
-function inputWindowItem(value: unknown): value is OpenCodeInputWindowItem {
+function inputWindowItem(value: unknown, dialect: Identity['dialect']): value is OpenCodeInputWindowItem {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {return false}
-  if (!['messageId', 'partId', 'callId', 'tool', 'status'].every(key => typeof Reflect.get(value, key) === 'string')) {return false}
+  if (!['messageId', 'callId', 'tool', 'status'].every(key => typeof Reflect.get(value, key) === 'string')) {return false}
   if (!['input', 'metadata'].every(key => Object.hasOwn(value, key))) {return false}
+  if (dialect === 'v2') {
+    if (Reflect.get(value, 'dialect') !== 'v2' || !['2.0.0', '2.0.21', '2.1.4'].includes(Reflect.get(value, 'protocolRevision') as string)
+      || typeof Reflect.get(value, 'providerExecuted') !== 'boolean'
+      || ['partId', 'startedAt', 'completedAt'].some(key => Object.hasOwn(value, key))) {return false}
+    const called: unknown = Reflect.get(value, 'calledEvent'), completed: unknown = Reflect.get(value, 'completedEvent')
+    const anchor = (raw: unknown): raw is { id: string; seq: number } => raw !== null && typeof raw === 'object'
+      && typeof Reflect.get(raw, 'id') === 'string' && (Reflect.get(raw, 'id') as string).length > 0
+      && Number.isSafeInteger(Reflect.get(raw, 'seq')) && (Reflect.get(raw, 'seq') as number) >= 0
+    return anchor(called) && anchor(completed) && called.id !== completed.id && called.seq < completed.seq
+      && (Reflect.get(value, 'status') === 'completed' && Reflect.get(completed, 'type') === 'session.tool.success'
+        || Reflect.get(value, 'status') === 'error' && Reflect.get(completed, 'type') === 'session.tool.failed')
+  }
+  if (Reflect.get(value, 'dialect') !== undefined || typeof Reflect.get(value, 'partId') !== 'string') {return false}
   return ['startedAt', 'completedAt'].every(key => {
     const time: unknown = Reflect.get(value, key)
     return time === null || typeof time === 'number' && Number.isFinite(time)
   })
 }
-function snapshotItems(serialized: string): readonly OpenCodeInputWindowItem[] {
+function snapshotItems(serialized: string, dialect: Identity['dialect']): readonly OpenCodeInputWindowItem[] {
   const items = freeze(JSON.parse(serialized))
-  if (!Array.isArray(items) || !items.every(inputWindowItem)) {throw new Error('capture-item')}
+  if (!Array.isArray(items) || !items.every(item => inputWindowItem(item, dialect))) {throw new Error('capture-item')}
   return items
 }
 type Options = { identity: Identity; port: OpenCodeInputWindowPort; abort: AbortSignal; timeoutMs: number; maxItems: number; maxBytes: number }
@@ -63,7 +84,7 @@ export class OpenCodeInputWindowCapture {
       if (values.length > this.options.maxItems) {throw new Error('capture-count')}
       const serialized = JSON.stringify(values)
       if (Buffer.byteLength(serialized) > this.options.maxBytes) {throw new Error('capture-bytes')}
-      items = snapshotItems(serialized)
+      items = snapshotItems(serialized, this.identity.dialect)
     } catch {this.gap('limit')}
     const reason = await this.notify({ ...this.identity, phase: 'after', nativeInputId, outcome, items,
       beforeObserved: this.observed, ...(this.invalid ? { gapReason: this.invalid } : {}) }, !!this.invalid)

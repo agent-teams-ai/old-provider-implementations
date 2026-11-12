@@ -13,6 +13,9 @@ export type OpenCodeV2NativeToolFact = Readonly<{
   // proof that the tool caused no physical side effects.
   status: 'running' | 'completed' | 'error'; providerExecuted: boolean | null
   input: unknown; content: readonly unknown[] | null; error: unknown; metadata: unknown
+  /** Original immutable log identities; completed is absent while the native tool is running. */
+  calledEvent?: Readonly<{ id: string; seq: number }>
+  completedEvent?: Readonly<{ id: string; seq: number; type: 'session.tool.success' | 'session.tool.failed' }>
 }>
 export type OpenCodeV2NativeTurn = Readonly<{
   state: 'unknown' | 'pending' | 'succeeded' | 'failed' | 'cancelled'

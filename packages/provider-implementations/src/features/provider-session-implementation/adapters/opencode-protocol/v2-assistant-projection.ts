@@ -3,6 +3,7 @@ import type { OpenCodeV2NativeLogEvent, OpenCodeV2NativeTurnCut, OpenCodeV2Nativ
 type UnknownProjection = { kind: 'unknown'; reason: string }
 const reject = (reason: string): UnknownProjection => ({ kind: 'unknown', reason })
 const sequence = (events: readonly OpenCodeV2NativeLogEvent[], fallback: number) => events.at(0)?.seq ?? fallback
+const sameMetadata = (snapshot: unknown, event: unknown) => snapshot === undefined && event === undefined || same(snapshot, event)
 function toolCallEvents(related: readonly OpenCodeV2NativeLogEvent[], toolId: string, name: string, state: Record<string, unknown>) {
   const events = related.filter(event => event.data.id === toolId)
   const started = events.filter(event => event.type === 'session.tool.input.started')
@@ -27,7 +28,9 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
   const events = toolCallEvents(related, toolId, name, state)
   if (!events) { return reject('tool_call_lineage_mismatch') }
   const { called, successes, failures } = events
-  const base = { assistantMessageId: assistantId, toolCallId: toolId, toolName: name, input: state.input }
+  const call = called[0]!
+  const base = { assistantMessageId: assistantId, toolCallId: toolId, toolName: name, input: state.input,
+    calledEvent: { id: call.id, seq: call.seq } }
   if (state.status === 'streaming' || state.status === 'running') {
     if (ended || successes.length !== 0 || failures.length !== 0) { return reject('unsettled_tool_at_execution_terminal') }
     return { ...base, status: 'running', providerExecuted: null, content: null, error: null, metadata: null }
@@ -35,17 +38,21 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
   const providerExecuted = typeof part.executed === 'boolean' ? part.executed : null, metadata = state.metadata ?? null
   if (state.status === 'error') {
     if (failures.length !== 1 || successes.length !== 0 || !same(failures.at(0)?.data.error, state.error)
+      || !sameMetadata(state.metadata, failures[0]?.data.metadata)
       || sequence(called, Infinity) >= sequence(failures, -1) || !validProviderExecutedSnapshot(part, called, failures)) { return reject('tool_failure_snapshot_mismatch') }
-    return { ...base, status: 'error', providerExecuted, content: null, error: state.error, metadata }
+    return { ...base, status: 'error', providerExecuted, content: null, error: state.error, metadata,
+      completedEvent: { id: failures[0]!.id, seq: failures[0]!.seq, type: 'session.tool.failed' } }
   }
   if (!validToolSuccess(state, part, called, successes, failures)) { return reject('tool_success_snapshot_mismatch') }
-  const result = { ...base, status: 'completed' as const, providerExecuted, content: state.content, error: null, metadata }
+  const result = { ...base, status: 'completed' as const, providerExecuted, content: state.content, error: null, metadata,
+    completedEvent: { id: successes[0]!.id, seq: successes[0]!.seq, type: 'session.tool.success' as const } }
   if (nativeShellExitCode(pin, result).kind === 'invalid') { return reject('invalid_shell_exit_metadata') }
   return result
 }
 function validToolSuccess(state: Record<string, unknown>, part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], successes: readonly OpenCodeV2NativeLogEvent[], failures: readonly OpenCodeV2NativeLogEvent[]): state is Record<string, unknown> & { content: readonly unknown[] } {
   return state.status === 'completed' && successes.length === 1 && failures.length === 0 && Array.isArray(state.content)
     && state.content.length > 0 && same(successes.at(0)?.data.content, state.content) && validProviderExecutedSnapshot(part, called, successes)
+    && sameMetadata(state.metadata, successes[0]?.data.metadata)
     && sequence(called, Infinity) < sequence(successes, -1)
 }
 function assistantProblem(message: OpenCodeV2NativeTurnCut['messages']['data'][number], related: readonly OpenCodeV2NativeLogEvent[], ended: boolean): string | null {

@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import type { OpenCodeV2NativeTurnCut } from '../../../../src/opencode.ts'
 
-import { cut, sessionID, assistantID, content, toolInput } from './v2-cut-fixture.ts'
+import { cut, editCut, sessionID, assistantID, content, toolInput } from './v2-cut-fixture.ts'
 
 function assistant(value: OpenCodeV2NativeTurnCut) { return value.messages.data.find(row => row.id === assistantID)! }
 
@@ -20,7 +20,9 @@ test('both native dialects retain exact input, text and raw tool facts without i
     assert.deepEqual(projected.assistantMessageIds, [assistantID])
     assert.deepEqual(projected.tools, [{ assistantMessageId: assistantID, toolCallId: 'TEST-tool',
       toolName: 'agent-teams_task_done', status: 'completed', providerExecuted: false,
-      input: toolInput, content, error: null, metadata: null }])
+      input: toolInput, content, error: null, metadata: null,
+      calledEvent: { id: 'evt_TEST5', seq: 5 },
+      completedEvent: { id: 'evt_TEST6', seq: 6, type: 'session.tool.success' } }])
     assert.equal('visibleReplies' in projected, false)
     // A false provider-executed bit does not claim that local tools were not run.
     assert.equal(Object.hasOwn(projected.tools[0]!, 'executed'), false)
@@ -105,6 +107,39 @@ test('native tool running and failure remain technical observations', () => {
   const projected = projectOpenCodeV2NativeTurn(failed)
   assert.equal(projected.state, 'succeeded')
   assert.equal(projected.tools[0]?.status, 'error')
+  assert.deepEqual(projected.tools[0]?.completedEvent, { id: 'evt_TEST6', seq: 6, type: 'session.tool.failed' })
+})
+
+test('native edit metadata and original called/success anchors must agree with the immutable log', () => {
+  const value = editCut(), projected = projectOpenCodeV2NativeTurn(value)
+  assert.equal(projected.state, 'succeeded')
+  assert.deepEqual(projected.tools[0]?.metadata, value.log.events[6]!.data.metadata)
+  assert.deepEqual(projected.tools[0]?.calledEvent, { id: 'evt_TEST5', seq: 5 })
+  for (const mismatch of ['snapshot-only', 'event-only', 'different-patch', 'null-snapshot'] as const) {
+    const changed = structuredClone(value)
+    const parts = assistant(changed).data.content as Record<string, unknown>[]
+    const state = parts.find(part => part.type === 'tool')!.state as Record<string, unknown>
+    if (mismatch === 'snapshot-only') { const { metadata: _absent, ...data } = changed.log.events[6]!.data; changed.log.events[6]!.data = data }
+    if (mismatch === 'event-only') { delete state.metadata }
+    if (mismatch === 'different-patch') { state.metadata = { files: [{ patch: 'TEST substituted patch' }] } }
+    if (mismatch === 'null-snapshot') { state.metadata = null }
+    const rejected = projectOpenCodeV2NativeTurn(changed)
+    assert.equal(rejected.state, 'unknown', mismatch)
+    assert.equal(rejected.reason, 'tool_success_snapshot_mismatch', mismatch)
+    assert.deepEqual(rejected.tools, [], mismatch)
+  }
+})
+
+test('native failed-tool progress metadata must also match its durable failure event', () => {
+  const value = editCut(), error = { type: 'TEST failure', message: 'TEST interrupted edit' }
+  const parts = assistant(value).data.content as Record<string, unknown>[]
+  const state = parts.find(part => part.type === 'tool')!.state as Record<string, unknown>
+  state.status = 'error'; state.error = error
+  value.log.events[6]!.type = 'session.tool.failed'
+  value.log.events[6]!.data = { ...value.log.events[6]!.data, error }
+  assert.equal(projectOpenCodeV2NativeTurn(value).tools[0]?.status, 'error')
+  state.metadata = { files: [{ patch: 'TEST fabricated success patch' }] }
+  assert.equal(projectOpenCodeV2NativeTurn(value).reason, 'tool_failure_snapshot_mismatch')
 })
 
 

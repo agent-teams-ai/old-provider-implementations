@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { cut } from './v2-cut-fixture.ts'
+import { cut, editCut } from './v2-cut-fixture.ts'
 
 /** Real disposable HTTP peer, with two isolated native sessions on one synthetic host. */
-export async function driverPeer() {
+export async function driverPeer(options: { nativeEdit?: boolean } = {}) {
   const directory = '/TEST/native-driver', sessionId = 'ses_TESTdriver'
   let submitted = 0, interrupted = 0, foreign = false, lostReceipt = false, hold = false, permissionMode = false, replies = 0
   let flatSession = false, flatPrompt = false, flatPermissions = false, syncOnlyLog = false
@@ -25,7 +25,7 @@ export async function driverPeer() {
   const complete = (pending = false) => {
     if (!queued) {return}
     value = structuredClone(base)
-    const turn = cut(), nativeInput = turn.nativeInputID
+    const turn = options.nativeEdit ? editCut() : cut(), nativeInput = turn.nativeInputID
     const offset = value.log.events.length - 1
     const replacement = (source: string) => source.replaceAll(turn.sessionID, sessionId).replaceAll(nativeInput, queued!.id)
       .replaceAll('msg_TESTassistant', 'msg_TESTassistant' + submitted).replaceAll('msg_TEST9', 'msg_TESTidle' + submitted)
