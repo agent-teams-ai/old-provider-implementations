@@ -127,7 +127,7 @@ test('owned native catalog preserves native selection and drops provider credent
   const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto',
     settings: { apiKey: 'TEST-secret', url: 'TEST-private-endpoint' }, headers: { Authorization: 'TEST-secret' } }
   const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
-    limit: { context: 8192, output: 512 }, capabilities: { input: ['text', 'image'] },
+    limit: { context: 8192, output: 512 }, capabilities: { tools: true, input: ['text', 'image'] },
     headers: { Authorization: 'TEST-secret' }, settings: { private: 'TEST-secret' } }
   const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
     const request = input as Request, url = new URL(request.url)
@@ -143,7 +143,7 @@ test('owned native catalog preserves native selection and drops provider credent
       provider: { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto' },
       defaultModel: { providerId: 'TEST-provider', modelId: 'TEST-model' },
       models: [{ id: 'TEST-model', name: 'TEST Model', enabled: true, contextTokens: 8192,
-        outputTokens: 512, inputModalities: ['text', 'image'] }],
+        outputTokens: 512, supportsTools: true, inputModalities: ['text', 'image'] }],
     })
     assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default'])
     assert.equal(JSON.stringify(catalog).includes('TEST-secret'), false)
@@ -153,8 +153,8 @@ test('owned native catalog preserves native selection and drops provider credent
 test('owned catalog rejects foreign locations, duplicates and malformed model metadata', async () => {
   const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'enabled' }
   const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
-    limit: { context: 8192, output: 512 }, capabilities: { input: ['text'] } }
-  for (const mode of ['location', 'duplicate-provider', 'duplicate-model', 'activation', 'modalities', 'default'] as const) {
+    limit: { context: 8192, output: 512 }, capabilities: { tools: false, input: ['text'] } }
+  for (const mode of ['location', 'duplicate-provider', 'duplicate-model', 'activation', 'modalities', 'tools', 'default'] as const) {
     const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
       const route = new URL((input as Request).url).pathname
       let data: unknown = route === '/api/provider' ? [provider] : route === '/api/model' ? [model] : model
@@ -162,6 +162,7 @@ test('owned catalog rejects foreign locations, duplicates and malformed model me
       if (mode === 'duplicate-model' && route === '/api/model') data = [model, model]
       if (mode === 'activation' && route === '/api/provider') data = [{ ...provider, activation: 'unknown' }]
       if (mode === 'modalities' && route === '/api/model') data = [{ ...model, capabilities: { input: [null] } }]
+      if (mode === 'tools' && route === '/api/model') data = [{ ...model, capabilities: { input: ['text'] } }]
       if (mode === 'default' && route === '/api/model/default') data = { id: 'TEST-model' }
       return json({ location: { directory: mode === 'location' ? 'TEST-foreign' : baseline.directory }, data })
     } })
