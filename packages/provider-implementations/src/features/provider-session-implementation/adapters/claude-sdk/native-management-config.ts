@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 
 /** Private configuration shared by finite native metadata and explicit model tests. */
@@ -14,7 +15,7 @@ export type ClaudeNativeManagementConfig = {
   /** Close the original owned process before SDK EOF/abort can retire its root. Reuse the caller's cached cleanup promise. */
   confirmStopped: () => Promise<boolean>;
 };
-const absolutePath = z.string().min(1).max(8192).startsWith('/').refine(value => !value.includes('\0'));
+const absolutePath = z.string().min(1).max(8192).refine(value => isNativeAbsolutePath(value));
 export const nativeManagementConfiguration = z.object({
   cwd: absolutePath, executablePath: absolutePath,
   environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(65536)),

@@ -1,4 +1,5 @@
 import { snapshotOpenCodeCapture } from './input-window-capture.ts'
+import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts'
 import type { OpenCodeInputWindowPort } from './input-window-capture.ts'
 import { record } from './v2-projection-helpers.ts'
 import { createHash } from 'node:crypto'
@@ -27,7 +28,7 @@ export function v1Compatibility(c: OpenCodeV1DriverConfig): string {
 }
 export function snapshotV1Config(c: OpenCodeV1DriverConfig, request: OpenConfig): OpenCodeV1DriverConfig {
   if (record(c) === null || !/^1\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(c.version) || Number(c.version.split('.')[1]) < 16
-    || !/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(c.endpoint) || !c.workspacePath.startsWith('/')
+    || !/^http:\/\/127\.0\.0\.1:[1-9]\d*$/.test(c.endpoint) || !isNativeAbsolutePath(c.workspacePath)
     || !/^ses_[A-Za-z0-9]+$/.test(c.nativeSessionId) || c.configRevision !== request.configRevision
     || ![c.trustedBinding, c.accountBinding, c.profileBinding, c.runBinding, c.model.providerID, c.model.modelID].every(value => typeof value === 'string' && value.length > 0 && value.length <= 4096)
     || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => c.binding[key as keyof typeof c.binding] === request[key as keyof typeof c.binding])

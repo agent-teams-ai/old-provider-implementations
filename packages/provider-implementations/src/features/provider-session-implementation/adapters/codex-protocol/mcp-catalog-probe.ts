@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts'
 import { bounded } from '../provider-session-io/io.ts'
 import { decodeCodexConfiguredMcpCatalog } from './mcp-catalog.ts'
 import type { CodexConfiguredMcpCatalog } from './mcp-catalog.ts'
@@ -11,7 +12,7 @@ export type CodexMcpCatalogConfig = {
   launch: (request: CodexMcpCatalogLaunch) => CodexMcpCatalogConnection
   canRead: () => boolean
 }
-const path = z.string().min(1).max(8192).startsWith('/').refine(value => !/[\0\r\n]/u.test(value))
+const path = z.string().min(1).max(8192).refine(value => isNativeAbsolutePath(value) && !/[\r\n]/u.test(value))
 const schema = z.object({ executablePath: path, cwd: path,
   environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u), z.string().max(65536)).refine(value => Object.keys(value).length <= 256),
   timeoutMs: z.number().int().min(1).max(180000),

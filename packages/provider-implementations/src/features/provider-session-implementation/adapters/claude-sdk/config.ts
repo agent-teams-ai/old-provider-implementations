@@ -1,4 +1,5 @@
 import { captureClaudeExtraArgs } from '../provider-session-io/extra-argv.ts';
+import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Limits } from '@agent-teams/provider-session-contracts';
@@ -71,7 +72,7 @@ export function compatibility(config: ClaudeConfig): string {
       configDirectory: config.environment.CLAUDE_CONFIG_DIR } : {}) })).digest('hex');
 }
 export function validConfig(c: ClaudeConfig): boolean {
-  return !!(c.sessionRef && c.trustedBinding && c.accountBinding && c.configRevision && c.model && c.cwd.startsWith('/') &&
+  return !!(c.sessionRef && c.trustedBinding && c.accountBinding && c.configRevision && c.model && isNativeAbsolutePath(c.cwd) &&
     nonempty(c.environment.HOME) && nonempty(c.environment.PATH) &&
     validNamespace(c) &&
     validNativeOptions(c.nativeOptions) &&
