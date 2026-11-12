@@ -1,5 +1,6 @@
 import { record, assistantLineage, messageIDFromEvent, terminal } from './v2-projection-helpers.ts'
 import { projectNativeAssistants } from './v2-assistant-projection.ts'
+import { matchesNativeV2Pngs } from './v2-attachments.ts'
 import type { OpenCodeV2NativeTurnCut, OpenCodeV2NativeTurn, OpenCodeV2NativeLogEvent } from './v2-projection-types.ts'
 const empty = (state: OpenCodeV2NativeTurn['state'], reason: string): OpenCodeV2NativeTurn => ({ state, reason, assistantMessageIds: [], text: '', tools: [] })
 const unknown = (reason: string) => empty('unknown', reason)
@@ -50,6 +51,9 @@ function terminalProjection(input: OpenCodeV2NativeTurnCut, ending: OpenCodeV2Na
 function deliveredTurn(input: OpenCodeV2NativeTurnCut, delivered: OpenCodeV2NativeLogEvent): OpenCodeV2NativeTurn {
   const user = input.messages.data.find(message => message.id === input.nativeInputID)
   if (!user || user.type !== 'user' || user.data.id !== input.nativeInputID || user.data.type !== 'user' || user.data.text !== input.originalText) { return unknown('original_input_projection_mismatch') }
+  if (input.originalFilesDigest !== undefined && !matchesNativeV2Pngs(user.data.files, input.originalFilesDigest)) {
+    return unknown('original_attachment_projection_mismatch')
+  }
   const scope = intervalFor(input.log.events, delivered)
   if ('problem' in scope) { return unknown(scope.problem) }
   const { interval, end, assistants } = scope

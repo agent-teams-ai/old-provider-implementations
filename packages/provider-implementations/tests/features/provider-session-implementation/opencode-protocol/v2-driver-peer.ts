@@ -8,7 +8,8 @@ export async function driverPeer(options: { nativeEdit?: boolean } = {}) {
   const directory = '/TEST/native-driver', sessionId = 'ses_TESTdriver'
   let submitted = 0, interrupted = 0, foreign = false, lostReceipt = false, hold = false, permissionMode = false, replies = 0
   let flatSession = false, flatPrompt = false, flatPermissions = false, syncOnlyLog = false
-  let value = cut(), base = cut(), queued: { id: string; text: string } | undefined
+  type NativeFile = { data: string; mime: string; source: { type: string }; name: string }
+  let value = cut(), base = cut(), queued: { id: string; text: string; files?: NativeFile[] } | undefined
   let pauseInterrupt = false, releaseInterrupt: (() => void) | undefined
   let holdGrant = false, releaseGrant: (() => void) | undefined
   let holdPermissionDetail = false, permissionDetails = 0, releasePermissionDetail: (() => void) | undefined
@@ -31,6 +32,10 @@ export async function driverPeer(options: { nativeEdit?: boolean } = {}) {
       .replaceAll('msg_TESTassistant', 'msg_TESTassistant' + submitted).replaceAll('msg_TEST9', 'msg_TESTidle' + submitted)
       .replaceAll('TEST input', queued!.text)
     const rows = JSON.parse(replacement(JSON.stringify(turn.messages.data))) as typeof value.messages.data
+    if (queued.files) {
+      const user = rows.find(row => row.id === queued!.id)
+      assert.ok(user); user.data = { ...user.data, files: structuredClone(queued.files) }
+    }
     value.messages.data.push(...rows)
     for (const row of turn.log.events.slice(1)) {
       const translated = JSON.parse(replacement(JSON.stringify(row))) as typeof row
@@ -93,10 +98,13 @@ export async function driverPeer(options: { nativeEdit?: boolean } = {}) {
     let body = ''; req.on('data', chunk => { body += chunk }); req.on('end', () => {
       if (url.pathname.endsWith('/prompt')) {
         assert.equal(req.method, 'POST'); submitted++
-        const input = JSON.parse(body) as { id: string; text: string }
-        submittedIds.push(input.id); queued = input; base = structuredClone(value); if (!hold) {complete();} else if (permissionMode) {complete(true)}
+        const input = JSON.parse(body) as { id: string; text: string; files?: { uri: string; name: string }[] }
+        const files = input.files?.map(file => ({ data: file.uri.slice('data:image/png;base64,'.length),
+          mime: 'image/png', source: { type: 'inline' }, name: file.name }))
+        submittedIds.push(input.id); queued = { id: input.id, text: input.text, ...(files ? { files } : {}) };
+        base = structuredClone(value); if (!hold) {complete();} else if (permissionMode) {complete(true)}
         if (lostReceipt) { req.socket.destroy(); return }
-        res.end(envelope({ id: input.id, sessionID: sessionId, type: 'user', delivery: 'queue', time: { created: 1 }, payload: { text: input.text } }, flatPrompt)); return
+        res.end(envelope({ id: input.id, sessionID: sessionId, type: 'user', delivery: 'queue', time: { created: 1 }, payload: { text: input.text, ...(files ? { files } : {}) } }, flatPrompt)); return
       }
       if (req.method === 'DELETE' && url.pathname.includes('/inbox/')) {
         const id = url.pathname.split('/').at(-1)!; cancelled.push(id)

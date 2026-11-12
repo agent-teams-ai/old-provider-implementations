@@ -24,12 +24,17 @@ function attachmentRecord(value: unknown): Record<string, unknown> | undefined {
 export function snapshotAttachmentPort(port: AttachmentPort | undefined): AttachmentPort | undefined {
   if (port === undefined) { return undefined; }
   const raw = attachmentRecord(port);
-  const mimeTypes: unknown = raw?.mimeTypes;
-  if (raw === undefined || typeof raw.model !== 'string' || raw.model.length === 0 || typeof raw.revision !== 'string' || raw.revision.length === 0 ||
-    !Array.isArray(mimeTypes) || !mimeTypes.every((mime: unknown): mime is string => typeof mime === 'string' && mime.length > 0 && mime.length <= 128) || typeof raw.resolve !== 'function') {
+  // Host accessors are captured once before validation. The validated model,
+  // policy and byte resolver must be exactly those retained by the session.
+  const model = raw?.model, revision = raw?.revision, suppliedMimes = raw?.mimeTypes, resolve = raw?.resolve;
+  const mimeTypes: unknown = Array.isArray(suppliedMimes) ? [...suppliedMimes] : suppliedMimes;
+  if (typeof model !== 'string' || model.length === 0 || typeof revision !== 'string' || revision.length === 0 ||
+    !Array.isArray(mimeTypes) || !mimeTypes.every((mime: unknown): mime is string => typeof mime === 'string' && mime.length > 0 && mime.length <= 128) || typeof resolve !== 'function') {
     throw new AttachmentFailure('invalid-config');
   }
-  return { model: raw.model, revision: raw.revision, mimeTypes: [...mimeTypes], resolve: port.resolve.bind(port) };
+  // Reflect.apply preserves the original receiver without rereading a callable's
+  // overridable bind/name/length properties during capture.
+  return { model, revision, mimeTypes, resolve: (request, signal) => Reflect.apply(resolve, port, [request, signal]) };
 }
 export function attachmentCompatibility(port: AttachmentPort | undefined): unknown {
   return port && { model: port.model, revision: port.revision, mimeTypes: port.mimeTypes };
@@ -66,7 +71,7 @@ function sameBinding(actual: Binding | undefined, expected: Binding): boolean {
 }
 type Provider = 'claude' | 'codex' | 'opencode-v1' | 'opencode-v2';
 function nativeKind(mime: string, provider: Provider): 'image' | 'file' | 'video' | undefined {
-  if (provider === 'opencode-v2') { return undefined; }
+  if (provider === 'opencode-v2') { return mime === 'image/png' ? 'image' : undefined; }
   if (['image/png', 'image/jpeg', 'image/webp'].includes(mime) || (provider === 'claude' && mime === 'image/gif')) { return 'image'; }
   if (provider === 'claude' && (mime === 'application/pdf' || mime.startsWith('text/'))) { return 'file'; }
   if (provider === 'opencode-v1' && ['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) { return 'video'; }

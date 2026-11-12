@@ -1,4 +1,4 @@
-import { createOpenCodeV2ExecutionTransport } from './v2-execution-transport.ts'
+import { createOpenCodeV2ExecutionTransport, createV2PngTransport } from './v2-execution-transport.ts'
 import { createOpenCodeV2SessionControl } from './v2-session-control.ts'
 import { decodeV2DataEnvelope, decodeV2Log, decodeV2Session } from './v2-cut-codecs.ts'
 import { readOpenCodeV2NativeCut } from './v2-native-cut.ts'
@@ -6,8 +6,10 @@ import { record } from './v2-projection-helpers.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { safeV2MessageID } from './v2-native-identifiers.ts'
 import type { OpenCodeV2DriverConfig } from './v2-driver-config.ts'
+import type { PreparedAttachment } from '../provider-session-io/attachments.ts'
+import { matchesNativeV2Pngs, nativeV2PngDigest, serializeV2PngAttachments, V2_PNG_PROMPT_BYTES } from './v2-attachments.ts'
 
-export type NativeDriverInput = { nativeInputID: string; text: string; beforeCursor: number | null }
+export type NativeDriverInput = { nativeInputID: string; text: string; beforeCursor: number | null; nativeFilesDigest?: string }
 /** Each operation has a fresh finite deadline. No mutable transport lasts across turns. */
 export function createDriverNative(config: OpenCodeV2DriverConfig, signal: AbortSignal) {
   let cleanupUnknown = false
@@ -64,7 +66,7 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       if (cleanupUnknown) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
     }
   }
-  const queue = async (nativeInputID: string, text: string): Promise<NativeDriverInput> => {
+  const queue = async (nativeInputID: string, text: string, attachments: readonly PreparedAttachment[] = []): Promise<NativeDriverInput> => {
     assertUsable(true)
     // Reject malformed input before even the native session/log preflight GET:
     // these reads carry Host Basic credentials and cannot validate a bad queue.
@@ -74,8 +76,11 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     // A text under 256 KiB can exceed the raw transport's 1 MiB POST budget
     // after JSON escaping (e.g. NUL). Admit the exact serialized body before
     // reading Host credentials or preflighting the native session.
-    const promptBody = validText ? JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue' }) : ''
-    if (!validText || Buffer.byteLength(promptBody) > 1024 * 1024) {
+    const files = attachments.length ? serializeV2PngAttachments(attachments) : undefined
+    const nativeFilesDigest = files ? nativeV2PngDigest(files) : undefined
+    const promptBody = validText ? JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue', ...(files ? { files } : {}) }) : ''
+    if (!validText || files && (config.version !== '2.1.4' || !config.attachments?.mimeTypes.includes('image/png')) ||
+        Buffer.byteLength(promptBody) > (files ? V2_PNG_PROMPT_BYTES : 1024 * 1024)) {
       const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
       unsubmitted.add(failure)
       throw failure
@@ -88,10 +93,11 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     queueActive = true
     activeOperations++
     try {
-      const wire = createOpenCodeV2ExecutionTransport(wireConfig())
+      const wire = files ? createV2PngTransport(wireConfig(), nativeInputID, files) : createOpenCodeV2ExecutionTransport(wireConfig())
       let mutation = false
       try {
-      decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
+      const selected = decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
+      if (files && `${selected.model.providerID}/${selected.model.id}` !== config.attachments!.model) throw new Error('native_attachment_model_mismatch')
       const log = decodeV2Log(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
         config.nativeSessionId, config.directory)
       // The stock V2 CLI can acknowledge a prompt while exposing only log.synced
@@ -104,10 +110,11 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
         headers: { 'content-type': 'application/json' }, body: promptBody })).json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
-        || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text) {throw new Error('native_handoff_identity_mismatch')}
+        || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text ||
+        nativeFilesDigest && !matchesNativeV2Pngs(record(receipt.payload)?.files, nativeFilesDigest)) {throw new Error('native_handoff_identity_mismatch')}
       // A close that raced the acknowledged POST cannot be reported as clean.
       assertUsable(true)
-      return { nativeInputID, text, beforeCursor: log.watermark }
+      return { nativeInputID, text, beforeCursor: log.watermark, ...(nativeFilesDigest ? { nativeFilesDigest } : {}) }
       } catch (error) {
       rememberUncertainCleanup(error)
       if (mutation) promptUnknown = true

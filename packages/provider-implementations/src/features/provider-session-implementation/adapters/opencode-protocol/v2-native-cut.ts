@@ -88,7 +88,7 @@ function parseNativeReadJSON(source: string): unknown {
     throw new Error('invalid_native_read_json')
   }
 }
-function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string }>): void {
+function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string; nativeFilesDigest?: string }>): void {
   // Direct public read-cut callers can bypass the DriverConfig snapshot. A
   // one-element JSON array coerces to a matching string under RegExp.test;
   // reject that, overflow ports and malformed workspace values BEFORE fetch.
@@ -98,12 +98,14 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
     || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
     || !isV2ExecutionVersion(binding.pin)
     || !(input.beforeCursor === null || Number.isSafeInteger(input.beforeCursor) && input.beforeCursor >= 0)
-    || typeof input.text !== 'string' || input.text.trim().length === 0 || Buffer.byteLength(input.text) > 256 * 1024) { throw new Error('invalid_native_read_binding') }
+    || typeof input.text !== 'string' || input.text.trim().length === 0 || Buffer.byteLength(input.text) > 256 * 1024 ||
+    input.nativeFilesDigest !== undefined && (binding.pin !== '2.1.4' || typeof input.nativeFilesDigest !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.nativeFilesDigest))) { throw new Error('invalid_native_read_binding') }
 }
 /** Finite read-only cut; runtime still owns endpoint/session custody and admission. */
 export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport,
   supplied: OpenCodeV2ReadBinding,
-  original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string }>): Promise<OpenCodeV2NativeTurnCut> {
+  original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string; nativeFilesDigest?: string }>): Promise<OpenCodeV2NativeTurnCut> {
   const binding = structuredClone(supplied), input = structuredClone(original)
   validateReadBinding(binding, input)
   const budget = { bytes: 0 }, deadline = Date.now() + MAX_V2_NATIVE_CUT_READ_MS
@@ -211,5 +213,6 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     || canonicalExecutionJSON(beforeSession) !== canonicalExecutionJSON(afterSession)) {throw new Error('mutable_native_readback')}
   return { pin: binding.pin, sessionID: binding.sessionID, nativeInputID: input.nativeInputID,
     beforeCursor: input.beforeCursor, originalText: input.text,
+    ...(input.nativeFilesDigest ? { originalFilesDigest: input.nativeFilesDigest } : {}),
     messages: { data: messages, previous: null, next: null }, log: afterLog }
 }

@@ -9,6 +9,8 @@ import { types as nodeUtilTypes } from 'node:util'
 import { posix, win32 } from 'node:path'
 import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts'
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
+import { attachmentCompatibility, snapshotAttachmentPort } from '../provider-session-io/attachments.ts'
+import type { AttachmentPort } from '../provider-session-io/attachments.ts'
 
 /** Private Host-selected existing session. Runtime owns creation, lease and current generation. */
 export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' | 'signal'> & {
@@ -19,6 +21,8 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
   accountBinding: string
   limits: Limits
   capture?: OpenCodeInputWindowPort
+  /** Host-approved PNG delivery for the exact selected 2.1.4 model and policy. */
+  attachments?: AttachmentPort
   /** Read-only host/package/MCP/model/custody qualification for this exact binding. */
   probe: (signal: AbortSignal) => Promise<boolean>
   /** Confirms this owned execution stopped; never stops a shared host. */
@@ -76,9 +80,12 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
     || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => captured.binding[key as keyof typeof captured.binding] === request[key as keyof typeof captured.binding]))
     {throw new Error('opencode.driver.invalid-config')}
-  const { capture: suppliedCapture, ...base } = captured
+  const { capture: suppliedCapture, attachments: suppliedAttachments, ...base } = captured
   const capture = snapshotOpenCodeCapture(suppliedCapture)
-  return { ...base, ...(capture ? { capture } : {}) }
+  if (suppliedAttachments !== undefined && captured.version !== '2.1.4') throw new Error('opencode.driver.unsupported')
+  const attachments = snapshotAttachmentPort(suppliedAttachments)
+  if (attachments?.mimeTypes.some(mime => mime !== 'image/png')) throw new Error('opencode.driver.unsupported')
+  return { ...base, ...(capture ? { capture } : {}), ...(attachments ? { attachments } : {}) }
 }
 export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
   // The owned 2.1.4 process may use a new loopback port on cold restore. Its
@@ -89,7 +96,8 @@ export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
     ...(config.version === '2.1.4' ? {} : { endpoint: config.endpoint }),
     directory: config.directory, nativeSessionId: config.nativeSessionId, trustedBinding: config.trustedBinding,
     accountBinding: config.accountBinding, configRevision: config.configRevision,
-    tenantId: config.binding.tenantId, projectId: config.binding.projectId, sessionId: config.binding.sessionId })).digest('hex')
+    tenantId: config.binding.tenantId, projectId: config.binding.projectId, sessionId: config.binding.sessionId,
+    ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}) })).digest('hex')
 }
 function snapshotCheckpoint(value: unknown): { nativeSessionId: string; compatibility: string } | undefined {
   // Durable checkpoint bytes are untrusted. A getter or Proxy can forge the
