@@ -75,6 +75,17 @@ back unchanged. The saved-grants read exports no grant details and has no mutati
 API. Host must attest isolated database custody before relying on a global empty
 result; `always` grants remain refused by session control.
 
+An optional typed credential witness contains only the captured scope digest and
+native credential ID. It is written at creation as
+`session.metadata.agentTeamsCredential`, checked on creation/readback, and never
+inserted into session instructions or prompt content. The exact native 2.1.4
+`Session.create` stores this metadata in its session row and `SessionInfo.fromRow`
+returns it after reopening. `SessionModelRequest.prepare` builds model system,
+messages, tools and headers from explicit fields, excluding session metadata.
+Unrelated native metadata is neither exported nor overwritten; arbitrary metadata
+and keys are not accepted by this adapter. The caller remains responsible for
+verifying the witness against the original credential namespace before readiness.
+
 Both execution and control transports can await the captured Host `beforeRequest`
 callback before reading credentials. Its optional release capability remains held
 through response reading and cleanup. The original request abort/deadline bounds

@@ -88,6 +88,37 @@ test('owned create captures native default variant before effects and requires i
   }
 })
 
+test('owned create captures only the typed credential witness in native session metadata and verifies readback', async () => {
+  const credential = { scopeDigest: 'a'.repeat(64), credentialId: 'cred_TESToriginal' }
+  for (const mode of ['exact', 'missing', 'changed', 'extra'] as const) {
+    let calls = 0
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+      calls++
+      const request = input as Request
+      if (request.method === 'POST') assert.deepEqual(JSON.parse(await request.text()), {
+        id: baseline.nativeSessionId, location: { directory: baseline.directory }, ...selected,
+        metadata: { agentTeamsCredential: credential },
+      })
+      return json({ data: { ...nativeSession().data, metadata: { unrelated: 'TEST-private',
+        ...(mode === 'missing' ? {} : { agentTeamsCredential: { ...credential,
+          ...(mode === 'changed' ? { scopeDigest: 'b'.repeat(64) } : {}),
+          ...(mode === 'extra' ? { key: 'TEST-private-key' } : {}),
+        } }),
+      } } })
+    } })
+    try {
+      const work = client.createSession({ ...selected, credential })
+      if (mode === 'exact') {
+        const expected = { id: baseline.nativeSessionId, directory: baseline.directory, ...selected, credential }
+        assert.deepEqual(await work, expected)
+        assert.deepEqual(await client.readSession(), expected)
+      } else await assert.rejects(work, /native_(selection_mismatch|credential_binding)/)
+      await assert.rejects(client.createSession({ ...selected, credential }), /native_create_already_attempted/)
+      assert.equal(calls, mode === 'exact' ? 2 : 1)
+    } finally { await client.dispose() }
+  }
+})
+
 test('owned client rejects unqualified version/identity and malformed MCP readback', async () => {
   for (const version of ['2.0.21', '2.1.5']) {
     assert.throws(() => createOpenCodeV2OwnedSessionClient({ ...baseline, version } as OpenCodeV2TransportConfig), /unqualified_version/)
