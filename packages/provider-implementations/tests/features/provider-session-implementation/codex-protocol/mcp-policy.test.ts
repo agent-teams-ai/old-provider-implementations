@@ -44,6 +44,8 @@ test('one top-level TOML overlay quotes dotted names and native merged stale fie
   const unselected = configuration(); unselected.config.mcp_servers['TEST.foreign'].enabled = true; assert(!codexMcpConfigurationMatches(unselected, policy()))
   assert(!managedCodexMcpParameters({ cwd: '/TEST', config: { 'features.apps': true } }, {}))
   assert(!managedCodexMcpParameters({}, { selectedCapabilityRoots: ['foreign'] }))
+  assert(managedCodexMcpParameters({ ephemeral: true }, {}))
+  assert(!managedCodexMcpParameters({ ephemeral: 'true' }, {}))
 })
 
 test('native ConfigToml selected HTTP defaults require local environment and exact inherited configuration', () => {
@@ -96,11 +98,12 @@ test('actual driver orders catalog/config admission before thread/start and hold
   const responses = new PassThrough(), writes: { method: string; params?: Record<string, unknown> }[] = []; let validCatalog = true, checkCount = 0
   const config: CodexDriverConfig = { binding: { tenantId: 'TEST', projectId: 'TEST', sessionId: 'TEST', generation: 1 }, configRevision: 'TEST', protocolRevision: '0.162.0', accountBinding: 'TEST', trustedBinding: 'TEST',
     transport: { async *read(signal) { signal.addEventListener('abort', () => responses.destroy(), { once: true }); for await (const chunk of responses) {yield chunk} }, write(frame) { const request = JSON.parse(frame); writes.push(request); if (!request.id) {return;} let result: unknown = {}; if (request.method === 'initialize') {result = { codexHome: '/TEST/home', platformFamily: 'unix', platformOs: 'macos' };} if (request.method === 'config/read') {result = configuration();} if (request.method === 'thread/start') {result = { thread: { id: 'TEST-thread' }, model: 'TEST', modelProvider: 'TEST', cwd: '/TEST' };} if (request.method === 'mcpServerStatus/list') {result = { data: [{ name: 'team', runtimeStatus: 'connected', authStatus: 'unsupported', toolsError: null, tools: { 'TEST-tool': { name: 'TEST-tool', inputSchema: {} } }, resources: [], resourceTemplates: [] }], nextCursor: null };} responses.write(JSON.stringify({ id: request.id, result }) + '\n') } },
-    initialize: { clientInfo: { name: 'TEST', version: '1' }, capabilities: { experimentalApi: true } }, threadParams: { cwd: '/TEST', model: 'TEST' }, mcpPolicy: policy(), verifyMcpCatalog: async () => { checkCount++; return validCatalog }, requiredMcpTools: { team: ['TEST-tool'] },
+    initialize: { clientInfo: { name: 'TEST', version: '1' }, capabilities: { experimentalApi: true } }, threadParams: { cwd: '/TEST', model: 'TEST', ephemeral: true }, mcpPolicy: policy(), verifyMcpCatalog: async () => { checkCount++; return validCatalog }, requiredMcpTools: { team: ['TEST-tool'] },
     limits: { queuedInputs: 1, inputBytes: 4096, outputBytes: 8192, outputEvents: 64, pendingInteractions: 2, timeoutMs: 1000 }, probe: async () => true, confirmStopped: async () => true }
   const factory = createCodexDriverFactory({ resolveConfiguration: async () => config, readCheckpoint: async () => {}, capabilities: ['text', 'tools'] })
   const { driver } = await factory.open({ ...config.binding, configRevision: 'TEST', requiredCapabilities: ['text', 'tools'] }); t.after(() => driver.close())
   assert.equal(checkCount, 2); const methods = writes.map(row => row.method); assert(methods.indexOf('config/read') < methods.indexOf('thread/start')); assert(methods.indexOf('thread/start') < methods.indexOf('mcpServerStatus/list'))
+  assert.equal(writes.find(row => row.method === 'thread/start')?.params?.ephemeral, true)
   validCatalog = false; const before = writes.length
   assert.deepEqual(await driver.submit({ inputId: 'TEST-input', operationRef: 'TEST-original', content: 'TEST no work' }), { ok: false, code: 'dependency-unavailable', delivery: 'known-not-sent' })
   assert.equal(writes.length, before); assert(!writes.some(row => row.method === 'turn/start'))
