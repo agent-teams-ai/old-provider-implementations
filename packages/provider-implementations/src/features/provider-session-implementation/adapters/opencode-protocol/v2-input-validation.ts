@@ -52,7 +52,7 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   // A workspace query cannot authorize global model or agent inventories.
   // Real model-binding discovery/effective permission policy remains HOLD.
   const scoped = url.pathname === '/api/location' || ownerScope &&
-    ['/api/mcp', '/api/plugin', '/api/provider', '/api/model', '/api/model/default'].includes(url.pathname)
+    ['/api/mcp', '/api/plugin', '/api/provider', '/api/model', '/api/model/default', '/api/integration'].includes(url.pathname)
   const ownerRead = ownerScope && (url.pathname === '/api/info' || url.pathname === '/api/permission/saved')
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   // Native /api/info (2.0.21) exposes process paths and PID, and the

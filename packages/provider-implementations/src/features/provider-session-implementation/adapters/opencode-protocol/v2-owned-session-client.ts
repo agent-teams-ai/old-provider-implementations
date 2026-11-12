@@ -5,6 +5,7 @@ import { decodeV2DataEnvelope, decodeV2Session } from './v2-cut-codecs.ts'
 import { record } from './v2-projection-helpers.ts'
 import { executionAssert } from './v2-failures.ts'
 import { readOpenCodeV2OwnedCatalog } from './v2-owned-catalog.ts'
+import { readOpenCodeV2OwnedDirectory } from './v2-owned-directory.ts'
 import { readOpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
 import type { OpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
 
@@ -88,6 +89,7 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
       return session(await (await wire.fetch(config.endpoint + `/api/session/${config.nativeSessionId}`)).json() as unknown)
     },
     readCatalog: (providerId: string) => readOpenCodeV2OwnedCatalog(wire.fetch, config.endpoint, config.directory, providerId),
+    readDirectory: () => readOpenCodeV2OwnedDirectory(wire.fetch, config.endpoint, config.directory),
     /** Isolated owner database only. Never exports saved grant details or mutates them. */
     async savedPermissionsEmpty(): Promise<boolean> {
       const value = decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + '/api/permission/saved')).json() as unknown)

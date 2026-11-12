@@ -247,6 +247,13 @@ try {
   check(catalog.defaultModel?.providerId === 'test-native' && catalog.defaultModel.modelId === 'TEST-model', 'catalog_default')
   check(catalog.models.some(row => row.id === 'TEST-model' && row.enabled && row.inputModalities.includes('text')
     && row.inputModalities.includes('image')), 'catalog_model')
+  const directory = await owner.readDirectory()
+  check(directory.providers.some(row => row.id === 'test-native') &&
+    directory.models.some(row => row.providerId === 'test-native' && row.id === 'TEST-model') &&
+    directory.integrations.some(row => row.plainKey), 'native_provider_directory')
+  check(!JSON.stringify(directory).includes('TEST-non-secret') &&
+    !JSON.stringify(directory).includes(credentialWitness.credentialId), 'native_directory_private_field_leak')
+  receipt.steps.push('native_all_provider_directory_without_account_or_configuration_fields')
   phase = 'owner_mcp'
   let mcpReady = false
   for (let attempt = 0; attempt < 100 && !mcpReady; attempt++) {

@@ -86,6 +86,13 @@ Unrelated native metadata is neither exported nor overwritten; arbitrary metadat
 and keys are not accepted by this adapter. The caller remains responsible for
 verifying the witness against the original credential namespace before readiness.
 
+`readDirectory` projects all native providers, model metadata and plain-key
+integration availability from four finite GETs. It shares the selected catalog's
+decoders and byte budget, filters credential/configuration fields, and makes no
+per-provider global-model reread. The session execution wire cannot use this
+owner-only inventory capability. Connection state and selected-account imports
+remain Host responsibilities; this read never submits a key or a model prompt.
+
 Both execution and control transports can await the captured Host `beforeRequest`
 callback before reading credentials. Its optional release capability remains held
 through response reading and cleanup. The original request abort/deadline bounds
