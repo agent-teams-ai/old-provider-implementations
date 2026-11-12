@@ -176,6 +176,7 @@ export class ClaudeSession implements Session {
     } catch { this.unavailable('unknown'); done.resolve(fail('unknown')); }
   }
   checkpoint(): Reply<unknown> {
+    if (this.config.sessionPersistence === 'ephemeral') {return fail('unsupported');}
     if (this.active || this.queued.length || this.control || this.failure) {return fail('unavailable');}
     return { ok: true, value: { version: 1, engine: SDK_REVISION, nativeSession: this.nativeSession, compatibility: compatibility(this.config) } };
   }

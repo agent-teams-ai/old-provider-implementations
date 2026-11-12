@@ -21,11 +21,15 @@ export function createClaudeDriverFactory(host: ClaudeDriverHost, sdk?: ClaudeSd
       if (!configuration || configuration.configRevision !== selected.configRevision || configuration.sessionRef !== selected.sessionId) {
         throw new Error('claude.driver.invalid-config');
       }
+      const selectedCapabilities = configuration.sessionPersistence === 'ephemeral'
+        ? Object.freeze(capabilities.filter(value => value !== 'checkpoint')) : capabilities;
+      if (selected.requiredCapabilities.some(value => !selectedCapabilities.includes(value))) { throw new Error('claude.driver.unsupported'); }
+      if (configuration.sessionPersistence === 'ephemeral' && selected.checkpointRef !== undefined) { throw new Error('claude.driver.checkpoint-incompatible'); }
       const checkpoint = selected.checkpointRef === undefined ? undefined : await host.readCheckpoint(selected.checkpointRef, selected);
       if (selected.checkpointRef !== undefined && checkpoint === undefined) { throw new Error('claude.driver.checkpoint-missing'); }
       const opened = await openClaudeSession(configuration, checkpoint, sdk);
       if (!opened.ok) { throw new Error(`claude.driver.${opened.code}`); }
-      return { driver: opened.value, capabilities };
+      return { driver: opened.value, capabilities: selectedCapabilities };
     },
   };
 }

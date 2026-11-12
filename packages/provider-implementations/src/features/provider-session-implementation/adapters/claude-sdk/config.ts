@@ -28,6 +28,8 @@ export type ClaudeConfig = {
   extraArgs?: readonly string[];
   /** Omission preserves the existing explicit custom-directory requirement. */
   configNamespace?: 'native-default' | 'custom-directory';
+  /** Finite Host-owned runs may opt out of native conversation persistence and restore. */
+  sessionPersistence?: 'ephemeral';
   /** Trusted, selected native configuration. No arbitrary SDK options, settings or hooks. */
   nativeOptions?: {
     permissionMode?: NonNullable<Options['permissionMode']>;
@@ -68,13 +70,14 @@ export function compatibility(config: ClaudeConfig): string {
     ...((config.extraArgs?.length ?? 0) > 0 ? { extraArgs: config.extraArgs } : {}),
     ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}),
     ...(config.nativeOptions ? { nativeOptions: selectedOptions(config) } : {}),
+    ...(config.sessionPersistence ? { sessionPersistence: config.sessionPersistence } : {}),
     ...(config.configNamespace ? { configNamespace: config.configNamespace, home: config.environment.HOME,
       configDirectory: config.environment.CLAUDE_CONFIG_DIR } : {}) })).digest('hex');
 }
 export function validConfig(c: ClaudeConfig): boolean {
   return !!(c.sessionRef && c.trustedBinding && c.accountBinding && c.configRevision && c.model && isNativeAbsolutePath(c.cwd) &&
     nonempty(c.environment.HOME) && nonempty(c.environment.PATH) &&
-    validNamespace(c) &&
+    validNamespace(c) && (c.sessionPersistence === undefined || c.sessionPersistence === 'ephemeral') &&
     validNativeOptions(c.nativeOptions) &&
     Object.values(c.limits).every((v) => Number.isSafeInteger(v) && v > 0) &&
     !Object.keys(c.environment).some((key) => /^(CLAUDE_CODE_TEAM|CLAUDE_TEAM|CLAUDE_AGENT_TEAMS|CLAUDE_CODE_RESUME|CLAUDE_CODE_CONTINUE)/.test(key)) &&
@@ -90,7 +93,7 @@ export function options(c: ClaudeConfig, nativeSession: string, restore: boolean
     ...(c.subagents ? subagentOptions(c.subagents) : {}),
     tools: [...c.nativeTools], allowedTools: [...c.autoAllowedTools],
     mcpServers: c.mcpServers, strictMcpConfig: true,
-    persistSession: true, includePartialMessages: true,
+    persistSession: c.sessionPersistence !== 'ephemeral', includePartialMessages: true,
     ...(restore ? { resume: nativeSession } : { sessionId: nativeSession }),
     spawnClaudeCodeProcess: (spawnOptions) => c.custody.launch({ ...spawnOptions, ...(extraArgs.length ? { args: [...spawnOptions.args, ...extraArgs] } : {}), env: { ...c.environment } }),
   };

@@ -17,6 +17,7 @@ const realBoundary: ClaudeSdkBoundary = {
 export async function openClaudeSession(config: ClaudeConfig, checkpoint?: unknown, sdk: ClaudeSdkBoundary = realBoundary): Promise<Reply<Session>> {
   try { if (!validConfig(config)) { return fail('invalid-config'); } config = snapshotConfig(config); }
   catch { return fail('invalid-config'); }
+  if (checkpoint !== undefined && config.sessionPersistence === 'ephemeral') { return fail('checkpoint-incompatible'); }
   const cp = checkpoint === undefined ? undefined : readCheckpoint(checkpoint);
   if (checkpoint !== undefined && (!cp || cp.engine !== SDK_REVISION || cp.compatibility !== compatibility(config))) {return fail('checkpoint-incompatible');}
   if (cp) {

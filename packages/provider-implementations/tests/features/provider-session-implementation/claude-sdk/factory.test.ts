@@ -128,7 +128,32 @@ test('default native configuration remains isolated and unoverridden', async () 
     assert.equal(sdk.options.permissionMode, 'default'); assert.deepEqual(sdk.options.settingSources, []);
     for (const key of ['settings', 'systemPrompt', 'effort', 'betas', 'allowDangerouslySkipPermissions']) { assert.equal(Object.hasOwn(sdk.options, key), false); }
     assert.equal(sdk.options.env?.CLAUDE_CONFIG_DIR, '/TEST-unused/config');
+    assert.equal(sdk.options.persistSession, true);
   } finally { await opened.driver.close(); }
+});
+
+test('explicit ephemeral runs disable native persistence and cannot advertise, create or restore checkpoints', async () => {
+  const sdk = new QueryFixture(), c = configuration();
+  c.sessionPersistence = 'ephemeral';
+  let reads = 0;
+  const factory = createClaudeDriverFactory({
+    capabilities: ['text', 'checkpoint'], resolveConfiguration: async () => c,
+    readCheckpoint: async () => { reads++; return {}; },
+  }, sdk.boundary);
+  await assert.rejects(factory.open({ ...request, checkpointRef: 'TEST-old-conversation' }), /checkpoint-incompatible/u);
+  await assert.rejects(factory.open({ ...request, requiredCapabilities: ['checkpoint'] }), /unsupported/u);
+  assert.equal(reads, 0); assert.equal(sdk.calls, 0);
+  const opened = await factory.open(request);
+  try {
+    delete c.sessionPersistence;
+    assert.equal(sdk.options.persistSession, false);
+    assert.equal(sdk.options.resume, undefined);
+    assert.deepEqual(opened.capabilities, ['text']);
+    assert.deepEqual(opened.driver.checkpoint(), { ok: false, code: 'unsupported' });
+    assert.equal((await opened.driver.submit({ inputId: 'TEST-once', operationRef: 'TEST-once', content: 'TEST' })).ok, true);
+    await setImmediate();
+    assert.equal(sdk.inputs.length, 1);
+  } finally { assert.equal((await opened.driver.close()).cleanup, 'confirmed'); }
 });
 
 test('invalid namespace, permission escalation and arbitrary native bags reject before constructing SDK', async () => {
@@ -142,6 +167,7 @@ test('invalid namespace, permission escalation and arbitrary native bags reject 
     { nativeOptions: { settingSources: ['unknown'] } },
     { configNamespace: 'native-default' },
     { configNamespace: 'ambient' },
+    { sessionPersistence: 'always' },
     { environment: { HOME: '/TEST-home', PATH: '/bin' } },
   ];
   for (const change of invalid) {
