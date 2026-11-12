@@ -5,16 +5,22 @@ import { safeV2SessionID } from './v2-native-identifiers.ts'
 import { isCanonicalV2DriverDirectory } from './v2-driver-config.ts'
 import { checkExecutionSse, checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { ExecutionTransportFailure, executionAssert, missingSessions, unsubmitted } from './v2-failures.ts'
+import { createV2RequestAdmission } from './v2-request-admission.ts'
+import type { V2RequestAdmission } from './v2-request-admission.ts'
+import { isV2ExecutionVersion } from './v2-protocol-version.ts'
+import type { V2ExecutionVersion } from './v2-protocol-version.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
 type ExecutionFetchInit = RequestInit | undefined
 export type OpenCodeV2TransportConfig = {
   endpoint: string
-  version: '2.0.0' | '2.0.21'
+  version: V2ExecutionVersion
   directory: string
   nativeSessionId: string
   /** Private credential projection supplied by runtime custody; never emitted. */
   readPassword: () => string
+  /** Await Host re-attestation before credentials; optional release holds admission through cleanup. */
+  beforeRequest?: V2RequestAdmission
   signal?: AbortSignal
   deadline: number
   fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -51,13 +57,13 @@ function missingSessionResponse(response: Response, request: Request, route: { s
 }
 function transportFailure(error: unknown, invoked: boolean): ExecutionTransportFailure {
   const code = error instanceof ExecutionTransportFailure ? error.code : 'transport_failure'
-  const cleanupUnknown = code === 'cleanup_unknown'
-  const failure = new ExecutionTransportFailure(code, invoked || cleanupUnknown ? 'unknown' : 'not_submitted')
+  const uncertain = code === 'cleanup_unknown' || error instanceof ExecutionTransportFailure && error.disposition === 'unknown'
+  const failure = new ExecutionTransportFailure(code, invoked || uncertain ? 'unknown' : 'not_submitted')
   if (error !== null && typeof error === 'object') {
     const sessionID = missingSessions.get(error)
     if (sessionID !== undefined) { missingSessions.set(failure, sessionID) }
   }
-  if (!invoked && !cleanupUnknown) { unsubmitted.add(failure) }
+  if (!invoked && !uncertain) { unsubmitted.add(failure) }
   return failure
 }
 /** Finite execution operations only. SSE is consumed within the same deadline,
@@ -68,23 +74,29 @@ class OpenCodeV2ExecutionFetch {
   private readonly pending = new Set<Promise<unknown>>()
   private readonly io = new Set<Promise<unknown>>()
   private readonly endpoint: string
-  private readonly pin: '2.0.0' | '2.0.21'
+  private readonly pin: V2ExecutionVersion
   private readonly directory: string
   private readonly nativeSessionId: string
   private readonly readPassword: () => string
+  private readonly beforeRequest: V2RequestAdmission | undefined
   private readonly context: { signal: AbortSignal | undefined; deadline: number }
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-  constructor(config: OpenCodeV2TransportConfig) {
+  private readonly ownerScope: boolean
+  constructor(config: OpenCodeV2TransportConfig, ownerScope = false) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
     this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
+    this.beforeRequest = config.beforeRequest
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
+    this.ownerScope = ownerScope
 
     executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
-    executionAssert(['2.0.0', '2.0.21'].includes(this.pin), 'unqualified_version')
+    executionAssert(isV2ExecutionVersion(this.pin), 'unqualified_version')
+    executionAssert(!ownerScope || this.pin === '2.1.4', 'unqualified_version')
     executionAssert(safeV2SessionID(this.nativeSessionId) && isCanonicalV2DriverDirectory(this.directory), 'authority_mismatch')
     executionAssert(Number.isFinite(this.context.deadline), 'deadline')
+    executionAssert(this.beforeRequest === undefined || typeof this.beforeRequest === 'function', 'invalid_admission')
   }
 
   check(): void {
@@ -117,7 +129,7 @@ class OpenCodeV2ExecutionFetch {
     let reader
     try {
       let request = new Request(input, { ...init, credentials: 'omit', redirect: 'error' })
-      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint, this.nativeSessionId)
+      const { url, session, log, activation, create, prompt } = validateExecutionRoute(request, this.pin, this.directory, this.endpoint, this.nativeSessionId, this.ownerScope)
       if (create || prompt) {
         const validationSignal = AbortSignal.any([controller.signal, request.signal,
           ...(this.context.signal ? [this.context.signal] : [])])
@@ -137,12 +149,12 @@ class OpenCodeV2ExecutionFetch {
         const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pieces))
         checkOpenCodeReadJson(body)
         const parsed: unknown = JSON.parse(body)
-        validateExecutionBody(parsed, create, this.directory)
+        validateExecutionBody(parsed, create, this.directory, this.nativeSessionId)
         request = new Request(request.url, { method: request.method, headers: request.headers, body,
           signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
       if (activation) {executionAssert(!request.body, 'capabilities_pending')}
-      return { request, url, session, log, activation, prompt }
+      return { request, url, session, log, activation, create, prompt }
     } finally {
       if (reader) {
         // No native HTTP was invoked, but rejected local body cancellation
@@ -196,15 +208,20 @@ class OpenCodeV2ExecutionFetch {
     let response: Response | undefined
     let metadataValidated = false
     let reader: ReturnType<typeof executionResponseReader> = undefined
+    let admission: ReturnType<typeof createV2RequestAdmission> | undefined
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     this.controllers.add(controller)
     try {
       this.check()
-      const { request, url, session, log, activation, prompt } = await this.validateRequest(input, init, controller)
+      const { request, url, session, log, activation, create, prompt } = await this.validateRequest(input, init, controller)
       this.check(); request.signal.throwIfAborted()
       const signal = AbortSignal.any([controller.signal, request.signal, ...(this.context.signal ? [this.context.signal] : [])])
       timer = setTimeout(() =>{  controller.abort(); }, Math.min(30_000, this.context.deadline - Date.now()))
+      admission = createV2RequestAdmission(this.beforeRequest, signal, this.context.deadline,
+        work => this.track(work))
+      await admission.acquire()
+      this.check(); signal.throwIfAborted()
       const headers = this.requestHeaders(request, signal)
       invoked = true
       const responseWork = this.track(this.fetchImpl(request, { headers, signal, redirect: 'error', credentials: 'omit' }).then(async response => {
@@ -238,7 +255,7 @@ class OpenCodeV2ExecutionFetch {
       // Neither a partial GET nor an asynchronous/partial prompt 2xx can
       // establish a complete native readback or acknowledged prompt handoff.
       // A prompt may already have executed, so refusal remains UNKNOWN.
-      if (request.method === 'GET' || prompt) executionAssert(response.status === 200, 'invalid_response')
+      if (request.method === 'GET' || create || prompt) executionAssert(response.status === 200, 'invalid_response')
       executionAssert(response.status >= 200 && response.status < 300, 'http_failure')
       executionAssert(media === (log ? 'text/event-stream' : 'application/json'), 'media_type')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
@@ -273,11 +290,13 @@ class OpenCodeV2ExecutionFetch {
       }
       throw transportFailure(error, invoked)
     } finally {
-      clearTimeout(timer); this.controllers.delete(controller)
-      if (reader) {
-        try { reader.releaseLock() }
-        catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
-      }
+      try {
+        clearTimeout(timer); this.controllers.delete(controller)
+        if (reader) {
+          try { reader.releaseLock() }
+          catch { throw new ExecutionTransportFailure('cleanup_unknown', 'unknown') }
+        }
+      } finally { admission?.close() }
     }
   }
   async dispose(): Promise<void> {
@@ -292,4 +311,9 @@ class OpenCodeV2ExecutionFetch {
 
 export function createOpenCodeV2ExecutionTransport(config: OpenCodeV2TransportConfig) {
   return new OpenCodeV2ExecutionFetch(config)
+}
+
+/** Internal owner-client wire. Never exposed as a raw Session SPI capability. */
+export function createV2OwnerTransport(config: OpenCodeV2TransportConfig) {
+  return new OpenCodeV2ExecutionFetch(config, true)
 }

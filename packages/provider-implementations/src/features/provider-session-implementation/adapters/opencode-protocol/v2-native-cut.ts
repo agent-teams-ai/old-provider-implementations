@@ -7,10 +7,12 @@ import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { ExecutionTransportFailure } from './v2-failures.ts'
 import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
+import { isV2ExecutionVersion } from './v2-protocol-version.ts'
+import type { V2ExecutionVersion } from './v2-protocol-version.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
 export type OpenCodeV2ReadBinding = Readonly<{
-  endpoint: string; directory: string; sessionID: string; pin: '2.0.0' | '2.0.21'
+  endpoint: string; directory: string; sessionID: string; pin: V2ExecutionVersion
 }>
 export type OpenCodeV2ReadTransport = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -94,7 +96,7 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
   if (!isCanonicalOpenCodeV2LoopbackEndpoint(binding.endpoint)
     || !isCanonicalV2DriverDirectory(binding.directory)
     || !safeV2SessionID(binding.sessionID) || !safeV2MessageID(input.nativeInputID)
-    || !['2.0.0', '2.0.21'].includes(binding.pin)
+    || !isV2ExecutionVersion(binding.pin)
     || !(input.beforeCursor === null || Number.isSafeInteger(input.beforeCursor) && input.beforeCursor >= 0)
     || typeof input.text !== 'string' || input.text.trim().length === 0 || Buffer.byteLength(input.text) > 256 * 1024) { throw new Error('invalid_native_read_binding') }
 }
@@ -191,7 +193,8 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   const messages: OpenCodeV2NativeMessage[] = [], cursors = new Set<string>()
   let cursor: string | undefined, complete = false
   for (let page = 0; page < 8; page++) {
-    const query = new URLSearchParams({ limit: '200', ...(cursor === undefined ? {} : { cursor }) })
+    const query = new URLSearchParams({ limit: '200', ...(cursor === undefined
+      ? binding.pin === '2.1.4' ? { order: 'asc' } : {} : { cursor }) })
     const result = decodeV2MessagePage(parseNativeReadJSON(await read(`${sessionPath}/message?${query}`)), binding.sessionID)
     messages.push(...result.data)
     if (messages.length > 1600 || new Set(messages.map(row => row.id)).size !== messages.length) {throw new Error('incomplete_native_transcript')}

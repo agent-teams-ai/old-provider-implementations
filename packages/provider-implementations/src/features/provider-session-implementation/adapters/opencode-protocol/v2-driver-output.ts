@@ -1,5 +1,5 @@
 import type { EventPayload } from '@agent-teams/provider-session-contracts'
-import { record } from './v2-projection-helpers.ts'
+import { record, nativeShellExitCode } from './v2-projection-helpers.ts'
 import type { OpenCodeV2NativeTurn, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
 
 /** Per-turn canonical projection, only after complete native-cut qualification. */
@@ -31,7 +31,10 @@ export class OpenCodeV2DriverOutput {
         this.calls.add(toolRef)
       }
       if (tool.status !== 'running' && !this.results.has(toolRef)) {
-        this.emit({ kind: 'tool-result', toolRef, isError: tool.status === 'error', content: tool.status === 'error' ? tool.error : tool.content })
+        const exit = nativeShellExitCode(cut.pin, tool)
+        if (exit.kind === 'invalid') { throw new Error('invalid_qualified_native_output') }
+        const isError = tool.status === 'error' || (exit.kind === 'exit' && exit.code !== 0)
+        this.emit({ kind: 'tool-result', toolRef, isError, content: tool.status === 'error' ? tool.error : tool.content })
         this.results.add(toolRef)
       }
     }

@@ -84,6 +84,31 @@ test('actual finite HTTP transport reads one stable native cut and projects prov
   assert.deepEqual(host.counts(), { logs: 2, pages: 2, requests: 6 })
 })
 
+test('2.1.4 reads oldest-first exactly on the first message page and follows native cursors without an order override', async t => {
+  const host = await fixture('stable'); t.after(host.close)
+  const pages: URL[] = []
+  const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
+    nativeSessionId: sessionID, version: '2.1.4', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private',
+    fetchImpl: (input, init) => {
+      const url = new URL((input as Request).url)
+      if (url.pathname.endsWith('/message')) pages.push(url)
+      return fetch(input, init)
+    },
+  })
+  t.after(() => transport.dispose())
+  await readOpenCodeV2NativeCut(transport,
+    { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.1.4' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+  assert.equal(pages.length, 2)
+  assert.equal(pages[0]!.searchParams.get('order'), 'asc')
+  assert.equal(pages[0]!.searchParams.has('cursor'), false)
+  assert.equal(pages[1]!.searchParams.get('cursor'), 'end')
+  assert.equal(pages[1]!.searchParams.has('order'), false)
+  await assert.rejects(transport.fetch(host.endpoint + `/api/session/${sessionID}/message?order=asc&cursor=end`), /authority_mismatch/)
+  await assert.rejects(transport.fetch(host.endpoint + `/api/session/${sessionID}/message?order=desc`), /authority_mismatch/)
+  assert.equal(pages.length, 2)
+})
+
 test('native cut read rejects changing history, pagination cycles and original workspace mismatch', async t => {
   for (const mode of ['changing', 'cycle', 'foreign', 'flat'] as const) {
     const host = await fixture(mode); t.after(host.close)

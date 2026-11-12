@@ -1,4 +1,4 @@
-import { record, string, same } from './v2-projection-helpers.ts'
+import { record, string, same, nativeShellExitCode } from './v2-projection-helpers.ts'
 import type { OpenCodeV2NativeLogEvent, OpenCodeV2NativeTurnCut, OpenCodeV2NativeToolFact } from './v2-projection-types.ts'
 type UnknownProjection = { kind: 'unknown'; reason: string }
 const reject = (reason: string): UnknownProjection => ({ kind: 'unknown', reason })
@@ -21,7 +21,7 @@ function validProviderExecutedSnapshot(part: Record<string, unknown>, called: re
   return typeof part.executed === 'boolean' && typeof before === 'boolean'
     && typeof after === 'boolean' && part.executed === (before || after)
 }
-function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2NativeLogEvent[], assistantId: string, ended: boolean): OpenCodeV2NativeToolFact | UnknownProjection {
+function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2NativeLogEvent[], assistantId: string, ended: boolean, pin: OpenCodeV2NativeTurnCut['pin']): OpenCodeV2NativeToolFact | UnknownProjection {
   const toolId = string(part.id), name = string(part.name), state = record(part.state)
   if (toolId === null || name === null || state === null) { return reject('invalid_tool_snapshot') }
   const events = toolCallEvents(related, toolId, name, state)
@@ -39,7 +39,9 @@ function projectTool(part: Record<string, unknown>, related: readonly OpenCodeV2
     return { ...base, status: 'error', providerExecuted, content: null, error: state.error, metadata }
   }
   if (!validToolSuccess(state, part, called, successes, failures)) { return reject('tool_success_snapshot_mismatch') }
-  return { ...base, status: 'completed', providerExecuted, content: state.content, error: null, metadata }
+  const result = { ...base, status: 'completed' as const, providerExecuted, content: state.content, error: null, metadata }
+  if (nativeShellExitCode(pin, result).kind === 'invalid') { return reject('invalid_shell_exit_metadata') }
+  return result
 }
 function validToolSuccess(state: Record<string, unknown>, part: Record<string, unknown>, called: readonly OpenCodeV2NativeLogEvent[], successes: readonly OpenCodeV2NativeLogEvent[], failures: readonly OpenCodeV2NativeLogEvent[]): state is Record<string, unknown> & { content: readonly unknown[] } {
   return state.status === 'completed' && successes.length === 1 && failures.length === 0 && Array.isArray(state.content)
@@ -59,7 +61,7 @@ function assistantProblem(message: OpenCodeV2NativeTurnCut['messages']['data'][n
   if (end && (end.type === 'session.step.ended' ? message.data.finish !== end.data.finish : !same(message.data.error, end.data.error))) { return 'step_terminal_snapshot_mismatch' }
   return null
 }
-function projectContent(content: readonly unknown[], related: readonly OpenCodeV2NativeLogEvent[], assistantId: string, ended: boolean) {
+function projectContent(content: readonly unknown[], related: readonly OpenCodeV2NativeLogEvent[], assistantId: string, ended: boolean, pin: OpenCodeV2NativeTurnCut['pin']) {
   const text: string[] = [], tools: OpenCodeV2NativeToolFact[] = []
   for (const raw of content) {
     const part = record(raw)
@@ -69,7 +71,7 @@ function projectContent(content: readonly unknown[], related: readonly OpenCodeV
       text.push(part.text); continue
     }
     if (part.type !== 'tool') { continue }
-    const tool = projectTool(part, related, assistantId, ended)
+    const tool = projectTool(part, related, assistantId, ended, pin)
     if ('kind' in tool) { return tool }
     tools.push(tool)
   }
@@ -85,7 +87,7 @@ export function projectNativeAssistants(input: OpenCodeV2NativeTurnCut, interval
     const related = interval.filter(event => event.data.assistantMessageID === assistantId)
     const problem = assistantProblem(message, related, ended)
     if (problem !== null) { return reject(problem) }
-    const projection = projectContent(message.data.content, related, assistantId, ended)
+    const projection = projectContent(message.data.content, related, assistantId, ended, input.pin)
     if (projection.kind === 'unknown') { return projection }
     text.push(...projection.text); tools.push(...projection.tools)
   }

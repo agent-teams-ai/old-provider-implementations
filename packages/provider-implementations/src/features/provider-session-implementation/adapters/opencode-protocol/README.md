@@ -54,6 +54,39 @@ runtime supplies an already-owned loopback endpoint/directory and a private pass
 callback. There is no credential discovery or native SDK import. The callback and
 native response details never become error/proof payloads. Redirects are refused.
 
+The explicit `2.1.4` dialect uses the same bounded wire and existing Session SPI,
+with ascending order on the first message page and native cursor order thereafter.
+Its native HTTP/persistent-events composition was checked against the immutable
+donor `e13edcd3d4ffbecc0272ae30195cc6b15b710ee7` and official SDK/server `2.1.4`.
+The provider package does not import or spawn that engine. The separate TEST-only
+`scripts/native-v2-spi-proof.mjs` starts the exact official server in a disposable
+environment to exercise model requests, effective instructions, MCP permission
+deny/once, an actual file effect, active interrupt and cold checkpoint restoration.
+Product Host graph/process custody, account qualification and Desktop remain
+consumer gates; the native receipt does not claim those qualifications.
+
+`createOpenCodeV2OwnedSessionClient` supplies the finite preallocation/readback
+operations needed by an isolated Host owner: exact process identity, one attempt
+to create the captured session ID, selected model/ordered permissions, instruction
+entries, MCP connection status and the boolean `savedPermissionsEmpty` attestation.
+It cannot submit prompts or choose a replacement session. An omitted creation
+variant is captured as the exact native `default` before effects and must echo
+back unchanged. The saved-grants read exports no grant details and has no mutation
+API. Host must attest isolated database custody before relying on a global empty
+result; `always` grants remain refused by session control.
+
+Both execution and control transports can await the captured Host `beforeRequest`
+callback before reading credentials. Its optional release capability remains held
+through response reading and cleanup. The original request abort/deadline bounds
+admission; late reservations are released once and uncertain cleanup stays unknown.
+The Host callback owns request/probe serialization and revocation. This is not a
+second ledger. For `2.1.4` only, checkpoint compatibility excludes the transient
+loopback port while retaining native session, directory, account, configuration and
+stable trusted Host binding. The Host must include engine graph/executable identity
+in that binding and freshly attest each process. Older version hashes are unchanged.
+`readOpenCodeV2CheckpointSessionId` validates inert checkpoint data before allocation;
+the driver still checks complete compatibility before native readiness effects.
+
 Only privately minted error identity establishes not-submitted or exact native
 session absence. Absence is bound to the original endpoint/directory/version/native
 session; a generic 404 or caller-shaped error cannot establish it. These are

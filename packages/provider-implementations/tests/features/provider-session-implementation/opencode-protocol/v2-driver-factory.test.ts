@@ -207,10 +207,10 @@ test('V2 rejects root, noncanonical directories and corrupted nested Host bindin
   assert.equal(host.counts().submitted, 0)
 })
 
-test('unqualified 2.1.4 Host version is refused before native credentials or probe', async t => {
+test('unqualified future Host version is refused before native credentials or probe', async t => {
   const host = await driverPeer(); t.after(host.close)
   let probes = 0; let passwordReads = 0
-  const config = { ...nativeConfig(host), version: '2.1.4',
+  const config = { ...nativeConfig(host), version: '2.1.5',
     probe: async () => { probes++; return true },
     readPassword: () => { passwordReads++; return 'TEST-should-never-be-read' },
   } as unknown as ReturnType<typeof nativeConfig>

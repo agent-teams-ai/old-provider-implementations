@@ -29,6 +29,9 @@ function check(proof, files) {
 }
 
 test('accepts one clean receipt for the selected matrix proof', () => {
+  assert.equal(check('embedded-target-spi', {
+    'native-v2-embedded-target-spi-proof.json': valid,
+  }), 0)
   assert.equal(check('embedded-target-interrupt', {
     'native-v2-embedded-target-interrupt-proof.json': valid,
   }), 0)
