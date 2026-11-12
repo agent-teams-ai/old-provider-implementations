@@ -23,6 +23,8 @@ export type ClaudeConfig = {
   accountBinding: string;
   configRevision: string;
   environment: Record<string, string>;
+  /** Selected native binary; the caller still validates its bytes and owns launch custody. */
+  executablePath?: string;
   attachments?: AttachmentPort;
   /** Host admits native flag/value arity; D independently refuses managed native overrides. */
   extraArgs?: readonly string[];
@@ -72,6 +74,7 @@ export function compatibility(config: ClaudeConfig): string {
     ...((config.extraArgs?.length ?? 0) > 0 ? { extraArgs: config.extraArgs } : {}),
     ...(config.disallowedTools !== undefined ? { disallowedTools: config.disallowedTools } : {}),
     ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}),
+    ...(config.executablePath !== undefined ? { executablePath: config.executablePath } : {}),
     ...(config.nativeOptions ? { nativeOptions: selectedOptions(config) } : {}),
     ...(config.sessionPersistence ? { sessionPersistence: config.sessionPersistence } : {}),
     ...(config.configNamespace ? { configNamespace: config.configNamespace, home: config.environment.HOME,
@@ -79,6 +82,7 @@ export function compatibility(config: ClaudeConfig): string {
 }
 export function validConfig(c: ClaudeConfig): boolean {
   return !!(c.sessionRef && c.trustedBinding && c.accountBinding && c.configRevision && c.model && isNativeAbsolutePath(c.cwd) &&
+    (c.executablePath === undefined || isNativeAbsolutePath(c.executablePath)) &&
     nonempty(c.environment.HOME) && nonempty(c.environment.PATH) &&
     validNamespace(c) && (c.sessionPersistence === undefined || c.sessionPersistence === 'ephemeral') &&
     validNativeOptions(c.nativeOptions) &&
@@ -93,6 +97,7 @@ export function options(c: ClaudeConfig, nativeSession: string, restore: boolean
   const extraArgs = c.extraArgs ?? [];
   return {
     cwd: c.cwd, model: c.model, env: { ...c.environment }, ...selectedOptions(c),
+    ...(c.executablePath !== undefined ? { pathToClaudeCodeExecutable: c.executablePath } : {}),
     ...(c.subagents ? subagentOptions(c.subagents) : {}),
     tools: [...c.nativeTools], allowedTools: [...c.autoAllowedTools],
     ...(c.disallowedTools !== undefined ? { disallowedTools: [...c.disallowedTools] } : {}),

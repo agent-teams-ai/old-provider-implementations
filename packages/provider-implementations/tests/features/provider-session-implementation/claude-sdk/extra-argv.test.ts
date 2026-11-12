@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { openClaudeSession, captureClaudeExtraArgs } from '../../../../src/claude.ts'
 import { captureCodexExtraArgs } from '../../../../src/codex.ts'
 import { captureOpenCodeExtraArgs } from '../../../../src/opencode.ts'
@@ -62,6 +66,47 @@ test('only nonempty ordered native argv changes checkpoint compatibility', () =>
   const a = compatibility(snapshotConfig({ ...base, extraArgs: ['--max-turns', '5', '--debug'] }))
   assert.notEqual(a, compatibility(base))
   assert.notEqual(a, compatibility(snapshotConfig({ ...base, extraArgs: ['--debug', '--max-turns', '5'] })))
+})
+
+test('captured executable is validated before SDK allocation and stays bound across caller mutation and checkpoint reuse', async () => {
+  const bad = new QueryFixture()
+  assert.deepEqual(await openClaudeSession({ ...configuration(), executablePath: 'relative-claude' }, undefined, bad.boundary), { ok: false, code: 'invalid-config' })
+  assert.equal(bad.calls, 0)
+  const selected = join(tmpdir(), 'TEST-selected-claude'), sdk = new QueryFixture()
+  const config = { ...configuration(), executablePath: selected }
+  const captured = snapshotConfig(config), opened = await openClaudeSession(config, undefined, sdk.boundary)
+  assert.ok(opened.ok)
+  config.executablePath = join(tmpdir(), 'TEST-other-claude')
+  assert.equal(sdk.options.pathToClaudeCodeExecutable, selected)
+  assert.equal(captured.executablePath, selected)
+  assert.notEqual(compatibility(captured), compatibility(config))
+  assert.notEqual(compatibility(captured), compatibility(configuration()))
+  await opened.value.close()
+})
+
+test('real SDK chooses the captured executable instead of its bundled default before the owner permits any spawn', () => {
+  const root = mkdtempSync(join(tmpdir(), 'TEST-claude-selected-'))
+  try {
+    for (const name of ['home', 'config', 'workspace', 'tmp']) { mkdirSync(join(root, name)) }
+    const executablePath = join(root, process.platform === 'win32' ? 'claude.exe' : 'claude')
+    writeFileSync(executablePath, 'TEST: custody always refuses; this file is never executed\n')
+    const environment = { HOME: join(root, 'home'), CLAUDE_CONFIG_DIR: join(root, 'config'), TMPDIR: join(root, 'tmp'), PATH: dirname(process.execPath), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1', DISABLE_AUTOUPDATER: '1' }
+    const config = { ...configuration(), cwd: join(root, 'workspace'), executablePath, environment }
+    const source = `import assert from 'node:assert/strict';
+      import { openClaudeSession } from ${JSON.stringify(new URL('../../../../src/claude.ts', import.meta.url).href)};
+      const config=${JSON.stringify(config)}, seen=[];
+      config.probe=async()=>true; config.sessionExists=async()=>false;
+      config.custody={launch:request=>{seen.push({command:request.command,cwd:request.cwd});throw new Error('TEST refuses before native spawn');},confirmStopped:async()=>true};
+      const opened=await openClaudeSession(config);
+      assert.deepEqual(opened,{ok:false,code:'provider-failure'});
+      assert.deepEqual(seen,[{command:config.executablePath,cwd:config.cwd}]);
+      console.log(JSON.stringify({nativeAllocations:0,seen}));`
+    const output = execFileSync(process.execPath, ['--input-type=module', '-e', source], {
+      cwd: root, env: { ...environment, ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+      timeout: 10000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    assert.deepEqual(JSON.parse(output), { nativeAllocations: 0, seen: [{ command: executablePath, cwd: config.cwd }] })
+  } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
 test('finite native value arity refuses unbound bootstrap prompts and subcommands while retaining supported variadics and short debug values', () => {
