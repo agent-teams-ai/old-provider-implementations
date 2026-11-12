@@ -10,6 +10,7 @@ import type { ClaudeToolBinding } from './tool-binding.ts';
 import type { ClaudeCapturePort } from './capture.ts';
 import { attachmentCompatibility, snapshotAttachmentPort } from '../provider-session-io/attachments.ts';
 import type { AttachmentPort } from '../provider-session-io/attachments.ts';
+import type { ClaudeCommandDescription } from './commands.ts';
 export const SDK_REVISION = '0.3.305';
 type ClaudeCloseObservation = Readonly<
   { stage: 'custody'; outcome: 'confirmed' | 'unconfirmed' | 'error' } |
@@ -58,6 +59,8 @@ export type ClaudeConfig = {
   capture?: ClaudeCapturePort;
   /** Private, bounded stage observations only; never raw provider errors or cleanup authority. */
   observeClose?: (observation: ClaudeCloseObservation) => void | Promise<void>;
+  /** Private read-only metadata from this live Query; the consumer owns command admission. */
+  observeCommands?: (commands: readonly ClaudeCommandDescription[]) => void;
   sessionExists: (nativeSession: string) => Promise<boolean>;
   /** Runtime/test Host owns the actual child and must sanitize launch environment. */
   custody: {
@@ -90,7 +93,7 @@ export function validConfig(c: ClaudeConfig): boolean {
     !Object.keys(c.environment).some((key) => /^(CLAUDE_CODE_TEAM|CLAUDE_TEAM|CLAUDE_AGENT_TEAMS|CLAUDE_CODE_RESUME|CLAUDE_CODE_CONTINUE)/.test(key)) &&
     validTools(c) && validDisallowedTools(c.disallowedTools) &&
     (!c.toolBinding || (c.toolBinding.matchedToolNames.length > 0 && c.toolBinding.matchedToolNames.every((name) => typeof name === 'string' && !!name) && typeof c.toolBinding.prepare === 'function')) &&
-    validCapture(c.capture, c.observeClose) &&
+    validCapture(c.capture, c.observeClose) && (c.observeCommands === undefined || typeof c.observeCommands === 'function') &&
     Object.keys(c.requiredTools).every((name) => Object.hasOwn(c.mcpServers, name)));
 }
 export function options(c: ClaudeConfig, nativeSession: string, restore: boolean): Options {
