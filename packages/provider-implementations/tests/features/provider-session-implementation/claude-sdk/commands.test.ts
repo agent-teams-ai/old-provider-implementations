@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import type { Event } from '@agent-teams/provider-session-contracts';
 import { createClaudeDriverFactory } from '../../../../src/claude.ts';
-import { captureClaudeCommands, resolveClaudeCommand } from '../../../../src/features/provider-session-implementation/adapters/claude-sdk/commands.ts';
+import { captureClaudeCommands, claudeCommandName, resolveClaudeCommand } from '../../../../src/features/provider-session-implementation/adapters/claude-sdk/commands.ts';
 import { configuration, QueryFixture, request } from './support.ts';
 
 test('captured command metadata preserves exact name precedence without retaining mutable native objects', () => {
@@ -22,6 +24,25 @@ test('captured command metadata preserves exact name precedence without retainin
   assert.equal(resolveClaudeCommand(exact, 'cost')?.builtin, undefined, 'an exact name wins over another command alias');
   assert.deepEqual(captureClaudeCommands([{ name: 'unsafe/path', description: '', argumentHint: '' }]), []);
   assert.deepEqual(captureClaudeCommands(Array.from({ length: 2049 }, () => rows[0])), []);
+});
+
+test('actual SDK 0.3.305 private metadata does not hide the captured public commands', () => {
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/commands-0.3.305.json', import.meta.url), 'utf8')) as {
+    sdkVersion: string; sdkSha256: string; catalogSha256: string; commands: unknown[];
+  };
+  assert.equal(fixture.sdkVersion, '0.3.305');
+  assert.equal(fixture.sdkSha256, 'c8d3e6cf794501c9b2dad3199762e4594e7b890e8ce76f957e9d748e02680bb1');
+  assert.equal(createHash('sha256').update(JSON.stringify(fixture.commands)).digest('hex'), fixture.catalogSha256);
+  assert.equal(fixture.commands.length, 46);
+  const captured = captureClaudeCommands(fixture.commands);
+  assert.equal(captured.length, 45);
+  for (const [supplied, canonical] of [
+    ['compact', 'compact'], ['cost', 'usage'], ['review', 'code-review'],
+    ['test-user-command', 'test-user-command'], ['test-project-command', 'test-project-command'],
+  ]) assert.equal(resolveClaudeCommand(captured, supplied!)?.name, canonical);
+  assert.equal(resolveClaudeCommand(captured, '__remote-workflow'), undefined);
+  assert.equal(claudeCommandName('/__remote-workflow'), undefined, 'private names gain no raw dispatch grammar');
+  assert.equal(Object.isFrozen(captured), true);
 });
 
 test('same Query command changes and local result require native session and original echoed user UUID', async () => {

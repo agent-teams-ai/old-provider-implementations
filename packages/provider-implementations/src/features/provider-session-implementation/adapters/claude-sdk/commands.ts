@@ -9,6 +9,8 @@ export interface ClaudeCommandDescription {
   readonly builtin?: true;
 }
 const name = (value: unknown): value is string => typeof value === 'string' && /^[a-z][a-z0-9:-]{0,63}$/iu.test(value);
+// The SDK also lists private builtin names; they are metadata, not product commands.
+const metadataName = (value: unknown): value is string => typeof value === 'string' && /^[a-z_][a-z0-9_:-]{0,63}$/iu.test(value);
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && value.length <= max && !value.includes('\0');
 
 /** Malformed or excessive metadata provides no command authority, while ordinary input remains usable. */
@@ -18,15 +20,19 @@ export function captureClaudeCommands(value: unknown): readonly ClaudeCommandDes
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) { return []; }
     const row = item as Record<string, unknown>;
-    if (!name(row.name) || !text(row.description, 4096) || !text(row.argumentHint, 512) ||
+    if (!metadataName(row.name) || !text(row.description, 4096) || !text(row.argumentHint, 512) ||
       (row.builtin !== undefined && typeof row.builtin !== 'boolean') ||
-      (row.aliases !== undefined && (!Array.isArray(row.aliases) || row.aliases.length > 32 || !row.aliases.every(name)))) { return []; }
+      (row.aliases !== undefined && (!Array.isArray(row.aliases) || row.aliases.length > 32 || !row.aliases.every(metadataName)))) { return []; }
     result.push(Object.freeze({ name: row.name, description: row.description, argumentHint: row.argumentHint,
       ...(Array.isArray(row.aliases) ? { aliases: Object.freeze([...new Set(row.aliases as string[])]) } : {}),
       ...(row.builtin === true ? { builtin: true as const } : {}),
     }));
   }
-  return Buffer.byteLength(JSON.stringify(result)) <= 256 * 1024 ? Object.freeze(result) : [];
+  if (Buffer.byteLength(JSON.stringify(result)) > 256 * 1024) { return []; }
+  return Object.freeze(result.filter(command => name(command.name)).map(command => Object.freeze({
+    ...command,
+    ...(command.aliases ? { aliases: Object.freeze(command.aliases.filter(name)) } : {}),
+  })));
 }
 
 /** Exact names win over aliases; builtin precedence describes a name, not an alias. */
