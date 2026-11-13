@@ -54,6 +54,13 @@ runtime supplies an already-owned loopback endpoint/directory and a private pass
 callback. There is no credential discovery or native SDK import. The callback and
 native response details never become error/proof payloads. Redirects are refused.
 
+The execution, session-control and credential wires set a fixed `Connection: close`
+on their finite HTTP/1.1 loopback requests. A later full custody check can outlive
+the native server's idle timeout; its next operation must not reuse that idle socket.
+Each response body, including finite SSE, is still consumed completely before the
+connection retires. This does not change the server, global dispatcher, request
+deadlines or one-dispatch mutation rule. A lost response remains unknown without retry.
+
 The explicit `2.1.4` dialect uses the same bounded wire and existing Session SPI,
 with ascending order on the first message page and native cursor order thereafter.
 Its native HTTP/persistent-events composition was checked against the immutable

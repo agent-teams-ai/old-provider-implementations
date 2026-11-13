@@ -58,7 +58,8 @@ export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfi
       executionAssert(typeof password === 'string' && password.length > 0 &&
         Buffer.byteLength(password) <= 64 * 1024 && !/[\x00-\x1f\x7f]/.test(password), 'credential_unavailable')
       check(); signal.throwIfAborted()
-      const headers = new Headers({ authorization: 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64') })
+      const headers = new Headers({ authorization: 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'),
+        connection: 'close' })
       if (operation === 'connect') headers.set('content-type', 'application/json')
       const native = new Request(config.endpoint + path, {
         method: operation === 'read' ? 'GET' : operation === 'connect' ? 'POST' : 'DELETE',

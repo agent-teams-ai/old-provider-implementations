@@ -13,8 +13,10 @@ function peer() {
   const native: { methods: unknown[]; connections: unknown[] } = { methods: [{ type: 'key' }], connections: [] }
   const read = () => ({ location: { directory: selected.directory }, data: { id: selected.integrationId,
     name: 'TEST provider', ...native, metadata: { secret: 'TEST-private-key' } } })
-  const fetchImpl = async (input: RequestInfo | URL) => {
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
     assert.ok(input instanceof Request)
+    assert.deepEqual([...input.headers], [...new Headers(init?.headers)])
+    assert.equal(input.headers.get('connection'), 'close')
     const url = new URL(input.url)
     calls.push({ method: input.method, path: url.pathname })
     assert.equal(input.redirect, 'error'); assert.equal(input.credentials, 'omit')
@@ -57,9 +59,9 @@ test('lost ACK, partial success and foreign/malformed readback never replay key 
   for (const mode of ['lost', 'partial', 'location', 'identity', 'duplicate', 'wrong-method'] as const) {
     const fixture = peer()
     let posted = false
-    const client = createOpenCodeV2CredentialClient({ ...fixture.config, fetchImpl: async input => {
+    const client = createOpenCodeV2CredentialClient({ ...fixture.config, fetchImpl: async (input, init) => {
       assert.ok(input instanceof Request)
-      const response = await fixture.config.fetchImpl(input)
+      const response = await fixture.config.fetchImpl(input, init)
       if (input.method === 'POST') {
         posted = true
         if (mode === 'lost') throw new Error('TEST-private-key')
