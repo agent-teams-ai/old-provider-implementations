@@ -246,6 +246,12 @@ export class CodexAppServerClient {
     if (!isCodexAppServerApprovalMethod(request.method)) {
       return Promise.resolve({ error: { code: -32601, message: 'codex.protocol.unsupported-request' } })
     }
+    const kind = request.params?.kind
+    // humanCommand requires a fresh human decision, a capability this client has not
+    // negotiated. Neither it nor a future kind may reach an automatic policy grant.
+    if (request.method === 'item/commandExecution/requestApproval' && kind !== undefined && kind !== 'command' && kind !== 'writeStdin') {
+      return Promise.resolve({ result: { decision: 'decline' } })
+    }
     const normalized = normalizeCodexAppServerApprovalRequest(request)
     const session = normalized?.threadId !== null && normalized?.threadId !== undefined ? this.sessions.get(normalized.threadId) : undefined
     return session ? session.approve(request, signal) : Promise.resolve({ error: { code: -32001, message: 'codex.protocol.unattributed-approval' } })

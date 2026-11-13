@@ -42,6 +42,11 @@ test('finite metadata uses captured requests and allowlisted replies across the 
   assert.match(identity.codexHome, /TEST-codex-rpc-/u)
   assert.deepEqual(Object.keys(identity).toSorted(), ['codexHome', 'platformFamily', 'platformOs'])
   assert.deepEqual(await client.readAccount(), { account: { type: 'chatgpt', email: 'test@example.invalid', planType: 'test' }, requiresOpenaiAuth: true })
+  await native.command({ kind: 'metadata', method: 'account/read', response: {
+    account: { type: 'chatgpt', email: null, planType: 'sci_plus', workspaceName: 'TEST-private-workspace' },
+    requiresOpenaiAuth: true, userId: 'TEST-private-user', refreshToken: 'TEST-secret',
+  } })
+  assert.deepEqual(await client.readAccount(), { account: { type: 'chatgpt', email: null, planType: 'sci_plus' }, requiresOpenaiAuth: true })
   assert.deepEqual(await page, { data: [{ ...model, supportedReasoningEfforts: ['medium'] }], nextCursor: 'TEST-next' })
   assert.deepEqual(await selection, { model: 'TEST-model', modelProvider: 'test', reasoningEffort: 'medium' })
   assert.deepEqual(native.writes.find(row => row.method === 'model/list')?.params, { cursor: null, limit: 1, includeHidden: false })
@@ -71,7 +76,8 @@ test('metadata rejects malformed bounds, private response shapes and aborted wri
   const aborted = AbortSignal.abort()
   await assert.rejects(client.readAccount(aborted), code('codex.protocol.closed'))
   assert.equal(native.writes.length, before)
-  for (const response of [{ account: { type: 'future' }, requiresOpenaiAuth: true }, { account: null }, { account: { type: 'apiKey' }, requiresOpenaiAuth: 'yes' }]) {
+  for (const response of [{ account: { type: 'future' }, requiresOpenaiAuth: true }, { account: null }, { account: { type: 'apiKey' }, requiresOpenaiAuth: 'yes' },
+    { account: { type: 'chatgpt', planType: 'sci' }, requiresOpenaiAuth: true }, { account: { type: 'chatgpt', email: 42, planType: 'sci' }, requiresOpenaiAuth: true }]) {
     await native.command({ kind: 'metadata', method: 'account/read', response })
     await assert.rejects(client.readAccount(), code('codex.protocol.invalid-metadata-response'))
   }

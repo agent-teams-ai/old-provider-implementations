@@ -9,7 +9,7 @@ export interface CodexRuntimeIdentity {
 }
 export interface CodexAccountMetadata {
   readonly account: { readonly type: 'apiKey' } | {
-    readonly type: 'chatgpt'; readonly email: string; readonly planType: string
+    readonly type: 'chatgpt'; readonly email: string | null; readonly planType: string
   } | null
   readonly requiresOpenaiAuth: boolean
 }
@@ -80,7 +80,7 @@ export function decodeAccountMetadata(value: unknown): CodexAccountMetadata {
   const account = object(row.account)
   if (account.type === 'apiKey') { return { account: { type: 'apiKey' }, requiresOpenaiAuth: row.requiresOpenaiAuth } }
   if (account.type !== 'chatgpt') { throw invalid() }
-  return { account: { type: 'chatgpt', email: text(account.email, 1024), planType: text(account.planType, 128) }, requiresOpenaiAuth: row.requiresOpenaiAuth }
+  return { account: { type: 'chatgpt', email: account.email === null ? null : text(account.email, 1024), planType: text(account.planType, 128) }, requiresOpenaiAuth: row.requiresOpenaiAuth }
 }
 function decodeModel(value: unknown): CodexModelMetadata {
   const row = object(value), id = text(row.id ?? row.model), model = text(row.model ?? id)
