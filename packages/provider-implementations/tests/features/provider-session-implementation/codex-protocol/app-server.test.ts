@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { setImmediate } from 'node:timers/promises'
 import { test } from 'node:test'
 import { CodexAppServerClient, CodexProtocolError } from '../../../../src/codex.ts'
-import type { CodexApprovalReply, CodexAppServerEvent } from '../../../../src/codex.ts'
+import type { CodexApprovalReply, CodexAppServerEvent, CodexAppServerOptions } from '../../../../src/codex.ts'
 import { CodexRpcClient } from '../../../../src/features/provider-session-implementation/adapters/codex-protocol/rpc-client.ts'
 import { fixture, gate } from './subprocess-fixture.ts'
 
@@ -15,7 +15,15 @@ const hasCode = (code: string, acceptance?: string) => (error: unknown) => error
 test('native subprocess supports ordered turns, immutable queued input and distinct terminal/usage observations', async t => {
   const native = await fixture(t)
   const events: CodexAppServerEvent[] = []
-  const client = new CodexAppServerClient({ transport: native.transport, onEvent: event => events.push(event), requestApproval: declined })
+  const notifications: Parameters<NonNullable<CodexAppServerOptions['onConnectionNotification']>>[0][] = []
+  let approvalCalls = 0
+  const client = new CodexAppServerClient({ transport: native.transport, onEvent: event => events.push(event),
+    onConnectionNotification: notification => {
+      notifications.push(notification)
+      throw new Error('TEST-private-observer-error')
+    },
+    requestApproval: async () => { approvalCalls++; return declined() },
+  })
   t.after(() => client.close())
   await client.initialize(initialize)
   const session = await client.startThread({ cwd: '/sandbox', approvalPolicy: 'on-request', sandbox: 'read-only' })
@@ -25,6 +33,38 @@ test('native subprocess supports ordered turns, immutable queued input and disti
   queuedInput.input[0]!.text = 'mutated by caller'
   const a = await first.accepted
   assert.equal(native.writes.filter(frame => frame.method === 'turn/start').length, 1)
+  const writesBeforeNotices = native.writes.length
+  await native.command({ kind: 'notify', method: 'configWarning', params: {
+    summary: 'TEST configuration warning', details: null, path: '/TEST-private/config.toml',
+    range: { start: { line: 0, column: 0 }, end: { line: 1, column: 2 } },
+  } })
+  await native.command({ kind: 'notify', method: 'remoteControl/status/changed', params: {
+    installationId: 'TEST-private-installation', serverName: 'TEST-private-server', status: 'errored', environmentId: null,
+  } })
+  await native.command({ kind: 'metadata', method: 'config/read', response: {
+    config: { model: 'TEST-model', model_provider: 'TEST-provider', model_reasoning_effort: 'medium' },
+  } })
+  assert.deepEqual(await client.readModelConfiguration(), { model: 'TEST-model', modelProvider: 'TEST-provider', reasoningEffort: 'medium' })
+  assert.equal(client.isOpen(), true, 'throwing observation cannot close the original connection')
+  assert.deepEqual(native.writes.slice(writesBeforeNotices).map(frame => frame.method), ['config/read'])
+  assert.deepEqual(notifications, [
+    { kind: 'config-warning', summary: 'TEST configuration warning', details: null, path: '/TEST-private/config.toml',
+      range: { start: { line: 0, column: 0 }, end: { line: 1, column: 2 } } },
+    { kind: 'remote-control-status', installationId: 'TEST-private-installation', serverName: 'TEST-private-server', status: 'errored', environmentId: null },
+  ])
+  assert.ok(notifications.every(Object.isFrozen))
+  const warning = notifications[0]
+  assert.ok(warning?.kind === 'config-warning' && Object.isFrozen(warning.range) && Object.isFrozen(warning.range?.start) && Object.isFrozen(warning.range?.end))
+  assert.equal(JSON.stringify(events).includes('TEST-private'), false)
+  await native.command({ kind: 'notify', method: 'warning', params: { ...a, message: 'TEST ordinary warning' } })
+  await native.command({ kind: 'notify', method: 'TEST/unknown-connection-notice', params: { opaque: 'TEST-unknown' } })
+  await native.command({ kind: 'approval', requestId: 'TEST-connection-method-request', method: 'remoteControl/status/changed',
+    params: { installationId: 'TEST-private-installation', serverName: 'TEST-private-server', status: 'disabled' } })
+  await native.waitFor(value => value.event === 'wire' && (value.message as Record<string, unknown>)?.id === 'TEST-connection-method-request')
+  assert.deepEqual(native.writes.find(frame => frame.id === 'TEST-connection-method-request')?.error,
+    { code: -32601, message: 'codex.protocol.unsupported-request' })
+  assert.equal(approvalCalls, 0)
+  assert.equal(notifications.length, 2, 'request-shaped method is not a connection notification')
   await native.command({ kind: 'notify', method: 'item/agentMessage/delta', params: { ...a, itemId: 'answer', delta: 'P' } })
   await native.command({ kind: 'notify', method: 'item/agentMessage/delta', params: { ...a, itemId: 'answer', delta: 'ONG ' } })
   await native.command({ kind: 'notify', method: 'thread/tokenUsage/updated', params: { ...a, tokenUsage: { last: { inputTokens: 0 } } } })
@@ -41,6 +81,12 @@ test('native subprocess supports ordered turns, immutable queued input and disti
     { type: 'usage_updated', inputTokens: 0 }, { type: 'turn_completed', turnId: a.turnId },
   ])
   assert.deepEqual(events.find(entry => entry.turnId === b.turnId && entry.event.type === 'turn_failed')?.event, { type: 'turn_failed', turnId: b.turnId })
+  assert.deepEqual(events.filter(entry => entry.event.type === 'warning'), [{ ...a, event: { type: 'warning', source: 'codex', text: 'TEST ordinary warning' } }])
+  assert.deepEqual(events.filter(entry => entry.event.type === 'unsupported_raw_event'), [
+    { event: { type: 'unsupported_raw_event', rawType: 'TEST/unknown-connection-notice', payload: { opaque: 'TEST-unknown' } } },
+  ])
+  assert.equal(JSON.stringify(events).includes('TEST-private'), false)
+  assert.equal(approvalCalls, 0)
 })
 
 test('early deltas and completion wait for the actual turn/start identity receipt', async t => {
@@ -150,6 +196,33 @@ test('transport loss retains partial text, seals the session and never replays q
   assert.deepEqual(events.filter(entry => entry.event.type === 'assistant_text'), [{ ...ref, event: { type: 'assistant_text', itemId: 'partial', text: 'partial output' } }])
   assert.equal(native.writes.filter(frame => frame.method === 'turn/start').length, 1)
   assert.throws(() => session.submitTurn(input('again')), hasCode('codex.protocol.session-closed', 'not-sent'))
+  for (const method of ['configWarning', 'remoteControl/status/changed']) {
+    const broken = await fixture(t)
+    const observed: CodexAppServerEvent[] = []
+    let notices = 0
+    const original = new CodexAppServerClient({ transport: broken.transport, onEvent: event => observed.push(event),
+      ...(method === 'configWarning' ? { onConnectionNotification: () => { notices++ } } : {}), requestApproval: declined })
+    t.after(() => original.close())
+    await original.initialize(initialize)
+    const owned = await original.startThread({})
+    const active = owned.submitTurn(input('original pending'))
+    const originalRef = await active.accepted
+    const activeResult = active.completed.catch(error => error as unknown)
+    const later = owned.submitTurn(input('must not replay'))
+    const laterAcceptance = later.accepted.catch(error => error as unknown)
+    const laterResult = later.completed.catch(error => error as unknown)
+    const writes = broken.writes.length
+    await broken.command({ kind: 'notify', method, params: method === 'configWarning'
+      ? { summary: 'TEST-private-negative', threadId: originalRef.threadId }
+      : { installationId: 'TEST-private-negative', serverName: 'TEST-server', status: 'future' } })
+    assert.ok(hasCode('codex.protocol.invalid-connection-notification', 'unknown')(await activeResult))
+    assert.ok(hasCode('codex.protocol.invalid-connection-notification', 'not-sent')(await laterAcceptance))
+    assert.ok(hasCode('codex.protocol.invalid-connection-notification', 'not-sent')(await laterResult))
+    assert.equal(original.isOpen(), false)
+    assert.equal(notices, 0)
+    assert.equal(broken.writes.length, writes, 'malformed connection fact cannot dispatch queued input or another RPC')
+    assert.equal(JSON.stringify(observed).includes('TEST-private-negative'), false)
+  }
 })
 
 test('close seals synchronously, rejects pending requests and never invokes an already-queued write', async t => {
