@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import type { DriverFactory, Event, OpenConfig } from '@agent-teams/provider-session-contracts';
-import { createClaudeDriverFactory } from '../../../../src/claude.ts';
+import { createClaudeDriverFactory, openClaudeSession } from '../../../../src/claude.ts';
+import type { ClaudeDriverHost, ClaudeSdkBoundary } from '../../../../src/claude.ts';
+import { compatibility, readCheckpoint } from '../../../../src/features/provider-session-implementation/adapters/claude-sdk/config.ts';
 import { configuration, QueryFixture, request } from './support.ts';
 
 test('canonical DriverFactory uses a pinned Host projection and preserves runtime input/operation ownership', async () => {
@@ -68,6 +70,111 @@ test('restore reads only an explicit checkpoint reference and never falls back t
     assert.equal(restoredSdk.options.sessionId, undefined);
     assert.deepEqual(reads, ['missing', 'original']);
   } finally { await restored.driver.close(); }
+
+  // This no-path controlled checkpoint is a synthetic unit fixture, not an old-Host native corpus.
+  const originalBytes = JSON.stringify(checkpoint), originalCheckpoint = readCheckpoint(checkpoint);
+  assert.ok(originalCheckpoint);
+  const originalNativeSession = originalCheckpoint.nativeSession;
+  const executablePath = '/TEST-unused/pinned-claude', sha256 = 'a'.repeat(64);
+  const selectedRequest: OpenConfig = { ...request, generation: 2, checkpointRef: 'TEST-original' };
+  type SourceReader = NonNullable<ClaudeDriverHost['readCheckpointSource']>;
+  const sourceProof: NonNullable<ReturnType<SourceReader>> = {
+    reference: selectedRequest.checkpointRef!, request: selectedRequest,
+    originalExecutable: { path: executablePath, sha256 },
+    selectedExecutable: { path: executablePath, sha256 },
+  };
+  function guarded(reader?: SourceReader, opaque: unknown = checkpoint, sessionAvailable = true) {
+    const sdk = new QueryFixture(), calls = { checkpoint: 0, source: 0, session: 0, probe: 0 }, order: string[] = [];
+    const selectedConfig = { ...configuration(), executablePath };
+    selectedConfig.probe = async () => { calls.probe++; order.push('probe'); return true; };
+    const boundary: ClaudeSdkBoundary = {
+      query: args => { order.push('query'); return sdk.boundary.query(args); },
+      sessionExists: async (session, config) => {
+        calls.session++; order.push('session');
+        assert.equal(session, originalNativeSession); assert.equal(config.executablePath, executablePath);
+        return sessionAvailable;
+      },
+    };
+    const factory = createClaudeDriverFactory({
+      capabilities: ['text'], resolveConfiguration: async () => selectedConfig,
+      readCheckpoint: async (reference, selected) => {
+        calls.checkpoint++; order.push('checkpoint');
+        assert.equal(reference, selectedRequest.checkpointRef); assert.deepEqual(selected, selectedRequest);
+        return opaque;
+      },
+      ...(reader ? { readCheckpointSource: (reference: string, selected: OpenConfig) => {
+        calls.source++; order.push('source');
+        assert.equal(reference, selectedRequest.checkpointRef); assert.deepEqual(selected, selectedRequest);
+        assert.ok(Object.isFrozen(selected) && Object.isFrozen(selected.requiredCapabilities));
+        return reader(reference, selected);
+      } } : {}),
+    }, boundary);
+    return { sdk, calls, order, selectedConfig, boundary, factory };
+  }
+  const strict = guarded();
+  assert.deepEqual(await openClaudeSession(strict.selectedConfig, checkpoint, strict.boundary),
+    { ok: false, code: 'checkpoint-incompatible' });
+  assert.deepEqual(strict.calls, { checkpoint: 0, source: 0, session: 0, probe: 0 }); assert.equal(strict.sdk.calls, 0);
+  const wrongRequests: readonly OpenConfig[] = [
+    { ...selectedRequest, tenantId: 'other' }, { ...selectedRequest, projectId: 'other' },
+    { ...selectedRequest, sessionId: 'other' }, { ...selectedRequest, generation: 3 },
+    { ...selectedRequest, configRevision: 'other' }, { ...selectedRequest, requiredCapabilities: [] },
+    { ...selectedRequest, checkpointRef: 'other' },
+  ];
+  const refusals: readonly { name: string; reader?: SourceReader }[] = [
+    { name: 'absent reader' }, { name: 'missing source', reader: () => undefined },
+    { name: 'revoked source', reader: () => { throw new Error('TEST original source revoked'); } },
+    { name: 'foreign reference', reader: () => ({ ...sourceProof, reference: 'other' }) },
+    ...wrongRequests.map((value, index) => ({
+      name: 'foreign request field ' + index, reader: () => ({ ...sourceProof, request: value }),
+    })),
+    { name: 'foreign original path', reader: () => ({ ...sourceProof, originalExecutable: { path: '/TEST-other/claude', sha256 } }) },
+    { name: 'foreign selected path', reader: () => ({ ...sourceProof, selectedExecutable: { path: '/TEST-other/claude', sha256 } }) },
+    { name: 'mutually matching foreign paths', reader: () => ({ ...sourceProof,
+      originalExecutable: { path: '/TEST-other/claude', sha256 }, selectedExecutable: { path: '/TEST-other/claude', sha256 } }) },
+    { name: 'different selected bytes', reader: () => ({ ...sourceProof, selectedExecutable: { path: executablePath, sha256: 'b'.repeat(64) } }) },
+    { name: 'invalid full digest', reader: () => ({ ...sourceProof,
+      originalExecutable: { path: executablePath, sha256: 'a' }, selectedExecutable: { path: executablePath, sha256: 'a' } }) },
+  ];
+  for (const item of refusals) {
+    const next = guarded(item.reader);
+    await assert.rejects(next.factory.open(selectedRequest), /checkpoint-incompatible/u, item.name);
+    assert.deepEqual(next.calls, { checkpoint: 1, source: item.reader ? 1 : 0, session: 0, probe: 0 }, item.name);
+    assert.equal(next.sdk.calls, 0, item.name);
+  }
+  for (const incompatible of [
+    { ...originalCheckpoint, engine: '0.3.304' },
+    { ...originalCheckpoint, compatibility: 'b'.repeat(64) },
+  ]) {
+    const next = guarded(() => sourceProof, incompatible);
+    await assert.rejects(next.factory.open(selectedRequest), /checkpoint-incompatible/u);
+    assert.deepEqual(next.calls, { checkpoint: 1, source: 0, session: 0, probe: 0 }); assert.equal(next.sdk.calls, 0);
+  }
+  const unavailable = guarded(() => sourceProof, checkpoint, false);
+  await assert.rejects(unavailable.factory.open(selectedRequest), /checkpoint-missing/u);
+  assert.deepEqual(unavailable.calls, { checkpoint: 1, source: 1, session: 1, probe: 0 }); assert.equal(unavailable.sdk.calls, 0);
+  const compatible = guarded(() => structuredClone(sourceProof));
+  const accepted = await compatible.factory.open(selectedRequest);
+  let upgraded: unknown;
+  try {
+    assert.deepEqual(compatible.order, ['checkpoint', 'source', 'session', 'query', 'probe']);
+    assert.deepEqual(compatible.calls, { checkpoint: 1, source: 1, session: 1, probe: 1 }); assert.equal(compatible.sdk.calls, 1);
+    assert.equal(compatible.sdk.options.resume, native); assert.equal(compatible.sdk.options.sessionId, undefined);
+    assert.equal(compatible.sdk.options.pathToClaudeCodeExecutable, executablePath);
+    assert.equal(compatible.sdk.inputs.length, 0);
+    const current = accepted.driver.checkpoint(); assert.ok(current.ok); upgraded = current.value;
+    const parsed = readCheckpoint(upgraded); assert.ok(parsed);
+    assert.equal(parsed.nativeSession, originalCheckpoint.nativeSession);
+    assert.equal(parsed.compatibility, compatibility(compatible.selectedConfig));
+    assert.notEqual(parsed.compatibility, originalCheckpoint.compatibility);
+  } finally { assert.equal((await accepted.driver.close()).cleanup, 'confirmed'); }
+  const current = guarded(() => { throw new Error('current hash must not use legacy proof'); }, upgraded);
+  const currentOpened = await current.factory.open(selectedRequest);
+  try {
+    assert.deepEqual(current.calls, { checkpoint: 1, source: 0, session: 1, probe: 1 }); assert.equal(current.sdk.calls, 1);
+    assert.equal(current.sdk.options.resume, native); assert.equal(current.sdk.options.pathToClaudeCodeExecutable, executablePath);
+  } finally { assert.equal((await currentOpened.driver.close()).cleanup, 'confirmed'); }
+  assert.equal(JSON.stringify(checkpoint), originalBytes);
 });
 
 test('native team message/registry tools cannot bypass the external product authority', async () => {
@@ -207,6 +314,16 @@ test('effective selected config changes reject checkpoint restore without constr
     const next = new QueryFixture();
     await assert.rejects(createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => ({ ...c, nativeOptions }), readCheckpoint: async () => cp.value }, next.boundary).open({ ...request, generation: 2, checkpointRef: 'TEST' }), /checkpoint-incompatible/u);
     assert.equal(next.calls, 0);
+    const selectedSdk = new QueryFixture(); let sourceReads = 0, sessionReads = 0, probes = 0;
+    await assert.rejects(createClaudeDriverFactory({
+      capabilities: ['text'],
+      resolveConfiguration: async () => ({ ...c, nativeOptions, executablePath: '/TEST-unused/pinned-claude',
+        probe: async () => { probes++; return true; } }),
+      readCheckpoint: async () => cp.value,
+      readCheckpointSource: () => { sourceReads++; return undefined; },
+    }, { ...selectedSdk.boundary, sessionExists: async () => { sessionReads++; return true; } })
+      .open({ ...request, generation: 2, checkpointRef: 'TEST' }), /checkpoint-incompatible/u);
+    assert.equal(sourceReads, 0); assert.equal(sessionReads, 0); assert.equal(probes, 0); assert.equal(selectedSdk.calls, 0);
   }
 });
 
