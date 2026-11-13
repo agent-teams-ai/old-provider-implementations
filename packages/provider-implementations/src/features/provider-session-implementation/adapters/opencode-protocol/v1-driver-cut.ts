@@ -93,7 +93,7 @@ export async function readV1DriverCut(client: OpenCodeClient, questions: () => P
   const proof = qualifyOpenCodeV1BoundTerminalProof(evidence, binding, nativeInputID).proof
   // Status comes from the same twice-read original assistant, never a transport exception.
   const latest = raw.at(-1), error = record(latest?.info.error), statusCode = record(error?.data)?.statusCode
-  const failure = latest?.info.role === 'assistant' && error?.name === 'APIError'
+  const failure = latest?.info.role === 'assistant' && typeof latest.info.id === 'string' && error?.name === 'APIError'
     && (statusCode === 400 || statusCode === 422)
     ? { assistantMessageId: latest.info.id, status: statusCode } as const : undefined
   const rejected = qualifyOpenCodeV1BoundRequestRejection(evidence, binding, nativeInputID, failure)
