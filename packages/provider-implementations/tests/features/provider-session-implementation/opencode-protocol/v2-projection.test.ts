@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import type { OpenCodeV2NativeTurnCut } from '../../../../src/opencode.ts'
 
-import { cut, editCut, sessionID, assistantID, content, toolInput } from './v2-cut-fixture.ts'
+import { cut, editCut, rejectedRequestCut, sessionID, assistantID, content, toolInput } from './v2-cut-fixture.ts'
 
 function assistant(value: OpenCodeV2NativeTurnCut) { return value.messages.data.find(row => row.id === assistantID)! }
 
@@ -35,6 +35,31 @@ test('2.1.4 requires a native idle snapshot matching the durable execution termi
   missing.messages.data = missing.messages.data.filter(item => item.type !== 'idle')
   assert.equal(projectOpenCodeV2NativeTurn(missing).state, 'unknown')
   assert.equal(projectOpenCodeV2NativeTurn(missing).reason, 'terminal_snapshot_mismatch')
+  for (const status of [400, 422] as const) {
+    const value = rejectedRequestCut(status), projected = projectOpenCodeV2NativeTurn(value)
+    assert.equal(projected.state, 'failed'); assert.equal(projected.terminalCode, 'unsupported')
+    assert.deepEqual(projected.assistantMessageIds, [assistantID])
+    assert.equal(JSON.stringify(projected).includes('TEST private provider error'), false)
+    const negatives: Array<(row: OpenCodeV2NativeTurnCut) => void> = [
+      row => { row.messages.data[0]!.data.text = 'TEST foreign input' },
+      row => { row.log.events.at(-1)!.data.error = { type: 'TEST other', message: 'TEST other error' } },
+      row => { row.log.events.find(event => event.type === 'session.step.failed')!.data.assistantMessageID = 'msg_foreign' },
+      row => { row.messages.data.find(message => message.type === 'idle')!.data.outcome = 'succeeded' },
+      row => { row.messages.next = 'TEST unread page' },
+      row => { assistant(row).data.error = { type: 'TEST other', message: 'TEST other error' } },
+    ]
+    for (const alter of negatives) {
+      const changed = structuredClone(value); alter(changed)
+      assert.equal(projectOpenCodeV2NativeTurn(changed).terminalCode, undefined)
+    }
+    const serverError = structuredClone(value), error = { type: 'provider.invalid-request', status: 500, message: 'TEST server failure' }
+    assistant(serverError).data.error = error
+    for (const event of serverError.log.events) {
+      if (event.type === 'session.step.failed' || event.type === 'session.execution.failed') { event.data.error = error }
+    }
+    const failed = projectOpenCodeV2NativeTurn(serverError)
+    assert.equal(failed.state, 'failed'); assert.equal(failed.terminalCode, undefined)
+  }
 })
 
 test('completed step/tool does not imply native execution terminal', () => {

@@ -1,4 +1,4 @@
-import { record, assistantLineage, messageIDFromEvent, terminal } from './v2-projection-helpers.ts'
+import { record, same, assistantLineage, messageIDFromEvent, terminal } from './v2-projection-helpers.ts'
 import { projectNativeAssistants } from './v2-assistant-projection.ts'
 import { matchesNativeV2Pngs } from './v2-attachments.ts'
 import type { OpenCodeV2NativeTurnCut, OpenCodeV2NativeTurn, OpenCodeV2NativeLogEvent } from './v2-projection-types.ts'
@@ -48,6 +48,20 @@ function terminalProjection(input: OpenCodeV2NativeTurnCut, ending: OpenCodeV2Na
   }
   return state
 }
+/** The original failed step, assistant snapshot and execution terminal must agree. */
+function requestRejected(input: OpenCodeV2NativeTurnCut, interval: readonly OpenCodeV2NativeLogEvent[],
+  ending: OpenCodeV2NativeLogEvent, assistants: readonly string[]): boolean {
+  if (ending.type !== 'session.execution.failed') return false
+  const assistant = assistants.at(-1)
+  if (!assistant) return false
+  const failed = interval.filter(event => event.type === 'session.step.failed' && event.data.assistantMessageID === assistant)
+  const step = failed.at(0), error = record(step?.data.error)
+  const message = input.messages.data.find(value => value.id === assistant)
+  return failed.length === 1 && step !== undefined && step.seq < ending.seq && error !== null
+    && ['provider.invalid-request', 'provider.unsupported-operation'].includes(String(error.type))
+    && (error.status === 400 || error.status === 422)
+    && same(message?.data.error, error) && same(ending.data.error, error)
+}
 function deliveredTurn(input: OpenCodeV2NativeTurnCut, delivered: OpenCodeV2NativeLogEvent): OpenCodeV2NativeTurn {
   const user = input.messages.data.find(message => message.id === input.nativeInputID)
   if (!user || user.type !== 'user' || user.data.id !== input.nativeInputID || user.data.type !== 'user' || user.data.text !== input.originalText) { return unknown('original_input_projection_mismatch') }
@@ -66,7 +80,8 @@ function deliveredTurn(input: OpenCodeV2NativeTurnCut, delivered: OpenCodeV2Nati
   if (!ending) { return unknown('missing_execution_terminal') }
   const state = terminalProjection(input, ending, assistants)
   if (state !== 'succeeded' && state !== 'failed' && state !== 'cancelled') { return unknown(state) }
-  return { state, reason: ending.type, ...facts }
+  return { state, reason: ending.type, ...facts,
+    ...(state === 'failed' && requestRejected(input, interval, ending, assistants) ? { terminalCode: 'unsupported' as const } : {}) }
 }
 /** Native turn facts only. No product message/task receipt inference or writer. */
 export function projectOpenCodeV2NativeTurn(input: OpenCodeV2NativeTurnCut): OpenCodeV2NativeTurn {

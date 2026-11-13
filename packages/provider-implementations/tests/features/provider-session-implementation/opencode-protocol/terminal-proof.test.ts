@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { qualifyOpenCodeV1BoundTerminalProof } from '../../../../src/opencode.ts'
 import type { OpenCodeCanonicalMessage, OpenCodeV1TerminalEvidence } from '../../../../src/opencode.ts'
+import { qualifyOpenCodeV1BoundRequestRejection } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/terminal-proof.ts'
 
 const binding = { nativeSessionId: 'session_A', workspacePath: '/TEST/original', hostKey: 'TEST-host',
   runId: 'TEST-run', profileRootKey: 'TEST-profile' }
@@ -45,4 +46,23 @@ test('unsettled tool and unknown finish stay unknown; native aborted error remai
   value.messages[1]!.toolCalls = []
   Object.assign(value.messages[1]!, { errorName: 'MessageAbortedError', finishReason: null, hasError: true })
   assert.equal(qualifyOpenCodeV1BoundTerminalProof(value, binding, 'input_A').proof?.outcome, 'error')
+
+  Object.assign(value.messages[1]!, { errorName: 'APIError', errorMessage: 'TEST private provider error' })
+  assert.equal(qualifyOpenCodeV1BoundTerminalProof(value, binding, 'input_A').proof, null)
+  for (const status of [400, 422] as const) {
+    const failure = { assistantMessageId: 'answer_A', status }
+    assert.equal(qualifyOpenCodeV1BoundRequestRejection(value, binding, 'input_A', failure)?.outcome, 'error')
+    const negatives: Array<(row: OpenCodeV1TerminalEvidence) => void> = [
+      row => { row.complete = false }, row => { row.interactionsSettled = false },
+      row => { row.messages[1]!.completedAt = null }, row => { row.messages[1]!.parentId = 'input_B' },
+      row => { row.messages[1]!.errorName = 'MessageAbortedError' },
+      row => { row.authority!.runId = 'TEST-foreign-run' }, row => { row.messageSessionIds[1] = 'session_B' },
+    ]
+    for (const alter of negatives) {
+      const changed = structuredClone(value); alter(changed)
+      assert.equal(qualifyOpenCodeV1BoundRequestRejection(changed, binding, 'input_A', failure), null)
+    }
+    assert.equal(qualifyOpenCodeV1BoundRequestRejection(value, binding, 'input_A', { ...failure, assistantMessageId: 'answer_B' }), null)
+    assert.equal(qualifyOpenCodeV1BoundRequestRejection(value, binding, 'input_A', undefined), null)
+  }
 })

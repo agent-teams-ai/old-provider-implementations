@@ -44,3 +44,20 @@ export function editCut(): OpenCodeV2NativeTurnCut {
   value.log.events[6]!.data = { ...value.log.events[6]!.data, metadata }
   return value
 }
+
+/** Synthetic original failed native turn, preserving the pinned error/event shape. */
+export function rejectedRequestCut(status: 400 | 422): OpenCodeV2NativeTurnCut {
+  const value = cut('2.1.4')
+  const error = { type: status === 400 ? 'provider.invalid-request' : 'provider.unsupported-operation',
+    status, message: 'TEST private provider error' }
+  const assistant = value.messages.data.find(row => row.id === assistantID)!
+  assistant.data = { ...assistant.data, content: [], error }
+  delete assistant.data.finish
+  value.messages.data.find(row => row.type === 'idle')!.data = { outcome: 'failed' }
+  value.log.events = value.log.events.filter(row => row.seq <= 3 || row.seq >= 8)
+  const failed = value.log.events.find(row => row.seq === 8)!
+  failed.type = 'session.step.failed'; failed.data = { sessionID, assistantMessageID: assistantID, error }
+  const ending = value.log.events.find(row => row.seq === 9)!
+  ending.type = 'session.execution.failed'; ending.data = { sessionID, error }
+  return value
+}

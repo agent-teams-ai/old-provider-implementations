@@ -4,7 +4,7 @@ import type { AttachmentPort, PreparedAttachment } from '../provider-session-io/
 
 /** Private seam for the two actual native dialects; no runtime ownership or native DTOs. */
 export type DriverPermission = { requestId: string; tool: string; input: unknown }
-export type DriverSnapshot = { facts: readonly EventPayload[]; observations?: readonly OpenCodeInputWindowItem[]; terminal?: 'succeeded' | 'failed' | 'cancelled' | undefined; permissions: readonly DriverPermission[] }
+export type DriverSnapshot = { facts: readonly EventPayload[]; observations?: readonly OpenCodeInputWindowItem[]; terminal?: 'succeeded' | 'failed' | 'cancelled' | undefined; terminalCode?: 'unsupported'; permissions: readonly DriverPermission[] }
 export type DriverTurn = { nativeInputId: string; read: () => Promise<DriverSnapshot>; interrupt: () => Promise<void> }
 export type DriverProtocol = {
   pollIntervalMs: number
