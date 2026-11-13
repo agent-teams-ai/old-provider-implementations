@@ -9,7 +9,7 @@ import { ClaudeSubagents } from './subagents.ts';
 import { ClaudeCapture } from './capture.ts';
 import { Interactions } from './interactions.ts';
 import { Normalizer, OutputLimitError, record } from './normalize.ts';
-import { captureClaudeCommands, claudeCommandName, claudeLocalCommandText, resolveClaudeCommand } from './commands.ts';
+import { captureClaudeCommands, claudeCommandName, claudeLegacyReviewContent, claudeLocalCommandText, projectClaudeCommands, resolveClaudeCommand } from './commands.ts';
 import type { ClaudeCommandDescription } from './commands.ts';
 import { bounded, deferred, EventFeed } from '../provider-session-io/io.ts';
 import { fail } from './primitives.ts';
@@ -244,8 +244,14 @@ export class ClaudeSession implements Session {
         if (!captured) { pending.receipt.resolve({ ok: false, code: 'unsupported', delivery: 'known-not-sent' }); continue; }
         pending.command = captured;
       }
-      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
       let content: SDKUserMessage['message']['content'] = pending.input.content;
+      if ((pending.input.attachments?.length ?? 0) === 0) {
+        content = claudeLegacyReviewContent(pending.input.content, pending.command) ?? content;
+        if (Buffer.byteLength(content) > this.config.limits.inputBytes) {
+          pending.receipt.resolve({ ok: false, code: 'backpressure', delivery: 'known-not-sent' }); continue;
+        }
+      }
+      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
       if ((pending.input.attachments?.length ?? 0) > 0) {
         try {
           const attachments = await prepareAttachments(pending.input, { trustedBinding: this.config.trustedBinding, sessionRef: this.sessionRef, port: this.config.attachments, signal: pending.toolRevocation.signal, timeoutMs: this.config.limits.timeoutMs });
@@ -321,7 +327,7 @@ export class ClaudeSession implements Session {
   }
   private observeCommands(value: unknown): void {
     this.commands = captureClaudeCommands(value);
-    this.config.observeCommands?.(this.commands);
+    this.config.observeCommands?.(projectClaudeCommands(this.commands));
   }
   private mainCompaction(message: Record<string, unknown>): boolean {
     return message.session_id === this.nativeSession && !present(message.parent_tool_use_id) && !present(message.agent_id) && !present(message.resume_reason);

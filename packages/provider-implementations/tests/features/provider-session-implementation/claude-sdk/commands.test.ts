@@ -5,7 +5,8 @@ import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 import type { Event } from '@agent-teams/provider-session-contracts';
 import { createClaudeDriverFactory } from '../../../../src/claude.ts';
-import { captureClaudeCommands, claudeCommandName, resolveClaudeCommand } from '../../../../src/features/provider-session-implementation/adapters/claude-sdk/commands.ts';
+import type { ClaudeConfig } from '../../../../src/claude.ts';
+import { captureClaudeCommands, claudeCommandName, claudeLegacyReviewContent, projectClaudeCommands, resolveClaudeCommand } from '../../../../src/features/provider-session-implementation/adapters/claude-sdk/commands.ts';
 import { configuration, QueryFixture, request } from './support.ts';
 
 test('captured command metadata preserves exact name precedence without retaining mutable native objects', () => {
@@ -43,6 +44,82 @@ test('actual SDK 0.3.305 private metadata does not hide the captured public comm
   assert.equal(resolveClaudeCommand(captured, '__remote-workflow'), undefined);
   assert.equal(claudeCommandName('/__remote-workflow'), undefined, 'private names gain no raw dispatch grammar');
   assert.equal(Object.isFrozen(captured), true);
+  const selected = resolveClaudeCommand(captured, 'review'); assert.ok(selected);
+  assert.equal(Object.hasOwn(selected, 'compatibility'), false);
+  assert.equal(resolveClaudeCommand(projectClaudeCommands(captured), 'review')?.compatibility?.execution, 'legacy-inline-review-v1');
+  const forged = captureClaudeCommands([{ ...selected, builtin: false, compatibility: { invocation: 'review', execution: 'legacy-inline-review-v1' } }]);
+  assert.equal(Object.hasOwn(forged[0]!, 'compatibility'), false);
+  assert.equal(claudeLegacyReviewContent('/review', forged[0]), undefined);
+});
+
+test('qualified review alias uses one legacy inline input with original permissions, owner and bounded handoff', async () => {
+  const sdk = new QueryFixture();
+  const native = { name: 'code-review', description: 'TEST original fork command', argumentHint: 'TEST native flags', aliases: ['review'], builtin: true };
+  const initial = [native];
+  const observations: unknown[] = [];
+  const boundary = { ...sdk.boundary, query: (args: Parameters<typeof sdk.boundary.query>[0]) => {
+    sdk.boundary.query(args);
+    return Object.assign(sdk, { supportedCommands: async () => initial });
+  } };
+  const config: ClaudeConfig = { ...configuration(), limits: { ...configuration().limits, inputBytes: 4096 },
+    nativeOptions: { permissionMode: 'default', settingSources: ['user', 'project', 'local'] },
+    observeCommands: (commands: unknown) => { observations.push(commands); } };
+  const opened = await createClaudeDriverFactory({ capabilities: ['text'], resolveConfiguration: async () => config,
+    readCheckpoint: async () => { throw new Error('fresh'); } }, boundary).open(request);
+  const events: Event[] = [];
+  const observing = (async () => { for await (const event of opened.driver.observe()) { events.push(event); } })();
+  const finish = async (index: number) => {
+    sdk.emit({ type: 'result', subtype: 'success', session_id: sdk.options.sessionId, uuid: `TEST-result-${index}`,
+      user_message_uuid: sdk.inputs[index]?.uuid, result: 'TEST completed main review', is_error: false });
+    await setImmediate();
+  };
+  try {
+    const original = { inputId: 'review-input', operationRef: 'review-operation', content: ' \n/review  123  --literal \n' };
+    assert.deepEqual(await opened.driver.submit(original), { ok: true, value: { inputId: original.inputId,
+      operationRef: original.operationRef, delivery: 'client-consumed', providerAcceptance: 'unknown' } });
+    await setImmediate();
+    assert.equal(sdk.inputs.length, 1); assert.equal(sdk.calls, 1);
+    const wire = sdk.inputs[0]!;
+    assert.equal(typeof wire.message.content, 'string');
+    assert.ok(String(wire.message.content).startsWith('\n      You are an expert code reviewer. Follow these steps:'));
+    assert.ok(String(wire.message.content).endsWith('\n      PR number:  123  --literal\n    '));
+    assert.equal(original.content, ' \n/review  123  --literal \n', 'raw caller input remains unchanged');
+    assert.equal(wire.parent_tool_use_id, null); assert.ok(wire.uuid);
+    assert.equal(sdk.options.permissionMode, 'default');
+    assert.deepEqual(sdk.options.settingSources, ['user', 'project', 'local']);
+    assert.deepEqual(observations[0], [{ ...native, compatibility: { invocation: 'review', execution: 'legacy-inline-review-v1',
+      description: 'Review a pull request in the current conversation.', argumentHint: '[pr number]' } }]);
+    assert.equal(Object.hasOwn(native, 'compatibility'), false, 'the native inventory is never rewritten');
+    const canUseTool = sdk.options.canUseTool; assert.ok(canUseTool);
+    const input = { file_path: '/TEST-unused/review.txt' };
+    const permission = canUseTool('Read', input, { signal: new AbortController().signal, toolUseID: 'TEST-review-read', requestId: 'TEST-review-request' });
+    await setImmediate();
+    const interaction = events.find(event => event.kind === 'interaction'); assert.ok(interaction?.kind === 'interaction');
+    assert.equal(interaction.inputId, original.inputId); assert.equal(interaction.operationRef, original.operationRef);
+    assert.deepEqual(interaction.request, { kind: 'permission', tool: 'Read', input });
+    assert.deepEqual(opened.driver.respondToInteraction(interaction.interactionRef, { kind: 'permission', decision: 'allow' }), { ok: true, value: undefined });
+    assert.deepEqual(await permission, { behavior: 'allow', updatedInput: input });
+    assert.deepEqual(opened.driver.respondToInteraction(interaction.interactionRef, { kind: 'permission', decision: 'allow' }), { ok: false, code: 'stale' });
+    assert.equal(events.some(event => event.kind === 'result'), false);
+    await finish(0);
+    assert.equal(events.some(event => event.kind === 'result' && event.inputId === original.inputId &&
+      event.operationRef === original.operationRef && event.outcome === 'succeeded'), true);
+    assert.equal(events.some(event => event.kind === 'text' && event.messageRef.startsWith('local-command:')), false);
+    assert.deepEqual(await opened.driver.submit({ inputId: 'large-review', operationRef: 'large-review-operation', content: `/review ${'x'.repeat(3500)}` }),
+      { ok: false, code: 'backpressure', delivery: 'known-not-sent' });
+    assert.equal(sdk.inputs.length, 1, 'expanded wire limit is checked before handoff');
+    for (const content of ['/code-review 123', '/review\t123']) {
+      const index: number = sdk.inputs.length;
+      assert.equal((await opened.driver.submit({ inputId: `native-${index}`, operationRef: `native-operation-${index}`, content })).ok, true);
+      await setImmediate(); assert.equal(sdk.inputs[index]?.message.content, content); await finish(index);
+    }
+    initial.push({ name: 'review', description: 'TEST exact custom command', argumentHint: '<file>', aliases: [], builtin: false });
+    const index = sdk.inputs.length, content = '/review TEST-custom';
+    assert.equal((await opened.driver.submit({ inputId: 'custom-review', operationRef: 'custom-review-operation', content })).ok, true);
+    await setImmediate(); assert.equal(sdk.inputs[index]?.message.content, content);
+    assert.deepEqual(observations.at(-1), initial.map(({ builtin, ...row }) => ({ ...row, ...(builtin ? { builtin } : {}) })));
+    await finish(index);
+  } finally { assert.equal((await opened.driver.close()).cleanup, 'confirmed'); await observing; }
 });
 
 test('same Query command changes and local result require native session and original echoed user UUID', async () => {

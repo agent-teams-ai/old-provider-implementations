@@ -7,6 +7,11 @@ export interface ClaudeCommandDescription {
   readonly argumentHint: string;
   readonly aliases?: readonly string[];
   readonly builtin?: true;
+  /** Adapter-owned invocation semantics; the canonical native row remains unchanged. */
+  readonly compatibility?: {
+    readonly invocation: 'review'; readonly execution: 'legacy-inline-review-v1';
+    readonly description: string; readonly argumentHint: string;
+  };
 }
 const name = (value: unknown): value is string => typeof value === 'string' && /^[a-z][a-z0-9:-]{0,63}$/iu.test(value);
 // The SDK also lists private builtin names; they are metadata, not product commands.
@@ -41,6 +46,50 @@ export function resolveClaudeCommand(commands: readonly ClaudeCommandDescription
   if (exact.length) { return exact.find(command => command.builtin) ?? exact[0]; }
   const aliases = commands.filter(command => command.aliases?.includes(supplied));
   return aliases.length === 1 ? aliases[0] : undefined;
+}
+
+const legacyReview = Object.freeze({ invocation: 'review', execution: 'legacy-inline-review-v1',
+  description: 'Review a pull request in the current conversation.', argumentHint: '[pr number]' } as const);
+const legacyReviewCommand = (command: ClaudeCommandDescription | undefined): boolean =>
+  command?.name === 'code-review' && command.builtin === true && command.aliases?.includes('review') === true;
+
+/** Annotate only the qualified alias; never accept execution metadata from supportedCommands(). */
+export function projectClaudeCommands(commands: readonly ClaudeCommandDescription[]): readonly ClaudeCommandDescription[] {
+  const selected = resolveClaudeCommand(commands, 'review');
+  if (!legacyReviewCommand(selected)) { return commands; }
+  const observed = Object.freeze(commands.map(command => command === selected
+    ? Object.freeze({ ...command, compatibility: legacyReview }) : command));
+  return Buffer.byteLength(JSON.stringify(observed)) <= 256 * 1024 ? observed : Object.freeze([]);
+}
+
+/** Exact inline recipe from runtime 0.0.158/0.0.160 review.ts (f86ada0b); not the SDK's newer fork. */
+export function claudeLegacyReviewContent(input: string, command: ClaudeCommandDescription | undefined): string | undefined {
+  const raw = input.trim();
+  if (!legacyReviewCommand(command) || (raw !== '/review' && !raw.startsWith('/review '))) { return; }
+  const args = raw === '/review' ? '' : raw.slice('/review '.length);
+  return `
+      You are an expert code reviewer. Follow these steps:
+
+      1. If no PR number is provided in the args, run \`gh pr list\` to show open PRs
+      2. If a PR number is provided, run \`gh pr view <number>\` to get PR details
+      3. Run \`gh pr diff <number>\` to get the diff
+      4. Analyze the changes and provide a thorough code review that includes:
+         - Overview of what the PR does
+         - Analysis of code quality and style
+         - Specific suggestions for improvements
+         - Any potential issues or risks
+
+      Keep your review concise but thorough. Focus on:
+      - Code correctness
+      - Following project conventions
+      - Performance implications
+      - Test coverage
+      - Security considerations
+
+      Format your review with clear sections and bullet points.
+
+      PR number: ${args}
+    `;
 }
 
 export function claudeCommandName(input: string): string | undefined {
