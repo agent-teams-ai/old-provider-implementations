@@ -17,10 +17,8 @@ export async function readOpenCodeV2OwnedDirectory(
     const providerId = catalogText(row.providerID), model = projectOpenCodeV2Model(row)
     const identity = JSON.stringify([providerId, model.id])
     executionAssert(!modelIds.has(identity), 'invalid_native_catalog'); modelIds.add(identity)
-    // Directory consumers need inventory, never variant settings. The
-    // selected-model read retains the validated variant IDs for admission.
-    const { variants: _variants, ...selected } = model
-    return { providerId, ...selected }
+    // The shared projection retains variant IDs without their private settings.
+    return { providerId, ...model }
   })
   const rawIntegrations = await source.read('/api/integration')
   executionAssert(Array.isArray(rawIntegrations) && rawIntegrations.length <= 1024, 'invalid_native_catalog')

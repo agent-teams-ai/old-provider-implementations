@@ -232,6 +232,7 @@ test('owned directory reads one native inventory for all providers and exports n
         const directory = await client.readDirectory()
         assert.deepEqual(directory.providers.map(row => row.id), ['TEST-one', 'TEST-two'])
         assert.deepEqual(directory.models.map(row => row.providerId), ['TEST-one', 'TEST-two'])
+        assert.deepEqual(directory.models.map(row => row.variants), [['high'], ['high']])
         assert.deepEqual(directory.integrations, providers.map(row => ({ id: row.id, name: row.name, plainKey: true })))
         assert.equal(JSON.stringify(directory).includes('TEST-secret'), false)
         assert.equal(JSON.stringify(directory).includes('cred_TESTprivate'), false)
