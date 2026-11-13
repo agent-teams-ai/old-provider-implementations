@@ -41,21 +41,21 @@ test('2.1.4 requires a native idle snapshot matching the durable execution termi
     assert.deepEqual(projected.assistantMessageIds, [assistantID])
     assert.equal(JSON.stringify(projected).includes('TEST private provider error'), false)
     const negatives: Array<(row: OpenCodeV2NativeTurnCut) => void> = [
-      row => { row.messages.data[0]!.data.text = 'TEST foreign input' },
-      row => { row.log.events.at(-1)!.data.error = { type: 'TEST other', message: 'TEST other error' } },
-      row => { row.log.events.find(event => event.type === 'session.step.failed')!.data.assistantMessageID = 'msg_foreign' },
-      row => { row.messages.data.find(message => message.type === 'idle')!.data.outcome = 'succeeded' },
+      row => { row.messages.data[0]!.data = { ...row.messages.data[0]!.data, text: 'TEST foreign input' } },
+      row => { const event = row.log.events.at(-1)!; event.data = { ...event.data, error: { type: 'TEST other', message: 'TEST other error' } } },
+      row => { const event = row.log.events.find(event => event.type === 'session.step.failed')!; event.data = { ...event.data, assistantMessageID: 'msg_foreign' } },
+      row => { const message = row.messages.data.find(message => message.type === 'idle')!; message.data = { ...message.data, outcome: 'succeeded' } },
       row => { row.messages.next = 'TEST unread page' },
-      row => { assistant(row).data.error = { type: 'TEST other', message: 'TEST other error' } },
+      row => { assistant(row).data = { ...assistant(row).data, error: { type: 'TEST other', message: 'TEST other error' } } },
     ]
     for (const alter of negatives) {
       const changed = structuredClone(value); alter(changed)
       assert.equal(projectOpenCodeV2NativeTurn(changed).terminalCode, undefined)
     }
     const serverError = structuredClone(value), error = { type: 'provider.invalid-request', status: 500, message: 'TEST server failure' }
-    assistant(serverError).data.error = error
+    assistant(serverError).data = { ...assistant(serverError).data, error }
     for (const event of serverError.log.events) {
-      if (event.type === 'session.step.failed' || event.type === 'session.execution.failed') { event.data.error = error }
+      if (event.type === 'session.step.failed' || event.type === 'session.execution.failed') { event.data = { ...event.data, error } }
     }
     const failed = projectOpenCodeV2NativeTurn(serverError)
     assert.equal(failed.state, 'failed'); assert.equal(failed.terminalCode, undefined)

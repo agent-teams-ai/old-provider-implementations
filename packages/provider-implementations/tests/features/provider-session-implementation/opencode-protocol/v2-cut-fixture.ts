@@ -51,8 +51,8 @@ export function rejectedRequestCut(status: 400 | 422): OpenCodeV2NativeTurnCut {
   const error = { type: status === 400 ? 'provider.invalid-request' : 'provider.unsupported-operation',
     status, message: 'TEST private provider error' }
   const assistant = value.messages.data.find(row => row.id === assistantID)!
-  assistant.data = { ...assistant.data, content: [], error }
-  delete assistant.data.finish
+  const { finish: _finish, ...data } = assistant.data
+  assistant.data = { ...data, content: [], error }
   value.messages.data.find(row => row.type === 'idle')!.data = { outcome: 'failed' }
   value.log.events = value.log.events.filter(row => row.seq <= 3 || row.seq >= 8)
   const failed = value.log.events.find(row => row.seq === 8)!
