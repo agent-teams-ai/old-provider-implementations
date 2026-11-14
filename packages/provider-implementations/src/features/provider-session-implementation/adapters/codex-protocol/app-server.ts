@@ -102,6 +102,54 @@ export class CodexAppServerClient {
   /** Protocol availability only; this does not attest provider authentication or process custody. */
   isOpen(): boolean { return this.rpc.isOpen() }
 
+  /**
+   * One experimental out-of-band sample on this same captured idle native thread.
+   * No turn/start, new thread, auth, process or checkpoint mutation is performed.
+   */
+  async samplePromptSuggestion(
+    input: Readonly<{ threadId: string; expectedTurnId: string; prompt: string }>,
+    signal: AbortSignal,
+    current: () => boolean,
+  ): Promise<unknown> {
+    if (!this.initialized || !this.handshakeComplete) {
+      throw new CodexProtocolError('codex.sample.not-initialized', 'not-sent')
+    }
+    const session = this.sessions.get(input.threadId)
+    const eligible = () => this.rpc.isOpen() && this.sessions.get(input.threadId) === session &&
+      session !== undefined && session.canSample() && current()
+    if (!input.threadId || !input.expectedTurnId || !input.prompt || !eligible() || signal.aborted) {
+      throw new CodexProtocolError('codex.sample.stale', 'not-sent')
+    }
+    let sentId: string | number | undefined
+    let settled = false
+    const cancelNative = (): void => {
+      if (sentId === undefined || settled || !this.rpc.isOpen()) return
+      // Best effort, separate from the source thread's control and main turn.
+      void this.rpc.request('thread/sample/cancel', { requestId: sentId },
+        { beforeWrite: () => this.rpc.isOpen() }).catch(() => {})
+    }
+    signal.addEventListener('abort', cancelNative, { once: true })
+    try {
+      const reply = await this.rpc.request('thread/sample', {
+        threadId: input.threadId,
+        expectedTurnId: input.expectedTurnId,
+        prompt: input.prompt,
+        effort: 'low',
+      }, {
+        signal,
+        beforeWrite: eligible,
+        onSentId: id => { sentId = id; if (signal.aborted) cancelNative() },
+      })
+      if (!eligible() || signal.aborted) {
+        throw new CodexProtocolError('codex.sample.stale')
+      }
+      return reply
+    } finally {
+      settled = true
+      signal.removeEventListener('abort', cancelNative)
+    }
+  }
+
   /** Finite read-only native discovery for an actual thread owned by this client. */
   async listMcpServerStatus(supplied: CodexMcpStatusRequest, signal?: AbortSignal): Promise<CodexMcpServerStatusPage> {
     const request = captureMcpStatusRequest(supplied)
