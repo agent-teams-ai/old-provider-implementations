@@ -51,11 +51,10 @@ test('pinned Codex 0.162 refuses sampling while preserving normal completed turn
   const testCase = await run(t, '0.162.0');
   await testCase.driver.submit(input(1));
   await testCase.native.command({ kind: 'finish', ...ref(testCase.native) });
-  const events = [];
   // Native completion is received asynchronously; an ordinary checkpoint is the barrier.
   await until(() => testCase.driver.checkpoint().ok);
   assert.equal(testCase.native.writes.some(message => message.method === 'thread/sample'), false);
-  assert.deepEqual(testCase.candidates, events);
+  assert.deepEqual(testCase.candidates, []);
 });
 
 test('Codex wrong native turn and null text never become a suggestion', async t => {
