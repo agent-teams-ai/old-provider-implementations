@@ -10,7 +10,7 @@ Delivery rule: separate Draft PR, no merge, no package release, no activation wi
 
 Build **one opt-in, feature-owned native prompt-suggestion capability** in the independent provider implementations package. The feature returns bounded, untrusted **candidate next user messages** from the **currently owned native session**. It never sends a user message, creates a product task, or owns conversation authority.
 
-- Claude: opt in to the pinned Claude Agent SDK's native push event, using the **existing session and Query stream**. A result arrives first; the subsequent prompt_suggestion must remain observable. No new Claude query, additional child, or manually synthesized history.
+- Claude: opt in to the pinned Claude Agent SDK's native push event, using the **existing session and Query stream**. A result arrives first; the subsequent prompt_suggestion must remain observable. No new Claude query, additional child, or manually synthesized history. **The SDK switch is session-scoped, not one-request-per-human-turn:** enable only for native sessions exclusively owned by eligible human direct conversations; otherwise feature stays unavailable for that session.
 - Codex: an explicit, bounded **thread/sample** request against an **existing persistent root thread** of the **same captured App Server client**, using the exact completed native turn ID. The request is experimental. Do not simulate it with turn/start or spawn a second ordinary Codex thread. Return unsupported on incompatible versions/capabilities.
 - Host: owns the decision whether the completed input belongs to an active **human-to-teammate direct conversation**, its session/generation/tenant/project/lane identity, authorization, request admission, budgets, lifecycle and cancellations.
 - Frontend: uses the **existing composer**, not a new chat surface. Tab inserts the candidate only into an empty draft; Escape dismisses; there is no auto-send.
@@ -139,7 +139,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 
 ## 5. Claude SDK: exact lifecycle
 
-1. During the **existing** openClaudeSession/open Query composition, Host opts in to promptSuggestions only for an eligible human-facing session. Capture flag immutably with the session; changes take effect at the next safe session open/restart. Preserve custody.launch, env restrictions, settings and config compatibility.
+1. During the **existing** openClaudeSession/open Query composition, Host opts in to promptSuggestions **only if the whole native Query/session is exclusively reserved for eligible human-direct turns**. This is essential: the SDK boolean is session-scoped and can generate extra inference after internal turns even if Host later hides those suggestions. If that exclusivity cannot be proven (mixed agent/task/group/DM conversation), disable native Claude suggestions for that session; **do not** turn on the SDK boolean and filter afterward. Capture flag immutably with the session; changes take effect at the next safe open/restart. Preserve custody.launch, env restrictions, settings and config compatibility.
 2. Continue consuming the same AsyncIterable **past the SDK result**. Native prompt_suggestion arrives asynchronously after result; processing result must not terminate the stream or close the Query prematurely.
 3. Existing ClaudeSession tracks active/settled input and operationRef. On terminal success, retain a **single fenced settled slot** (session instance + operationRef + monotonic turn generation). On new admitted input, close, abort, restore mismatch or turn failure, clear it synchronously.
 4. Validate SDK message type, nonempty bounded suggestion, native session_id and current slot. Route a candidate through the optional feature sink; do not reinterpret it as ordinary SPI result/text and do not expose as a durable event.
@@ -174,7 +174,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 ## 7. State, limits and security
 
 - No DB. Host keeps a single **latest in-memory candidate per active conversation** and a bounded dismissal key per (session generation, operationRef). A cold restart drops suggestions; this is correct, not data loss. Provider library stores at most one in-flight sample/settled slot per native session.
-- One extra inference request per **eligible completed human turn**, never per internal task or every assistant streaming event. Default **off** until explicit user-facing opt-in. Host uses its existing budget and concurrency policy; no provider-side global quota engine. Abort or suppress on high workload.
+- **Codex:** at most one sample inference request per **eligible completed human turn**, never per internal task or streaming event. **Claude:** enabling SDK promptSuggestions can cause a request after **each SDK turn** in that native session. Therefore require session-level human-direct exclusivity before enabling; do not rely on downstream filtering to control cost/privacy. Default **off** until explicit user-facing opt-in. Host uses its existing budget and concurrency policy; no provider-side global quota engine. Abort/suppress on high workload where supported; Claude may require safe session restart to change the SDK option.
 - Bound inputs/output (proposal: max 512 UTF-8 bytes displayed, max 4 KiB native sampler instruction, maximum 1 candidate, per-request deadline no longer than current native RPC limit; constants reviewed against UX). Truncate? **Reject** over-limit native suggestions, do not silently truncate or split UTF-8.
 - Candidate text is **untrusted model output**. Render as text, not HTML/Markdown with active links; never execute tools, commands or shell fragments. Acceptance inserts editable text only; user must separately send.
 - Do not log raw suggestion, native conversation, credentials, paths or provider response bodies in default telemetry. Allowed metrics: feature enabled/disabled, supported/unsupported, produced/suppressed/stale, latency bucket and sanitized failure category.
@@ -203,6 +203,7 @@ All cases run under TEST HOME / TEMP, isolated config/profile/worktree, generate
 | Claude suppressions | First turn, plan mode, API error, no cache params, absent suggestion | Zero candidates, unaffected normal result |
 | Claude stale | New input admitted before delayed suggestion; session generation changed | No candidate from previous operation |
 | Claude shutdown | Abort/close before event; duplicate or foreign session ID | No leaked callback or stale candidate; cleanup receipt preserved |
+| Claude mixed-session denial | Runtime session also accepts internal task, group, delegated or agent-to-agent turns | SDK promptSuggestions option stays **false at Query construction**, not merely hidden by renderer |
 | Codex happy path | Real JSON-RPC frames: initialize, thread/start or resume, turn/start/completed, then thread/sample | One request with exact threadId/expectedTurnId, sourceTurnId match, normal parent untouched |
 | Codex non-support | Simulate 0.162, method-not-found, experimental disabled | Explicit unsupported, no fallback turn/start |
 | Codex invalid result | null/empty, overlong text, wrong sourceTurnId, unexpected frame, tool attempt | None/stale/refusal; never forwarded |
@@ -275,7 +276,7 @@ A failed feasibility gate produces a documented **unsupported/HOLD** path; it mu
 
 This section records **design-only self-review**, not independent code-review approval. Three focused review passes are required before finalizing this document:
 
-1. **Ownership and clean boundaries:** inspect no engine/domain import into provider package, no duplicate Session SPI, no new task authority.
+1. **Ownership and clean boundaries (reviewed, corrected):** session-scoped Claude SDK flag can create inference on internal turns if enabled in a shared native session. Added **session-exclusivity eligibility before SDK construction**, rather than relying on Host/renderer filtering after generation. Keep provider package without engine/domain imports and preserve existing Session SPI.
 2. **Native protocol and state safety:** inspect Claude after-result delivery, exact Codex root/turn/version, races, cancellation, no retry/parent mutation.
 3. **E2E and scope:** ensure tests really execute native integrations where claimed, no subscriptions/real HOME, no silent skips, no alternate UI, realistic LOC and migration conflict isolation.
 
