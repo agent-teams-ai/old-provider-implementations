@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { decodeClaudePromptSuggestion } from '../../../native-prompt-suggestions/adapters/claude-sdk.ts';
+import { eligibleNativeInput, offerNativeSuggestion } from '../../../native-prompt-suggestions/core/policy.ts';
 import type { CanUseTool, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { CloseReceipt, Event, EventPayload, FailureCode, Handoff, Input, InteractionReply, Reply, Session } from '@agent-teams/provider-session-contracts';
 import { compatibility, options, SDK_REVISION } from './config.ts';
@@ -51,6 +53,8 @@ export class ClaudeSession implements Session {
   private turnBytes = 0;
   private turnEvents = 0;
   private knownTerminal: Extract<Event, { kind: 'result' }> | undefined;
+  /** The SDK emits prompt_suggestion after result, when active has already retired. */
+  private lastSuccessfulInput: Input | undefined;
   private wakeup = deferred<void>();
   private readonly inputClosed = deferred<void>();
   private control: Promise<Reply<{ requested: true; terminal: 'unconfirmed' }>> | undefined;
@@ -99,6 +103,8 @@ export class ClaudeSession implements Session {
     if ((this.active?.input.operationRef === input.operationRef || this.active?.input.inputId === input.inputId) || this.queued.some((v) => v.input.operationRef === input.operationRef || v.input.inputId === input.inputId)) {return Promise.resolve(fail('stale'));}
     if (this.queued.length >= this.config.limits.queuedInputs) {return Promise.resolve(fail('backpressure'));}
     const pending: PendingInput = { input, handed: false, nativeRef: randomUUID(), receipt: deferred<Reply<Handoff>>(), interactionsCancelled: false, toolRevocation: new AbortController() };
+    // A newly accepted input makes any delayed previous suggestion obsolete.
+    this.lastSuccessfulInput = undefined;
     this.queued.push(pending); this.wake(); return pending.receipt.promise;
   }
   observe(): AsyncIterable<Event> { return this.feed; }
@@ -229,6 +235,7 @@ export class ClaudeSession implements Session {
       if (!this.handoffAvailable()) {continue;}
       const pending = this.queued.shift();
       if (!pending) {continue;}
+      this.lastSuccessfulInput = undefined;
       this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
       let content: SDKUserMessage['message']['content'] = pending.input.content;
       if ((pending.input.attachments?.length ?? 0) > 0) {
@@ -274,6 +281,17 @@ export class ClaudeSession implements Session {
   private async accept(message: unknown): Promise<void> {
     const m = record(message);
     if (Boolean(m.session_id) && m.session_id !== this.nativeSession) { this.unavailable('unknown'); return; }
+    if (m.type === 'prompt_suggestion') {
+      const input = this.lastSuccessfulInput;
+      this.lastSuccessfulInput = undefined; // Single-use, even for invalid frames or observer failure.
+      if (this.state === 'open' && input && this.active === undefined) {
+        offerNativeSuggestion(this.config.promptSuggestions, decodeClaudePromptSuggestion(m, this.nativeSession, {
+          sessionRef: this.sessionRef, inputId: input.inputId, operationRef: input.operationRef,
+          nativeSessionRef: this.nativeSession,
+        }));
+      }
+      return; // Auxiliary provider output: not an SPI message or background event.
+    }
     if (await this.capture?.acceptTask(m) === true) {return;}
     if (await this.acceptNested(m)) {return;}
     const input = this.correlate(m);
@@ -332,6 +350,8 @@ export class ClaudeSession implements Session {
     const active = this.active;
     if (input && active !== undefined && (active.input.operationRef === input.operationRef || active.input.inputId === input.inputId)) {
       this.emit({ kind: 'result', outcome: terminal, ...(failure ? { code: failure } : {}) }, input);
+      this.lastSuccessfulInput = terminal === 'succeeded' && this.state === 'open' &&
+        eligibleNativeInput(this.config.promptSuggestions, active.input) ? active.input : undefined;
       active.toolRevocation.abort(); this.active = undefined; this.interactions.cancel(); this.wake();
       if (terminal === 'unknown') {this.unavailable(failure ?? 'unknown');}
     } else { this.emit({ kind: 'result', outcome: 'unknown', code: 'unknown' }); this.unavailable('unknown'); }
@@ -410,6 +430,7 @@ export class ClaudeSession implements Session {
   private unavailable(code: FailureCode): void {
     if (this.state === 'closed' || this.failure === 'output-limit') {return;}
     this.state = 'unavailable';
+    this.lastSuccessfulInput = undefined;
     // A disappeared dependency during an accepted turn does not prove the turn stopped.
     this.failure = this.active && code === 'dependency-unavailable' ? 'unknown' : code;
     // Idle readiness may recover; retire old leases without disabling future original pairs.
