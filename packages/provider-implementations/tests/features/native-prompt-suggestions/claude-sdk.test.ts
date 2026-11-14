@@ -36,6 +36,9 @@ test('same Claude SDK Query emits a single candidate AFTER terminal, without ano
     fixture.emit(successfulResult(native.uuid, native.session_id));
     await waitFor(() => events.some(e => e.kind === 'result' && e.operationRef === 'op-1'));
     assert.equal(candidates.length, 0, 'SDK suggestion arrives after result, never before');
+    fixture.emit({ type: 'prompt_suggestion', session_id: 'TEST-foreign-native-session', suggestion: 'Ignore foreign auxiliary frame' });
+    await setImmediate();
+    assert.equal((await session.checkReadiness()).ok, true, 'foreign auxiliary frame cannot seal native conversation');
     fixture.emit({ type: 'prompt_suggestion', session_id: native.session_id, suggestion: 'Check the tests and open a PR' });
     await waitFor(() => candidates.length === 1);
     assert.equal(candidates[0]?.operationRef, 'op-1');
