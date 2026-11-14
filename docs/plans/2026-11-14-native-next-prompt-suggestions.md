@@ -227,7 +227,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 | Group chat, broadcast, cross-team agent/internal task, bootstrap, schedule | No single human-to-teammate follow-up prediction | Suppress without new UI or inference (Codex); Claude may still emit |
 | OpenCode, Gemini, missing/old Codex or unavailable native session | Graceful unsupported; no fallback generation or spinner | Existing composer remains unchanged |
 
-**Completeness rule:** when feature flag is on, each eligible active Claude session has the native tap bound, and every eligible compatible Codex session has a sampling capability. Do **not** promise suggestions on arbitrary provider-neutral/non-native profiles: verify actual selected native owner and report unsupported privately. A user never needs to select a lead first or manually install a second provider for each teammate.
+**Completeness rule:** when feature flag is on, each eligible active Claude session has the native tap bound **after its next safe Query restart**, and every eligible compatible Codex session has a sampling capability. If current Codex 0.162 remains pinned, **all-Codex coverage is not achieved**: promotion requires an explicitly qualified >=0.165 native release and exact Host/Desktop pin update in a separate dependent change. Do **not** promise suggestions on arbitrary provider-neutral/non-native profiles: verify actual selected native owner and report unsupported privately. A user never needs to select a lead first or manually install a second provider for each teammate.
 
 ### Visual interaction (existing composer only)
 
@@ -250,6 +250,9 @@ Use a **small, understated suggestion row inside the existing composer surface**
 - **Accessibility**: use a regular button, visible focus ring, bounded keyboard navigation, meaningful aria-label / tooltip via existing app primitives. Do not automatically move focus or repeatedly announce suggestions on each rerender; at most one polite assistive announcement when a new candidate becomes available. Honor font size and high-contrast themes.
 - **Responsive**: same row for full, compact, floating and narrow chat; on narrow screens hide the Tab visual and keep a tappable Insert affordance. Do not make it desktop-pointer-only like T3. Disabled or unsupported sources simply retain the current input, with no hanging skeleton.
 - **Loading**: never show an indefinite spinner under the composer. Suggestions are best-effort. No suggestion or provider error is not a failed chat turn. One concise hint in the existing settings explains why Claude may incur extra usage and why Codex needs a newer native version.
+- **Discoverability and activation:** the existing Settings toggle must identify supported provider types and the live state honestly: `On for new sessions` versus `Current Claude session needs a safe restart`, without claiming that a toggle retroactively changes a running SDK Query. Show this concise status **in Settings**, not as repeated chat notices. Do not auto-restart or interrupt working teammates; existing safe Restart control remains available. Codex 0.162 users see `Update Codex to enable` in Settings, not an inert promise in the composer.
+- **Draft and ordering:** a candidate is visually a suggestion, not a queued outbound message. The passive preview never changes draft persistence, send validation, member selection, action mode or scroll position. On arriving during a nonempty draft, keep the draft and suppress preview; **never delay sending** to wait for suggestions. After a new human input, discard the prior candidate even if its provider answer arrives later.
+- **Viewport/layout:** render inside the existing composer stack with stable height when shown; avoid covering chat history, navigation or floating corner actions. Preview truncates to 2 lines in normal layouts and 1 in compact, while click inserts the entire bounded text. On a narrow touch device, preserve a minimum 44px tap target for Insert and dismiss without adding a second row of competing controls.
 - **Settings**: one global opt-in toggle in an existing Settings surface (default OFF), not one switch per teammate, and not a separate onboarding page. Wording: "Suggest a next message" and "Uses extra provider requests. Applies to Claude and compatible Codex teammates." Feature flag changes are captured per native session and may need a safe Claude session restart; no forced interruption.
 
 ### UX state transitions (must have tests)
@@ -371,6 +374,7 @@ The feature is **implemented** only when all selected gates pass, not when the p
 - [ ] Native Claude suggestion from the **same owned SDK Query**, after successful terminal.
 - [ ] Native Codex sampling on a **compatible exact bound root thread** with exact expectedTurnId, without changing source history.
 - [ ] Old 0.162 Codex path correctly reports unsupported, without mutation or hidden upgrade.
+- [ ] Product rollout only after selected Host Codex native pin is **explicitly upgraded and qualified** for thread/sample; otherwise the feature is reported as Claude-only/partial coverage, never all teammates.
 - [ ] No extra ordinary model turn; no agent/tool action from sampling; no accidental replay after UNKNOWN.
 - [ ] Exact ownership for human DM, no cross-team/project/member/session leakage; lifecycle and cancellations proven.
 - [ ] Provider package/Session SPI exports remain compatible, packed consumers pass; no new root import side effect.
@@ -384,13 +388,13 @@ A failed feasibility gate produces a documented **unsupported/HOLD** path; it mu
 
 ## 12. Review record for this design
 
-This section records **design-only self-review**, not independent code-review approval. Four focused review passes were performed before finalizing this document:
+This section records **design-only self-review**, not independent code-review approval. Five focused review passes were performed before finalizing this document:
 
 1. **Ownership and clean boundaries (historical, superseded by coverage review):** initially required session-exclusivity for Claude to prevent unnecessary internal inference. This was safe but violated all-teammates coverage. Coverage revision adopts explicit opt-in + cost disclosure + strict per-operation presentation instead. Keep provider package without engine/domain imports and preserve existing Session SPI.
 2. **Native protocol and state safety (reviewed, corrected):** a queued UI run may be the latest ordinal but never have executed; bind suggestions to the **last real native completed turn**, not a UI ordinal. Record Codex sourceTurnId/token counts, explicit sample request-id cancellation (where available), and UNKNOWN cleanup distinction. A prompt instruction is not tool isolation: no tool action must be observed.
 3. **E2E and scope (reviewed, corrected):** add explicit scripted peer sequence and invariant counts; distinguish SDK fake stream, actual provider binary+localhost, and real vendor inference. Validate *actual model input* context and process cleanup, not a canned reply. Specify an ephemeral existing-transport event instead of a second SSE/poller. Pinned Claude checkpoint compatibility and Codex #8 integration overlap remain gated.
 
-**Completed design self-reviews (four passes, not independent approvals):**
+**Completed design self-reviews (five passes, not independent approvals):**
 
 | Pass | Finding | Correction |
 | --- | --- | --- |
@@ -398,6 +402,7 @@ This section records **design-only self-review**, not independent code-review ap
 | 2: native safety | UI latest run can be a never-executed cancelled queue entry; sample cancellation and tool-free prompt alone are insufficient guards. | Bind to **last executed native turn** and exact expected/source turn IDs. Track native sample request ID, cancellation/UNKNOWN cleanup and zero tool effects. |
 | 3: fixtures/compatibility | Existing Claude normalizer sees unexpected frames; active input is cleared on result. Synthetic text replies are not evidence of native context; adding a transport would overbuild. | Tap after-result frame before generic normalizer, capture settled slot before retirement. Add full JSON-RPC/Query fixture sequence, native upstream-context inspection, existing ephemeral Host notification, checkpoint compatibility and exact release evidence levels. |
 | 4: SOLID/DRY review | A new feature could accidentally import private session client internals, introduce a second cancellation loop, or invalidate checkpoint compatibility. | Explicit dependency/port boundaries and static import checks; reuse existing SDK Query/RPC, type-only optional hooks and legacy package checks. No new checkpoint data for auxiliary suggestions. |
+| 5: coverage/UX critical review | All-teammate support conflicts with previous Claude session-exclusivity rule; SDK opt-in cannot be toggled mid-session. Codex pinned 0.162 would leave all Codex teammates unsupported. A preview could cover compact/floating composers or overwrite drafts. | Supersede blanket exclusion; global informed opt-in + exact per-operation UI filters; new-session/restart state in existing Settings, explicit Codex >=0.165 qualified pin as launch gate; compact safe previews, touch affordances and no draft mutation. |
 
 **Unresolved implementation-time gates (not disguised as review passes):**
 1. Native Claude 0.3.305 prompt_suggestion in a **dedicated human direct Query**, with a fully isolated local scripted model endpoint and confirmed custody.
