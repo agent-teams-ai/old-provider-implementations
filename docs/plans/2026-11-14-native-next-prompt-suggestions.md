@@ -98,6 +98,21 @@ packages/provider-implementations/
 
 The legacy Desktop Host separately retains its existing process/domain layout in packages/legacy-agent-host. The existing UI's feature-first boundary remains in the app, not imported into the library.
 
+### SOLID / Clean Architecture / DRY enforcement
+
+| Principle | Enforceable decision | Regression evidence |
+| --- | --- | --- |
+| Single responsibility | Native provider tap only captures a candidate; Host alone decides authorization, eligibility, budgets and current conversation. | Provider code imports no Host, UI, task, ACL or DB module; consumer is the only publisher to UI. |
+| Open/closed | The feature is opt-in through a **separate** curated package export. Existing Claude, Codex and OpenCode driver behavior is unchanged when not wired. | Disabled/legacy packed consumer, SDK startup and original Session SPI tests pass. |
+| Liskov substitution | Do **not** add a mandatory method to the Session interface or claim all providers implement sampling. | Original fourteen SPI types are byte-compatible at exported type surface; OpenCode remains unaffected. |
+| Interface segregation | Two narrow sources: an injected callback for Claude SDK push and a typed one-shot sampling request for Codex App Server. | Tests use each source independently; no optional-method-rich universal manager. |
+| Dependency inversion | Source adapters depend on small feature-owned contracts and **consumer-provided** captured native handles, not concrete Host/runtime classes. | Static import checks and packed external consumer with no runtime engine. |
+| DRY | Candidate validation/terminal-freshness shape is shared exactly once. **Do not** unify unlike native transports or duplicate existing RPC queues, output feed and cancellation. | One pure validator with two adapter fixture suites; existing RPC and stream regressions remain green. |
+
+**Minimal composition rule:** the existing ClaudeSession/ CodexDriverSession exposes only a **type-only, optional notification/one-shot hook** at its current native boundary. The new feature consumes those injected hooks and knows no private paths from the old session-implementation feature. Concrete SDK Query and Codex RPC remain physically owned by their existing session drivers. The Host supplies source eligibility/cancellation; the feature returns candidates without owning Session/DriverFactory, child processes, checkpoint persistence or endpoint configuration. Avoid dependency cycles and avoid passing raw SDK Query, CodexRpcClient or unrestricted JSON-RPC into the Host.
+
+**No accidental checkpoint break:** the opt-in native suggestion callback is runtime-only auxiliary output, not checkpointed conversation input. Preserve existing Claude compatibility hash and Codex driverCompatibility unless a reviewed native behavior change proves otherwise. Test old disabled checkpoints, opt-in after safe restart and untouched OpenCode/consumer exports.
+
 ## 4. Ownership and contract
 
 ### Provider-facing wire candidate
@@ -305,19 +320,20 @@ A failed feasibility gate produces a documented **unsupported/HOLD** path; it mu
 
 ## 12. Review record for this design
 
-This section records **design-only self-review**, not independent code-review approval. Three focused review passes are required before finalizing this document:
+This section records **design-only self-review**, not independent code-review approval. Four focused review passes were performed before finalizing this document:
 
 1. **Ownership and clean boundaries (reviewed, corrected):** session-scoped Claude SDK flag can create inference on internal turns if enabled in a shared native session. Added **session-exclusivity eligibility before SDK construction**, rather than relying on Host/renderer filtering after generation. Keep provider package without engine/domain imports and preserve existing Session SPI.
 2. **Native protocol and state safety (reviewed, corrected):** a queued UI run may be the latest ordinal but never have executed; bind suggestions to the **last real native completed turn**, not a UI ordinal. Record Codex sourceTurnId/token counts, explicit sample request-id cancellation (where available), and UNKNOWN cleanup distinction. A prompt instruction is not tool isolation: no tool action must be observed.
 3. **E2E and scope (reviewed, corrected):** add explicit scripted peer sequence and invariant counts; distinguish SDK fake stream, actual provider binary+localhost, and real vendor inference. Validate *actual model input* context and process cleanup, not a canned reply. Specify an ephemeral existing-transport event instead of a second SSE/poller. Pinned Claude checkpoint compatibility and Codex #8 integration overlap remain gated.
 
-**Completed design self-reviews (three passes, not independent approvals):**
+**Completed design self-reviews (four passes, not independent approvals):**
 
 | Pass | Finding | Correction |
 | --- | --- | --- |
 | 1: boundaries/cost | Claude SDK promptSuggestions is per-Query/session. Filtering only at UI would still generate suggestions for internal agent work. | Require **exclusive human direct native session** before SDK initialization; suppress whole mixed session. Preserve existing SPI and owner separation. |
 | 2: native safety | UI latest run can be a never-executed cancelled queue entry; sample cancellation and tool-free prompt alone are insufficient guards. | Bind to **last executed native turn** and exact expected/source turn IDs. Track native sample request ID, cancellation/UNKNOWN cleanup and zero tool effects. |
 | 3: fixtures/compatibility | Existing Claude normalizer sees unexpected frames; active input is cleared on result. Synthetic text replies are not evidence of native context; adding a transport would overbuild. | Tap after-result frame before generic normalizer, capture settled slot before retirement. Add full JSON-RPC/Query fixture sequence, native upstream-context inspection, existing ephemeral Host notification, checkpoint compatibility and exact release evidence levels. |
+| 4: SOLID/DRY review | A new feature could accidentally import private session client internals, introduce a second cancellation loop, or invalidate checkpoint compatibility. | Explicit dependency/port boundaries and static import checks; reuse existing SDK Query/RPC, type-only optional hooks and legacy package checks. No new checkpoint data for auxiliary suggestions. |
 
 **Unresolved implementation-time gates (not disguised as review passes):**
 1. Native Claude 0.3.305 prompt_suggestion in a **dedicated human direct Query**, with a fully isolated local scripted model endpoint and confirmed custody.
