@@ -10,7 +10,7 @@ Delivery rule: separate Draft PR, no merge, no package release, no activation wi
 
 Build **one opt-in, feature-owned native prompt-suggestion capability** in the independent provider implementations package. The feature returns bounded, untrusted **candidate next user messages** from the **currently owned native session**. It never sends a user message, creates a product task, or owns conversation authority.
 
-- Claude: opt in to the pinned Claude Agent SDK's native push event, using the **existing session and Query stream**. A result arrives first; the subsequent prompt_suggestion must remain observable. No new Claude query, additional child, or manually synthesized history. **The SDK switch is session-scoped, not one-request-per-human-turn:** enable only for native sessions exclusively owned by eligible human direct conversations; otherwise feature stays unavailable for that session.
+- Claude: opt in to the pinned Claude Agent SDK's native push event, using the **existing session and Query stream**. A result arrives first; the subsequent prompt_suggestion must remain observable. No new Claude query, additional child, or manually synthesized history. **The SDK switch is session-scoped, not one-request-per-human-turn:** if the user opts in, make the capability available to **every Claude teammate session**; Host alone filters what reaches a human chat. Do not restrict to special roles or direct-only native sessions. Document and test that SDK may spend extra tokens after internal turns in mixed sessions.
 - Codex: an explicit, bounded **thread/sample** request against an **existing persistent root thread** of the **same captured App Server client**, using the exact completed native turn ID. The request is experimental. Do not simulate it with turn/start or spawn a second ordinary Codex thread. Return unsupported on incompatible versions/capabilities.
 - Host: owns the decision whether the completed input belongs to an active **human-to-teammate direct conversation**, its session/generation/tenant/project/lane identity, authorization, request admission, budgets, lifecycle and cancellations.
 - Frontend: uses the **existing composer**, not a new chat surface. Tab inserts the candidate only into an empty draft; Escape dismisses; there is no auto-send.
@@ -154,7 +154,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 
 ## 5. Claude SDK: exact lifecycle
 
-1. During the **existing** openClaudeSession/open Query composition, Host opts in to promptSuggestions **only if the whole native Query/session is exclusively reserved for eligible human-direct turns**. This is essential: the SDK boolean is session-scoped and can generate extra inference after internal turns even if Host later hides those suggestions. If that exclusivity cannot be proven (mixed agent/task/group/DM conversation), disable native Claude suggestions for that session; **do not** turn on the SDK boolean and filter afterward. Capture flag immutably with the session; changes take effect at the next safe open/restart. Preserve custody.launch, env restrictions, settings and config compatibility.
+1. During the **existing** openClaudeSession/open Query composition, opt in to promptSuggestions for **every Claude teammate/lead owned session** when the user explicitly enabled the global setting and the provider capability is supported. Do not require a human-direct-only session; real teams legitimately mix DM, group and internal work. This option is session-scoped, so the SDK may trigger inference after non-human turns; the separate Host authorization and operation checks prevent showing them, **but do not prevent provider usage**. This trade-off must be visible in Settings before opt-in, with an optional existing-host budget/backpressure gate at safe session open (no new quota subsystem). Capture flag immutably with the session; changes take effect at the next safe open/restart. Preserve custody.launch, env restrictions, settings and config compatibility.
 2. Continue consuming the same AsyncIterable **past the SDK result**. Native prompt_suggestion arrives asynchronously after result; processing result must not terminate the stream or close the Query prematurely.
 3. Existing ClaudeSession tracks active/settled input and operationRef. **Current source observation:** acceptTerminal clears this.active immediately on result. Capture a **single fenced settled slot before this.active is cleared** (session instance + operationRef + monotonic turn generation), otherwise an after-result prompt_suggestion has no owner. On new admitted input, close, abort, restore mismatch or turn failure, clear it synchronously.
 4. Tap the SDK prompt_suggestion frame **before** generic Claude Normalizer/backgroundNormalizer, nested events or normal SPI event projection; the existing normalizer does not own this event. Validate type, nonempty bounded suggestion, native session_id and current slot. Route a candidate through the optional feature sink; do not reinterpret it as ordinary SPI result/text/diagnostic and do not expose as a durable event.
@@ -192,7 +192,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 ## 7. State, limits and security
 
 - No DB. Host keeps a single **latest in-memory candidate per active conversation** and a bounded dismissal key per (session generation, operationRef). A cold restart drops suggestions; this is correct, not data loss. Provider library stores at most one in-flight sample/settled slot per native session.
-- **Codex:** at most one sample inference request per **eligible completed human turn**, never per internal task or streaming event. **Claude:** enabling SDK promptSuggestions can cause a request after **each SDK turn** in that native session. Therefore require session-level human-direct exclusivity before enabling; do not rely on downstream filtering to control cost/privacy. Default **off** until explicit user-facing opt-in. Host uses its existing budget and concurrency policy; no provider-side global quota engine. Abort/suppress on high workload where supported; Claude may require safe session restart to change the SDK option.
+- **Codex:** at most one sample inference request per **eligible completed human turn**, never per internal task or streaming event. **Claude:** enabling SDK promptSuggestions may use one additional inference request after **every SDK turn**, including internal work in mixed sessions. This cannot be converted into per-turn gating merely by UI filtering. Product policy is a **global default-off opt-in with clear cost notice**, no per-teammate exclusions; use the existing Host budgets and session-start backpressure when available. Do not falsely claim zero hidden inference or automatic immediate disable on open Claude Queries; a safe restart may be needed to change the option.
 - Bound inputs/output (proposal: max 512 UTF-8 bytes displayed, max 4 KiB native sampler instruction, maximum 1 candidate, per-request deadline no longer than current native RPC limit; constants reviewed against UX). Truncate? **Reject** over-limit native suggestions, do not silently truncate or split UTF-8.
 - Candidate text is **untrusted model output**. Render as text, not HTML/Markdown with active links; never execute tools, commands or shell fragments. Acceptance inserts editable text only; user must separately send.
 - Do not log raw suggestion, native conversation, credentials, paths or provider response bodies in default telemetry. Allowed metrics: feature enabled/disabled, supported/unsupported, produced/suppressed/stale, latency bucket and sanitized failure category.
@@ -209,6 +209,69 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 - **No alternate UI** for Create, Launch, Resume, messages, review or team tasks. Product owner must provide the exact conversation-to-native-operation mapping before the feature can show a suggestion; no guessed role from the last displayed bubble.
 - Future **new agent-runtime / orchestrator** may adopt the provider package through its published typed adapter. There is no back-import, migration to new engine, or future domain authority in this feature.
 
+## 8A. All-teammate coverage contract and polished UX
+
+**Non-negotiable coverage:** this is one global user-facing feature for **every teammate with an effective Claude or Codex provider**, not a lead-only flag, model-name heuristic or one selected team. For each selected member, resolve the canonical effective provider from the **member's captured runtime lane**; never reuse the lead provider or infer from display name. The same rules work for solo mode, ordinary teams and mixed-provider teams. A teammate can receive internal work and still be eligible for a later **human direct** prompt in its native session. A candidate is only presented if its origin can be proven; "eligible teammate" does not imply "every response creates a suggestion."
+
+### Coverage matrix (must become executable acceptance cases)
+
+| Target / surface | Requirement | When shown |
+| --- | --- | --- |
+| Claude lead, solo or multi-member | Supported, not special-cased by role | Human DM to lead; exact completed input |
+| Claude non-lead teammate in Claude or mixed team | Supported even when native session also handles tasks/group messages | Human DM to that teammate, not its internal task |
+| Codex lead or non-lead teammate | Supported for **qualified native App Server** regardless of team lead provider | Human DM + persistent root + valid completed turn |
+| Same provider, multiple teammates | Each has independently owned native session/result and candidate | Only selected recipient and conversation |
+| Same-named teammate in two teams | Separate team/session generations and operation IDs | Never cross-show or cross-dismiss |
+| Existing session after enabling feature | Claude next safe query restart; Codex eligible next completed direct turn | No forced kill/restart; show current capability status |
+| Mixed conversation traffic | No blanket member exclusion; provider output may still be generated in Claude | Only proven human-origin direct operation |
+| Group chat, broadcast, cross-team agent/internal task, bootstrap, schedule | No single human-to-teammate follow-up prediction | Suppress without new UI or inference (Codex); Claude may still emit |
+| OpenCode, Gemini, missing/old Codex or unavailable native session | Graceful unsupported; no fallback generation or spinner | Existing composer remains unchanged |
+
+**Completeness rule:** when feature flag is on, each eligible active Claude session has the native tap bound, and every eligible compatible Codex session has a sampling capability. Do **not** promise suggestions on arbitrary provider-neutral/non-native profiles: verify actual selected native owner and report unsupported privately. A user never needs to select a lead first or manually install a second provider for each teammate.
+
+### Visual interaction (existing composer only)
+
+Use a **small, understated suggestion row inside the existing composer surface**, beneath its recipient toolbar / immediately above the input. Prefer this over ghost text **inside** MentionableTextarea: the current editor has overlay chips, backdrops, @/#/slash dropdowns, IME and multiple layout modes; injecting ghost text into it risks caret/selection regressions. The row is a **preview**, not an editable draft, user message bubble, tooltip-only hint or toast.
+
+~~~text
+┌───────────────────────────────────────────────────────┐
+│ To: Codex · backend                                   │  existing toolbar
+│  ✧  Check the tests and open a PR      [Tab] [Insert] ×│  suggestion row
+│  [Your message…                                       ]│  existing editor
+│                                         microphone Send│  existing footer
+└───────────────────────────────────────────────────────┘
+~~~
+
+- Visually restrained: same app surface tokens, muted text, subtle boundary/divider, at most two preview lines, narrow sparkle icon **not a colored badge**, no new box/card frame, no large explanatory copy. Soft 120–160 ms appearance only if reduced-motion permits; no layout-shifting animation or perpetual shimmer.
+- Preview is plain safe text; no Markdown/HTML rendering, links or tool execution. If candidate exceeds 2 lines, clamp preview with ellipsis while **Insert** preserves the full bounded candidate. No fabricated word-by-word typing.
+- **Tab** fills the draft **only** when input is empty, focused, non-composing, with no active mention/command/task menu, no attachment/chip, no queue edit/revision/approval and no keyboard shortcut owner. **Shift+Tab** stays normal focus movement. Never steal Tab when the focus is on the suggestion controls.
+- Mouse/touch **Insert** is a real button with accessible name, and always rechecks candidate revision/recipient before inserting. Escape or × dismisses this one candidate without clearing a saved draft. If user starts typing/pasting/recording or opens other composer interactions, hide suggestion; do not overwrite anything. No implicit send.
+- After insertion, text becomes an ordinary editable draft, and the row disappears. Submit still uses existing button/shortcut; never auto-submit, auto-queue or modify action mode (Do/Ask/Delegate).
+- **Accessibility**: use a regular button, visible focus ring, bounded keyboard navigation, meaningful aria-label / tooltip via existing app primitives. Do not automatically move focus or repeatedly announce suggestions on each rerender; at most one polite assistive announcement when a new candidate becomes available. Honor font size and high-contrast themes.
+- **Responsive**: same row for full, compact, floating and narrow chat; on narrow screens hide the Tab visual and keep a tappable Insert affordance. Do not make it desktop-pointer-only like T3. Disabled or unsupported sources simply retain the current input, with no hanging skeleton.
+- **Loading**: never show an indefinite spinner under the composer. Suggestions are best-effort. No suggestion or provider error is not a failed chat turn. One concise hint in the existing settings explains why Claude may incur extra usage and why Codex needs a newer native version.
+- **Settings**: one global opt-in toggle in an existing Settings surface (default OFF), not one switch per teammate, and not a separate onboarding page. Wording: "Suggest a next message" and "Uses extra provider requests. Applies to Claude and compatible Codex teammates." Feature flag changes are captured per native session and may need a safe Claude session restart; no forced interruption.
+
+### UX state transitions (must have tests)
+
+~~~text
+disabled/unsupported → no row
+enabled + human DM in progress → no row
+completed eligible turn + matching candidate + empty editable composer → offer row
+offer + Tab/Insert → insert editable text once; dismiss row
+offer + Escape/× → dismiss row for that exact operation
+offer + user types/pastes/attaches/switches receiver/opens command → hide, preserve draft
+offer + new executed turn, clear, stop, relaunch, session generation change → invalidate
+offer + cancelled queued run that never executed → still allow last executed
+late/foreign/error/empty native output → no row, no product/chat error
+~~~
+
+Existing UI baseline is MessageComposer / MessageComposerInput / MentionableTextarea in Stage 1. **One** feature hook and one passive row, with a narrow keyboard callback; avoid bloating the 1400+ line MentionableTextarea implementation or adding an alternate editor. Existing team recipient selection, direct list, group, expanded/compact/floating composer variants and localization must be covered by visual E2E, not unit snapshots alone.
+
+### UX success criteria
+
+Test at 1440x900 and compact/narrow viewport, light/dark themes, keyboard-only, CJK IME, reduced motion and screen-reader landmarks. Verify no overlap with mention menus, file chips, buttons, responsive content, queue and revision notices; no focus loss; no layout jumping of sent message list; no misattributed provider identity. User must understand the row is a **suggestion they can edit**, not an agent action or unsent queued message, without reading documentation. Keep additional UI controls to **Insert and dismiss** only.
+
 ## 9. Phase 1 test architecture: no real subscriptions
 
 All cases run under TEST HOME / TEMP, isolated config/profile/worktree, generated credentials **not** copied from the user, localhost-only scripted model endpoint, deterministic clocks and captured child PIDs. Test runner must prove cleanup of only its own resources.
@@ -218,10 +281,11 @@ All cases run under TEST HOME / TEMP, isolated config/profile/worktree, generate
 | Case | Fixture signal | Mandatory assertion |
 | --- | --- | --- |
 | Claude happy path | SDK Query async iterator emits assistant, successful result, delayed prompt_suggestion | One correct operationRef candidate, after result, no second query/input |
+| All teammates + mixed teams | Claude lead, Claude peer, Codex lead/peer; two teams with same member name; human DM after an internal task | Feature works for each eligible captured member, not just lead; no stale cross-member suggestion; native Claude may spend after internal turns but does not display them |
 | Claude suppressions | First turn, plan mode, API error, no cache params, absent suggestion | Zero candidates, unaffected normal result |
 | Claude stale | New input admitted before delayed suggestion; session generation changed | No candidate from previous operation |
 | Claude shutdown | Abort/close before event; duplicate or foreign session ID | No leaked callback or stale candidate; cleanup receipt preserved |
-| Claude mixed-session denial | Runtime session also accepts internal task, group, delegated or agent-to-agent turns | SDK promptSuggestions option stays **false at Query construction**, not merely hidden by renderer |
+| Claude mixed-session targeting | Claude lead/teammate session receives user DM, internal task, group and another user DM | Capability available to this teammate; only the right completed human DM can appear, internal candidates never displayed, extra SDK usage accounted for honestly |
 | Codex happy path | Real JSON-RPC frames: initialize, thread/start or resume, turn/start/completed, then thread/sample | One request with exact threadId/expectedTurnId, sourceTurnId match, normal parent untouched |
 | Codex non-support | Simulate 0.162, method-not-found, experimental disabled | Explicit unsupported, no fallback turn/start |
 | Codex invalid result | null/empty, overlong text, wrong sourceTurnId, unexpected frame, tool attempt | None/stale/refusal; never forwarded |
@@ -310,7 +374,7 @@ The feature is **implemented** only when all selected gates pass, not when the p
 - [ ] No extra ordinary model turn; no agent/tool action from sampling; no accidental replay after UNKNOWN.
 - [ ] Exact ownership for human DM, no cross-team/project/member/session leakage; lifecycle and cancellations proven.
 - [ ] Provider package/Session SPI exports remain compatible, packed consumers pass; no new root import side effect.
-- [ ] Claude result->prompt_suggestion mapping survives active-input retirement and native checkpoint resume, but no suggestion is requested for mixed SDK sessions.
+- [ ] Claude result->prompt_suggestion mapping survives active-input retirement, native checkpoint resume, mixed session roles and internal work; internal-work suggestion is never displayed, and SDK inference overhead is documented.
 - [ ] Codex #8 account Draft source overlap and selected 0.162 vs >=0.165 version gate are reconciled before product wiring.
 - [ ] Selected Host + Desktop existing composer journey and cold readback pass, including keyboard/IME.
 - [ ] No vendor credentials used in Phase 1; TEST/native/vendor evidence levels recorded separately.
@@ -322,7 +386,7 @@ A failed feasibility gate produces a documented **unsupported/HOLD** path; it mu
 
 This section records **design-only self-review**, not independent code-review approval. Four focused review passes were performed before finalizing this document:
 
-1. **Ownership and clean boundaries (reviewed, corrected):** session-scoped Claude SDK flag can create inference on internal turns if enabled in a shared native session. Added **session-exclusivity eligibility before SDK construction**, rather than relying on Host/renderer filtering after generation. Keep provider package without engine/domain imports and preserve existing Session SPI.
+1. **Ownership and clean boundaries (historical, superseded by coverage review):** initially required session-exclusivity for Claude to prevent unnecessary internal inference. This was safe but violated all-teammates coverage. Coverage revision adopts explicit opt-in + cost disclosure + strict per-operation presentation instead. Keep provider package without engine/domain imports and preserve existing Session SPI.
 2. **Native protocol and state safety (reviewed, corrected):** a queued UI run may be the latest ordinal but never have executed; bind suggestions to the **last real native completed turn**, not a UI ordinal. Record Codex sourceTurnId/token counts, explicit sample request-id cancellation (where available), and UNKNOWN cleanup distinction. A prompt instruction is not tool isolation: no tool action must be observed.
 3. **E2E and scope (reviewed, corrected):** add explicit scripted peer sequence and invariant counts; distinguish SDK fake stream, actual provider binary+localhost, and real vendor inference. Validate *actual model input* context and process cleanup, not a canned reply. Specify an ephemeral existing-transport event instead of a second SSE/poller. Pinned Claude checkpoint compatibility and Codex #8 integration overlap remain gated.
 
@@ -330,7 +394,7 @@ This section records **design-only self-review**, not independent code-review ap
 
 | Pass | Finding | Correction |
 | --- | --- | --- |
-| 1: boundaries/cost | Claude SDK promptSuggestions is per-Query/session. Filtering only at UI would still generate suggestions for internal agent work. | Require **exclusive human direct native session** before SDK initialization; suppress whole mixed session. Preserve existing SPI and owner separation. |
+| 1: boundaries/cost (superseded) | Claude SDK promptSuggestions is per-Query/session. Filtering only at UI would still generate suggestions for internal agent work. | Initially restricted to exclusive human-direct sessions. **Superseded after explicit all-teammate requirement**: enable with informed opt-in in all selected Claude sessions, filter only presentation, and account for usage. |
 | 2: native safety | UI latest run can be a never-executed cancelled queue entry; sample cancellation and tool-free prompt alone are insufficient guards. | Bind to **last executed native turn** and exact expected/source turn IDs. Track native sample request ID, cancellation/UNKNOWN cleanup and zero tool effects. |
 | 3: fixtures/compatibility | Existing Claude normalizer sees unexpected frames; active input is cleared on result. Synthetic text replies are not evidence of native context; adding a transport would overbuild. | Tap after-result frame before generic normalizer, capture settled slot before retirement. Add full JSON-RPC/Query fixture sequence, native upstream-context inspection, existing ephemeral Host notification, checkpoint compatibility and exact release evidence levels. |
 | 4: SOLID/DRY review | A new feature could accidentally import private session client internals, introduce a second cancellation loop, or invalidate checkpoint compatibility. | Explicit dependency/port boundaries and static import checks; reuse existing SDK Query/RPC, type-only optional hooks and legacy package checks. No new checkpoint data for auxiliary suggestions. |
@@ -338,7 +402,7 @@ This section records **design-only self-review**, not independent code-review ap
 **Unresolved implementation-time gates (not disguised as review passes):**
 1. Native Claude 0.3.305 prompt_suggestion in a **dedicated human direct Query**, with a fully isolated local scripted model endpoint and confirmed custody.
 2. Exact Codex App Server >=0.165 experimental thread/sample support on **persistent root** using current package protocols, without a vendor subscription.
-3. Host product data model proving an exclusive direct-conversation/native-session/operation mapping; no guess from member name or UI latest run. If no such mapping exists, leave feature disabled.
+3. Host product data model proving exact identity for **each** direct-conversation/native-session/operation mapping across all eligible members, even in mixed session workloads; never guess from member name or UI latest run. Suppress only the unprovable candidate, not all teammates.
 4. No overlap/collision with open provider Codex #8; selected tested artifact SHA and upstream base must be rechecked.
 5. Follow-up Host/renderer PR and selected existing Desktop fixture E2E; the provider-only plan is not product acceptance.
 
