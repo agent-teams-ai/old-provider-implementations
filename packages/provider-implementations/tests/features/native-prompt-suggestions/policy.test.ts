@@ -18,7 +18,9 @@ test('native suggestion is bounded, immutable and never accepts non-text control
   const result = nativeSuggestionCandidate('claude', origin, '  Review the tests  ');
   assert.equal(result?.text, 'Review the tests');
   assert.equal(Object.isFrozen(result), true);
-  assert.equal(nativeSuggestionCandidate('codex', { ...origin, nativeTurnRef: undefined }, 'test'), null);
+  assert.equal(nativeSuggestionCandidate('codex', { sessionRef: origin.sessionRef,
+    inputId: origin.inputId, operationRef: origin.operationRef,
+    nativeSessionRef: origin.nativeSessionRef }, 'test'), null);
   assert.equal(nativeSuggestionCandidate('claude', origin, 'x'.repeat(513)), null);
   assert.equal(nativeSuggestionCandidate('claude', origin, '\u0000evil'), null);
   assert.equal(nativeSuggestionCandidate('claude', origin, '  '), null);
