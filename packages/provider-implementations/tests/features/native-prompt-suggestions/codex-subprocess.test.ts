@@ -15,7 +15,7 @@ async function run(t: Parameters<typeof context>[0], revision = '0.165.0') {
     },
   };
   const factory = createCodexDriverFactory({
-    capabilities: ['text', 'checkpoint'],
+    capabilities: captured.host.capabilities,
     resolveConfiguration: async () => selected,
     readCheckpoint: async () => undefined,
   });
