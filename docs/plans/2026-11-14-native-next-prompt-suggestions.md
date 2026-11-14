@@ -141,11 +141,11 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 
 1. During the **existing** openClaudeSession/open Query composition, Host opts in to promptSuggestions **only if the whole native Query/session is exclusively reserved for eligible human-direct turns**. This is essential: the SDK boolean is session-scoped and can generate extra inference after internal turns even if Host later hides those suggestions. If that exclusivity cannot be proven (mixed agent/task/group/DM conversation), disable native Claude suggestions for that session; **do not** turn on the SDK boolean and filter afterward. Capture flag immutably with the session; changes take effect at the next safe open/restart. Preserve custody.launch, env restrictions, settings and config compatibility.
 2. Continue consuming the same AsyncIterable **past the SDK result**. Native prompt_suggestion arrives asynchronously after result; processing result must not terminate the stream or close the Query prematurely.
-3. Existing ClaudeSession tracks active/settled input and operationRef. On terminal success, retain a **single fenced settled slot** (session instance + operationRef + monotonic turn generation). On new admitted input, close, abort, restore mismatch or turn failure, clear it synchronously.
-4. Validate SDK message type, nonempty bounded suggestion, native session_id and current slot. Route a candidate through the optional feature sink; do not reinterpret it as ordinary SPI result/text and do not expose as a durable event.
+3. Existing ClaudeSession tracks active/settled input and operationRef. **Current source observation:** acceptTerminal clears this.active immediately on result. Capture a **single fenced settled slot before this.active is cleared** (session instance + operationRef + monotonic turn generation), otherwise an after-result prompt_suggestion has no owner. On new admitted input, close, abort, restore mismatch or turn failure, clear it synchronously.
+4. Tap the SDK prompt_suggestion frame **before** generic Claude Normalizer/backgroundNormalizer, nested events or normal SPI event projection; the existing normalizer does not own this event. Validate type, nonempty bounded suggestion, native session_id and current slot. Route a candidate through the optional feature sink; do not reinterpret it as ordinary SPI result/text/diagnostic and do not expose as a durable event.
 5. Ignore duplicate/late frames, suppression, errors, plan mode and lack of event. No separate inference fallback. Check the exact pinned SDK 0.3.305 for observed message shape, not just a newer SDK's docs.
 
-**Potential seam requiring investigation in implementation:** ClaudeSession.read/inputs race near a new queued input. A source event may arrive after a new input advances. The completed slot must be invalidated on actual **new input admission**, not merely when a message is typed in UI. Host generation check provides a second guard.
+**Observed seam and remaining qualification:** ClaudeSession.read continues iterating after result (good), while acceptTerminal retires active input immediately (a deliberate lifecycle contract). A source event may arrive after a queued input advances. The completed slot must be captured before retirement and invalidated on actual **new input admission**, not merely when a message is typed in UI. Host generation check provides a second guard. Snapshot the optional feature flag without making it an incompatible native checkpoint version: suggestions are auxiliary output, not native conversation history. Explicitly test old checkpoints with the feature disabled and enabled across a safe new process.
 
 ## 6. Codex App Server: exact lifecycle
 
@@ -189,7 +189,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 **Not part of this plan-only PR.** After provider library qualification:
 
 - **Host slice** on Desktop Stage 1 branch packages/legacy-agent-host: opt-in flag in captured open config, native terminal binding, identity/authorization/eligibility gate, single ephemeral candidate read/subscribe through existing Host transport. No new host supervisor or parallel Session SPI. Preserve status/accepted/UNKNOWN semantics for normal user inputs.
-- **Browser-safe transport** in existing app feature architecture: one DTO/request+event or existing subscription extension; IPC and HTTP both call the same Host use case. No direct provider SDK in renderer.
+- **Browser-safe transport** in existing app feature architecture: extend the existing Host event delivery with **one typed, ephemeral suggestion notification** and one common authorization/freshness use case; IPC and HTTP both pass through that use case. Do not create a second SSE server, polling scheduler or durable message feed. A reconnect may drop the candidate; no history replay is needed. No direct provider SDK in renderer.
 - **Existing composer** MessageComposer → MessageComposerInput → MentionableTextarea: add a tiny presentation hook and ghost suggestion, no new editor/chat system; Tab accepts when empty and no mention/slash/IME control, Escape dismisses, mouse/touch has explicit accessible action. Keep @, #, /, chips, attachments, queue and revision input behavior unchanged.
 - **No alternate UI** for Create, Launch, Resume, messages, review or team tasks. Product owner must provide the exact conversation-to-native-operation mapping before the feature can show a suggestion; no guessed role from the last displayed bubble.
 - Future **new agent-runtime / orchestrator** may adopt the provider package through its published typed adapter. There is no back-import, migration to new engine, or future domain authority in this feature.
@@ -217,10 +217,36 @@ All cases run under TEST HOME / TEMP, isolated config/profile/worktree, generate
 
 Use current SDK QueryFactory fixture and CodexAppServerTransport/subprocess fixture, not made-up methods. Assert native JSON-RPC request/notification IDs, exact startup, body, turn and cleanup. Negative cases must be **executed assertions**, not skipped tests.
 
+### Canonical executable fixture scripts and audit counters
+
+Use the **existing** Claude QueryFactory test seam and CodexAppServerTransport/subprocess fixture. Minimal deterministic cases, not a new mock-server product:
+
+~~~text
+CLAUDE (stream on captured SessionRef, no new query)
+  SDK.user(inputId=I1, operationRef=OP1, nativeSession=S1)
+  SDK.assistant(...) -> SDK.result(success, session_id=S1)
+  wait scripted 75 ms -> SDK.prompt_suggestion(session_id=S1, suggestion="Review the tests")
+  assert Host candidate(OP1), result already emitted, native input count=1, Query count=1
+  repeat with OP2 admitted before delayed frame -> zero old candidates
+
+CODEX (one captured stdio App Server client / persistent root)
+  client -> initialize(experimentalApi=true) -> initialized
+  client -> thread/start(persistent root) -> threadId=T1
+  client -> turn/start(threadId=T1, input=I1) -> native turnId=N1
+  peer -> turn/completed(N1)
+  client -> thread/sample(threadId=T1, expectedTurnId=N1, prompt=...)
+  peer -> response(sourceTurnId=N1, text="Review the tests", token counters)
+  assert: thread/start count=1, turn/start count=1, sample count=1,
+          tool effects=0, source history unchanged, suggestion linked to OP1
+  inject thread N2 or another session before response -> zero stale candidates
+~~~
+
+The scripted fixture must honor real JSON-RPC message IDs, async writes/reads, cancellation and the native response schema; no direct call to a stubbed suggestion method at the UI boundary. Assert counts and exact request/response IDs in logs/receipts, with only TEST strings. For a native-binary result, **also** inspect upstream model-request bodies and process identity. Do not report zero skipped tests as evidence that all scenarios executed if a gate is conditional.
+
 ### Tier B: native local binary with scripted model endpoint (required gate for native claim)
 
-- Run the **selected native Claude SDK 0.3.305** with Host-injected spawn/config and a fresh local scripted inference backend only if the SDK/binary supports it without vendor credentials. If it cannot be safely isolated, retain Tier A proof and mark this native claim HOLD.
-- Run **actual Codex App Server >=0.165** with experimental API and TEST CODEX_HOME, a **persistent root thread**, two completed turns against scripted localhost inference, followed by thread/sample using the exact turn. Verify request semantics, source UUID, fork isolation, absence of tool calls/source mutation, token counters and normal close/cleanup. If local model emulation is unsupported, mark native sampling HOLD; do not disguise a fake JSON-RPC server as native.
+- Run the **selected native Claude SDK 0.3.305** with Host-injected spawn/config and a fresh local scripted Anthropic-compatible inference endpoint only if the SDK/binary supports it without vendor credentials. Set an isolated fake API key scoped only to the localhost test server and deny all non-loopback egress. Inspect whether the actual native model requests contain the expected two-turn marker; a predetermined reply alone is not proof of retained context. If it cannot be safely isolated, retain Tier A proof and mark this native claim HOLD.
+- Run **actual Codex App Server >=0.165** with experimental API and TEST CODEX_HOME, a **persistent root thread**, two completed turns against scripted localhost inference, followed by thread/sample using the exact turn. Verify request semantics, source UUID, fork isolation, absence of tool calls/source mutation, token counters and normal close/cleanup. **Inspect the actual upstream HTTP model-request body** for prior first-turn and second-turn markers and assert each appears in inherited context as expected; sample text by itself does not prove native history continuity. If local model emulation is unsupported, mark native sampling HOLD; do not disguise a fake JSON-RPC server as native.
 - No real vendor credentials, subscription login, external inference, global config mutation or unbounded retries. Capture binary SHA/version, OS/arch, fixture hashes, request counts, exact passed/failed/skipped/held cases, timestamps and PIDs. Keep secrets and raw prompts out of uploaded artifacts.
 
 ### Tier C: Stage 1 Host + actual existing Desktop UI (after provider package adoption)
@@ -268,7 +294,9 @@ The feature is **implemented** only when all selected gates pass, not when the p
 - [ ] Old 0.162 Codex path correctly reports unsupported, without mutation or hidden upgrade.
 - [ ] No extra ordinary model turn; no agent/tool action from sampling; no accidental replay after UNKNOWN.
 - [ ] Exact ownership for human DM, no cross-team/project/member/session leakage; lifecycle and cancellations proven.
-- [ ] Provider package/Session SPI exports remain compatible, packed consumers pass.
+- [ ] Provider package/Session SPI exports remain compatible, packed consumers pass; no new root import side effect.
+- [ ] Claude result->prompt_suggestion mapping survives active-input retirement and native checkpoint resume, but no suggestion is requested for mixed SDK sessions.
+- [ ] Codex #8 account Draft source overlap and selected 0.162 vs >=0.165 version gate are reconciled before product wiring.
 - [ ] Selected Host + Desktop existing composer journey and cold readback pass, including keyboard/IME.
 - [ ] No vendor credentials used in Phase 1; TEST/native/vendor evidence levels recorded separately.
 - [ ] Multiple source/security/UX review rounds, exact-head CI, no unresolved blocking findings.
@@ -281,7 +309,22 @@ This section records **design-only self-review**, not independent code-review ap
 
 1. **Ownership and clean boundaries (reviewed, corrected):** session-scoped Claude SDK flag can create inference on internal turns if enabled in a shared native session. Added **session-exclusivity eligibility before SDK construction**, rather than relying on Host/renderer filtering after generation. Keep provider package without engine/domain imports and preserve existing Session SPI.
 2. **Native protocol and state safety (reviewed, corrected):** a queued UI run may be the latest ordinal but never have executed; bind suggestions to the **last real native completed turn**, not a UI ordinal. Record Codex sourceTurnId/token counts, explicit sample request-id cancellation (where available), and UNKNOWN cleanup distinction. A prompt instruction is not tool isolation: no tool action must be observed.
-3. **E2E and scope:** ensure tests really execute native integrations where claimed, no subscriptions/real HOME, no silent skips, no alternate UI, realistic LOC and migration conflict isolation.
+3. **E2E and scope (reviewed, corrected):** add explicit scripted peer sequence and invariant counts; distinguish SDK fake stream, actual provider binary+localhost, and real vendor inference. Validate *actual model input* context and process cleanup, not a canned reply. Specify an ephemeral existing-transport event instead of a second SSE/poller. Pinned Claude checkpoint compatibility and Codex #8 integration overlap remain gated.
+
+**Completed design self-reviews (three passes, not independent approvals):**
+
+| Pass | Finding | Correction |
+| --- | --- | --- |
+| 1: boundaries/cost | Claude SDK promptSuggestions is per-Query/session. Filtering only at UI would still generate suggestions for internal agent work. | Require **exclusive human direct native session** before SDK initialization; suppress whole mixed session. Preserve existing SPI and owner separation. |
+| 2: native safety | UI latest run can be a never-executed cancelled queue entry; sample cancellation and tool-free prompt alone are insufficient guards. | Bind to **last executed native turn** and exact expected/source turn IDs. Track native sample request ID, cancellation/UNKNOWN cleanup and zero tool effects. |
+| 3: fixtures/compatibility | Existing Claude normalizer sees unexpected frames; active input is cleared on result. Synthetic text replies are not evidence of native context; adding a transport would overbuild. | Tap after-result frame before generic normalizer, capture settled slot before retirement. Add full JSON-RPC/Query fixture sequence, native upstream-context inspection, existing ephemeral Host notification, checkpoint compatibility and exact release evidence levels. |
+
+**Unresolved implementation-time gates (not disguised as review passes):**
+1. Native Claude 0.3.305 prompt_suggestion in a **dedicated human direct Query**, with a fully isolated local scripted model endpoint and confirmed custody.
+2. Exact Codex App Server >=0.165 experimental thread/sample support on **persistent root** using current package protocols, without a vendor subscription.
+3. Host product data model proving an exclusive direct-conversation/native-session/operation mapping; no guess from member name or UI latest run. If no such mapping exists, leave feature disabled.
+4. No overlap/collision with open provider Codex #8; selected tested artifact SHA and upstream base must be rechecked.
+5. Follow-up Host/renderer PR and selected existing Desktop fixture E2E; the provider-only plan is not product acceptance.
 
 Final corrections and explicit unresolved implementation-time gates must be recorded here after review.
 
