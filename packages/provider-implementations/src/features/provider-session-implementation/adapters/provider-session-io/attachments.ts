@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FailureCode, Input } from '@agent-teams/provider-session-contracts';
 import { bounded } from './io.ts';
+import { isNativeAbsolutePath } from './native-path.ts';
 
 type Reference = NonNullable<Input['attachments']>[number];
 type Binding = { readonly trustedBinding: string; readonly sessionRef: string; readonly inputId: string; readonly operationRef: string; readonly fingerprint: string; readonly reference: Reference };
@@ -105,7 +106,7 @@ export async function prepareAttachments(input: Input, options: { trustedBinding
     if (!sameBinding(result.binding, request) || !(result.bytes instanceof Uint8Array) || result.bytes.byteLength !== reference.byteLength) { throw new AttachmentFailure('invalid-config'); }
     const bytes = Uint8Array.from(result.bytes);
     if (bytes.byteLength !== reference.byteLength || createHash('sha256').update(bytes).digest('hex') !== reference.digest ||
-      (requirePath && (typeof result.nativePath !== 'string' || !result.nativePath.startsWith('/') || result.nativePath.includes('\0')))) { throw new AttachmentFailure('invalid-config'); }
+      (requirePath && !isNativeAbsolutePath(result.nativePath))) { throw new AttachmentFailure('invalid-config'); }
     prepared.push({ reference, bytes, ...(result.nativePath !== undefined ? { nativePath: result.nativePath } : {}) });
   }
   return prepared;

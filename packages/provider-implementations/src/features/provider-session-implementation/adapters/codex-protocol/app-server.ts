@@ -13,8 +13,12 @@ import { nativeThreadId, nativeTurnId } from './notification-mapper.ts'
 import { captureModelListRequest, captureConfigReadRequest, decodeRuntimeIdentity, decodeAccountMetadata, decodeModelPage, decodeModelConfiguration } from './metadata.ts'
 import type { CodexRuntimeIdentity, CodexAccountMetadata, CodexModelListRequest, CodexModelPage, CodexConfigReadRequest, CodexModelConfiguration } from './metadata.ts'
 import { record, string } from './wire-frames.ts'
+import { decodeCodexConnectionNotification } from './connection-notifications.ts'
+import type { CodexConnectionNotification } from './connection-notifications.ts'
 import { captureMcpStatusRequest, decodeMcpStatusPage } from './mcp-status.ts'
 import type { CodexMcpStatusRequest, CodexMcpServerStatusPage } from './mcp-status.ts'
+import { captureAccountLoginId, captureAccountLoginType, decodeAccountLoginStart, decodeAccountLoginCancel, decodeAccountLoginCompleted } from './account-login.ts'
+import type { CodexAccountLoginType, CodexAccountLoginStart, CodexAccountLoginCompleted, CodexAccountLoginCancel } from './account-login.ts'
 
 export type CodexAppServerOptions = {
   readonly transport: CodexAppServerTransport
@@ -24,6 +28,10 @@ export type CodexAppServerOptions = {
   readonly onServerRequest?: () => void
   /** Attributed native item fact, including delta-only items. No permission authority is transferred. */
   readonly onItem?: (ref: CodexTurnRef, itemId: string) => void
+  /** Installed before start. The caller buffers early facts and correlates only an exact loginId. */
+  readonly onAccountLoginCompleted?: (completion: CodexAccountLoginCompleted) => void
+  /** Synchronous private observation only; exceptions cannot control the original RPC or Session. */
+  readonly onConnectionNotification?: (notification: CodexConnectionNotification) => void
   readonly limits?: Partial<CodexRpcLimits>
   readonly maxThreads?: number
   readonly maxQueuedTurns?: number
@@ -135,6 +143,19 @@ export class CodexAppServerClient {
     if (!response || Object.keys(response).length !== 0) { throw new CodexProtocolError('codex.protocol.invalid-metadata-response') }
   }
 
+  /** Explicit login only. No browser, replay, credential storage or process lifecycle is owned here. */
+  async startAccountLogin(type: CodexAccountLoginType, signal?: AbortSignal): Promise<CodexAccountLoginStart> {
+    const captured = captureAccountLoginType(type)
+    if (!this.options.onAccountLoginCompleted) { throw new CodexProtocolError('codex.protocol.login-observer-required', 'not-sent') }
+    return decodeAccountLoginStart(await this.nativeAccountRequest('account/login/start', { type: captured }, signal), captured)
+  }
+
+  /** Cancels this exact native login only; never logs out or claims process cleanup. */
+  async cancelAccountLogin(loginId: string, signal?: AbortSignal): Promise<CodexAccountLoginCancel> {
+    const captured = captureAccountLoginId(loginId)
+    return decodeAccountLoginCancel(await this.nativeAccountRequest('account/login/cancel', { loginId: captured }, signal))
+  }
+
   /** Read-only account quota summary; no auth refresh or inference is requested. */
   async readAccountRateLimits(signal?: AbortSignal): Promise<CodexRateLimitSnapshot> {
     return decodeRateLimits(await this.nativeAccountRequest('account/rateLimits/read', undefined, signal))
@@ -204,6 +225,16 @@ export class CodexAppServerClient {
   }
 
   private notification(method: string, params: Record<string, unknown>): void {
+    if (method === 'account/login/completed') {
+      this.options.onAccountLoginCompleted?.(decodeAccountLoginCompleted(params))
+      return // Private auth facts never enter conversation events or their raw payloads.
+    }
+    const notification = decodeCodexConnectionNotification(method, params)
+    if (notification) {
+      if (!this.initialized) { throw new CodexProtocolError('codex.protocol.invalid-connection-notification') }
+      try { this.options.onConnectionNotification?.(notification) } catch { /* Observation cannot control the original connection. */ }
+      return
+    }
     const threadId = nativeThreadId(params)
     // Thread lifecycle can arrive after a turn starts. It has no turn identity
     // and must never enter that turn's notification buffer or output budget.
@@ -224,6 +255,12 @@ export class CodexAppServerClient {
   private approval(request: CodexAppServerRequest, signal: AbortSignal): Promise<CodexServerReply | null> {
     if (!isCodexAppServerApprovalMethod(request.method)) {
       return Promise.resolve({ error: { code: -32601, message: 'codex.protocol.unsupported-request' } })
+    }
+    const kind = request.params?.kind
+    // humanCommand requires a fresh human decision, a capability this client has not
+    // negotiated. Neither it nor a future kind may reach an automatic policy grant.
+    if (request.method === 'item/commandExecution/requestApproval' && kind !== undefined && kind !== 'command' && kind !== 'writeStdin') {
+      return Promise.resolve({ result: { decision: 'decline' } })
     }
     const normalized = normalizeCodexAppServerApprovalRequest(request)
     const session = normalized?.threadId !== null && normalized?.threadId !== undefined ? this.sessions.get(normalized.threadId) : undefined

@@ -17,6 +17,18 @@ and session existence are checked by the reviewed algorithm; checkpoint bytes
 never enter runtime caller snapshots. The runtime owns durable session/generation,
 input/operation identity, admission, deadlines, authorization and recovery.
 
+Finite Host-owned runs can select sessionPersistence: 'ephemeral' in their
+private configuration. The SDK then receives persistSession: false; checkpoint
+creation and restore are refused, and the factory omits its checkpoint capability.
+Omission keeps the existing persisted-session behavior and compatibility bytes.
+The Host still owns input identity, limits, cancellation and confirmed cleanup.
+This option alone is not evidence of a completed native one-shot product journey.
+
+The optional selected `disallowedTools` list is copied into the SDK's native deny
+rules and bound to checkpoint compatibility. It never passes through generic
+extra arguments; managed argv overrides remain rejected. Omission preserves the
+existing behavior and compatibility bytes.
+
 The adapter owns volatile SDK input sequencing, normalization and interaction
 correlation. SDK input consumption is not provider acceptance. Missing usage
 stays unknown. Technical result cannot complete product Work. Interrupt and close

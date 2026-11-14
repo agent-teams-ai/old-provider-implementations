@@ -64,6 +64,7 @@ export function codexMcpConfigurationMatches(value: unknown, supplied: CodexMcpP
 }
 /** Scoped policy cannot accept arbitrary native config/runtime root selectors on thread/resume/turn. */
 export function managedCodexMcpParameters(thread: Readonly<Record<string, unknown>>, turn: Readonly<Record<string, unknown>>, capabilities: Readonly<Record<string, unknown>> = {}): boolean {
-  return Object.keys(thread).every(key => ['cwd', 'model', 'modelProvider', 'approvalPolicy', 'sandbox', 'developerInstructions', 'serviceTier'].includes(key)) &&
+  return Object.keys(thread).every(key => ['cwd', 'model', 'modelProvider', 'approvalPolicy', 'sandbox', 'developerInstructions', 'serviceTier', 'ephemeral'].includes(key)) &&
+    (thread.ephemeral === undefined || typeof thread.ephemeral === 'boolean') &&
     Object.keys(turn).every(key => key === 'effort') && Object.keys(capabilities).every(key => key === 'experimentalApi')
 }

@@ -20,6 +20,7 @@ export type OpenCodeV2NativeToolFact = Readonly<{
 }>
 export type OpenCodeV2NativeTurn = Readonly<{
   state: 'unknown' | 'pending' | 'succeeded' | 'failed' | 'cancelled'
+  terminalCode?: 'unsupported'
   reason: string; assistantMessageIds: readonly string[]; text: string
   tools: readonly OpenCodeV2NativeToolFact[]
 }>

@@ -9,13 +9,15 @@ import { ClaudeSubagents } from './subagents.ts';
 import { ClaudeCapture } from './capture.ts';
 import { Interactions } from './interactions.ts';
 import { Normalizer, OutputLimitError, record } from './normalize.ts';
+import { captureClaudeCommands, claudeCommandName, claudeLegacyReviewContent, claudeLocalCommandText, projectClaudeCommands, resolveClaudeCommand } from './commands.ts';
+import type { ClaudeCommandDescription } from './commands.ts';
 import { bounded, deferred, EventFeed } from '../provider-session-io/io.ts';
 import { fail } from './primitives.ts';
 import { AttachmentFailure, assertSerializedAttachments, prepareAttachments, snapshotInput, validateAttachments } from '../provider-session-io/attachments.ts';
 import type { PreparedAttachment } from '../provider-session-io/attachments.ts';
-export type QueryHandle = Pick<Query, 'interrupt' | 'close' | 'mcpServerStatus'> & Partial<Pick<Query, 'stopTask'>> & AsyncIterable<unknown>;
+export type QueryHandle = Pick<Query, 'interrupt' | 'close' | 'mcpServerStatus'> & Partial<Pick<Query, 'stopTask' | 'supportedCommands'>> & AsyncIterable<unknown>;
 export type QueryFactory = (args: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => QueryHandle;
-type PendingInput = { input: Input; handed: boolean; nativeRef: ReturnType<typeof randomUUID>; receipt: ReturnType<typeof deferred<Reply<Handoff>>>; interactionsCancelled: boolean; toolRevocation: AbortController };
+type PendingInput = { input: Input; handed: boolean; nativeRef: ReturnType<typeof randomUUID>; receipt: ReturnType<typeof deferred<Reply<Handoff>>>; interactionsCancelled: boolean; toolRevocation: AbortController; command?: ClaudeCommandDescription };
 /** A complete successful main-thread result without foreground or restore provenance. */
 function idleNativeSuccess(m: Record<string, unknown>, nativeSession: string): boolean {
   const numbers = [m.duration_ms, m.duration_api_ms, m.total_cost_usd];
@@ -61,6 +63,7 @@ export class ClaudeSession implements Session {
   private readonly nativeSession: string;
   private readonly subagents: ClaudeSubagents | undefined;
   private readonly capture: ClaudeCapture | undefined;
+  private commands: readonly ClaudeCommandDescription[] = [];
   constructor(config: ClaudeConfig, nativeSession: string, restore: boolean, factory: QueryFactory) {
     this.config = config; this.nativeSession = nativeSession;
     this.sessionRef = config.sessionRef;
@@ -142,7 +145,12 @@ export class ClaudeSession implements Session {
             if (!status || status.status === 'pending') { pending = true; continue; }
             if (status.status !== 'connected' || !required.every((tool) => status.tools?.some((item) => item.name === tool) === true)) { return false; }
           }
-          if (!pending) { return this.config.probe(abort.signal); }
+          if (!pending) {
+            if (this.config.observeCommands) {
+              this.observeCommands(this.query.supportedCommands ? await this.query.supportedCommands() : []);
+            }
+            return this.config.probe(abort.signal);
+          }
           await new Promise<void>((resolve) => { setTimeout(resolve, 20); });
         }
         return false;
@@ -176,6 +184,7 @@ export class ClaudeSession implements Session {
     } catch { this.unavailable('unknown'); done.resolve(fail('unknown')); }
   }
   checkpoint(): Reply<unknown> {
+    if (this.config.sessionPersistence === 'ephemeral') {return fail('unsupported');}
     if (this.active || this.queued.length || this.control || this.failure) {return fail('unavailable');}
     return { ok: true, value: { version: 1, engine: SDK_REVISION, nativeSession: this.nativeSession, compatibility: compatibility(this.config) } };
   }
@@ -229,8 +238,20 @@ export class ClaudeSession implements Session {
       if (!this.handoffAvailable()) {continue;}
       const pending = this.queued.shift();
       if (!pending) {continue;}
-      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
+      const command = claudeCommandName(pending.input.content);
+      if (this.config.observeCommands && command) {
+        const captured = resolveClaudeCommand(this.commands, command);
+        if (!captured) { pending.receipt.resolve({ ok: false, code: 'unsupported', delivery: 'known-not-sent' }); continue; }
+        pending.command = captured;
+      }
       let content: SDKUserMessage['message']['content'] = pending.input.content;
+      if ((pending.input.attachments?.length ?? 0) === 0) {
+        content = claudeLegacyReviewContent(pending.input.content, pending.command) ?? content;
+        if (Buffer.byteLength(content) > this.config.limits.inputBytes) {
+          pending.receipt.resolve({ ok: false, code: 'backpressure', delivery: 'known-not-sent' }); continue;
+        }
+      }
+      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
       if ((pending.input.attachments?.length ?? 0) > 0) {
         try {
           const attachments = await prepareAttachments(pending.input, { trustedBinding: this.config.trustedBinding, sessionRef: this.sessionRef, port: this.config.attachments, signal: pending.toolRevocation.signal, timeoutMs: this.config.limits.timeoutMs });
@@ -276,6 +297,10 @@ export class ClaudeSession implements Session {
     if (Boolean(m.session_id) && m.session_id !== this.nativeSession) { this.unavailable('unknown'); return; }
     if (await this.capture?.acceptTask(m) === true) {return;}
     if (await this.acceptNested(m)) {return;}
+    if (m.type === 'system' && m.subtype === 'commands_changed') {
+      if (this.mainCompaction(m)) { this.observeCommands(m.commands); }
+      return;
+    }
     const input = this.correlate(m);
     if (m.type === 'system' && m.subtype === 'compact_boundary') {
       if (!this.mainCompaction(m)) { return; }
@@ -284,13 +309,25 @@ export class ClaudeSession implements Session {
       return;
     }
     if (input && !this.ownPartialTool(m, input)) { return; }
-    const { facts, terminal, failure } = (input ? this.normalizer : this.backgroundNormalizer).normalize(message);
+    const { facts: observed, terminal, failure } = (input ? this.normalizer : this.backgroundNormalizer).normalize(message);
+    // This namespace belongs only to the correlated native local-command result below.
+    const facts = observed.filter(fact => fact.kind !== 'text' || !fact.messageRef.startsWith('local-command:'));
+    const active = this.active;
+    if (input && active?.input === input && (m.user_message_uuid === active.nativeRef ||
+      (Array.isArray(m.user_message_uuids) && m.user_message_uuids.includes(active.nativeRef)))) {
+      const local = claudeLocalCommandText(m, input.content, active.command);
+      if (local) { facts.push(local); }
+    }
     this.knownTerminal = terminal && input ? { sessionRef: this.sessionRef, inputId: input.inputId, operationRef: input.operationRef, kind: 'result', outcome: terminal, ...(failure ? { code: failure } : {}) } : undefined;
     for (const fact of facts) {
       if (input && fact.kind === 'tool') { if (!this.ownTool(fact.toolRef, fact.name, input)) { return; } }
       this.emit(fact, input);
     }
     return this.finishAcceptance(m, terminal, failure, input);
+  }
+  private observeCommands(value: unknown): void {
+    this.commands = captureClaudeCommands(value);
+    this.config.observeCommands?.(projectClaudeCommands(this.commands));
   }
   private mainCompaction(message: Record<string, unknown>): boolean {
     return message.session_id === this.nativeSession && !present(message.parent_tool_use_id) && !present(message.agent_id) && !present(message.resume_reason);

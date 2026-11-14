@@ -25,6 +25,22 @@ test('native session consumer serializes two actual HTTP inputs and preserves ca
     assert.equal(host.counts().submitted, 2)
     assert.equal(session.checkpoint().ok, true)
   } finally { await session.close(); await observed }
+  for (const requestRejection of [400, 422] as const) {
+    const rejectedHost = await driverPeer({ requestRejection }); t.after(rejectedHost.close)
+    const rejectedConfig = nativeConfig(rejectedHost); rejectedConfig.version = '2.1.4'
+    const rejected = createV2DriverSession(rejectedConfig), failedEvents: Event[] = []
+    const done = (async () => { for await (const event of rejected.observe()) { failedEvents.push(event) } })()
+    try {
+      assert.equal((await rejected.submit({ inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op', content: 'TEST rejected request' })).ok, true)
+      await until(() => failedEvents.some(event => event.kind === 'result'))
+      assert.deepEqual(failedEvents.find(event => event.kind === 'result'), {
+        kind: 'result', outcome: 'failed', code: 'unsupported', sessionRef: rejected.sessionRef,
+        inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op',
+      })
+      assert.equal(JSON.stringify(failedEvents).includes('TEST private provider error'), false)
+      assert.equal(rejectedHost.counts().submitted, 1); assert.equal(rejectedHost.counts().interrupted, 0)
+    } finally { await rejected.close(); await done }
+  }
 })
 
 test('lost native handoff seals session, rejects unsent neighbor, and never replays mutation', async t => {

@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
+import { channel } from 'node:diagnostics_channel'
 import { parse, resolve, sep } from 'node:path'
 import { test } from 'node:test'
 import { createOpenCodeV2ExecutionTransport, readOpenCodeV2NativeCut, projectOpenCodeV2NativeTurn } from '../../../../src/opencode.ts'
 import { cut, sessionID, nativeInputID } from './v2-cut-fixture.ts'
 
-async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
-  'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync' | 'malformed-session' | 'malformed-message') {
+async function fixture(mode: 'stable' | 'changing' | 'changing-session' | 'cycle' | 'foreign' | 'max' | 'overmax' | 'flat' |
+  'gapped' | 'backwards' | 'stale-sync' | 'empty-owned-sync' | 'malformed-session' | 'malformed-message', finalPair = false) {
   const value = cut(), directory = resolve('TEST/native-cut')
-  let logs = 0, pages = 0, requests = 0
+  let logs = 0, pages = 0, requests = 0, sessions = 0
+  const finalPages: number[] = [], finalReplies: (() => void)[] = []
+  const finishPair = (reply: () => void) => {
+    finalPages.push(pages); finalReplies.push(reply)
+    if (finalReplies.length === 2) for (const finish of finalReplies) finish()
+  }
   const server = createServer((req, res) => {
     requests++; assert.equal(req.method, 'GET')
     const url = new URL(req.url!, 'http://TEST.invalid')
@@ -33,8 +39,10 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
       const watermark = mode === 'empty-owned-sync' ? 0
         : rows.at(-1)!.durable.seq + (mode === 'gapped' ? 2 : mode === 'stale-sync' ? -1 : 0)
       res.setHeader('content-type', 'text/event-stream')
-      res.end([...rows, { type: 'log.synced', aggregateID: sessionID, seq: watermark }]
+      const reply = () => res.end([...rows, { type: 'log.synced', aggregateID: sessionID, seq: watermark }]
         .map(row => `data: ${JSON.stringify(row)}\n\n`).join(''))
+      if (finalPair && logs === 2) finishPair(reply)
+      else reply()
       return
     }
     res.setHeader('content-type', 'application/json')
@@ -54,21 +62,28 @@ async function fixture(mode: 'stable' | 'changing' | 'cycle' | 'foreign' | 'max'
       } else {res.end(JSON.stringify({ data: [], cursor: { previous: null, next: null } }))}
       return
     }
+    sessions++
     const session = { id: sessionID, location: { directory: mode === 'foreign' ? '/TEST/foreign' : directory },
       agent: 'TEST-agent', model: { providerID: 'TEST-provider', id: 'TEST-model' }, time: { created: 1 } }
-    res.end(mode === 'malformed-session' ? '{"data":TEST_PRIVATE_NATIVE_JSON_PAYLOAD}' :
+    if (mode === 'changing-session' && sessions === 2) session.agent = 'TEST-changed-agent'
+    const reply = () => res.end(mode === 'malformed-session' ? '{"data":TEST_PRIVATE_NATIVE_JSON_PAYLOAD}' :
       JSON.stringify(mode === 'flat' ? session : { data: session }))
+    if (finalPair && sessions === 2) finishPair(reply)
+    else reply()
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   const address = server.address(); assert(address && typeof address !== 'string')
   return { endpoint: `http://127.0.0.1:${address.port}`, directory,
-    counts: () => ({ logs, pages, requests }),
+    counts: () => ({ logs, pages, requests }), finalPageCounts: () => [...finalPages],
     close: async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()) }) },
   }
 }
 
 test('actual finite HTTP transport reads one stable native cut and projects provider facts', async t => {
-  const host = await fixture('stable'); t.after(host.close)
+  const host = await fixture('stable', true); t.after(host.close)
+  const failures: unknown[] = [], events = channel('agent-teams:opencode-v2:read-cut-failed')
+  const collect = (value: unknown) => { failures.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
   const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
     nativeSessionId: sessionID,
     version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
@@ -82,6 +97,8 @@ test('actual finite HTTP transport reads one stable native cut and projects prov
   assert.equal(outcome.tools.length, 1)
   assert.equal('visibleReplies' in outcome, false)
   assert.deepEqual(host.counts(), { logs: 2, pages: 2, requests: 6 })
+  assert.deepEqual(host.finalPageCounts(), [2, 2], 'both final reads join only after complete serial pagination')
+  assert.deepEqual(failures, [], 'a successful cut emits no failed-cut diagnostic')
 })
 
 test('2.1.4 reads oldest-first exactly on the first message page and follows native cursors without an order override', async t => {
@@ -110,8 +127,13 @@ test('2.1.4 reads oldest-first exactly on the first message page and follows nat
 })
 
 test('native cut read rejects changing history, pagination cycles and original workspace mismatch', async t => {
-  for (const mode of ['changing', 'cycle', 'foreign', 'flat'] as const) {
-    const host = await fixture(mode); t.after(host.close)
+  const failures: unknown[] = [], events = channel('agent-teams:opencode-v2:read-cut-failed')
+  const collect = (value: unknown) => { failures.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  for (const mode of ['changing', 'changing-session', 'cycle', 'foreign', 'flat'] as const) {
+    failures.length = 0
+    const changing = mode === 'changing' || mode === 'changing-session'
+    const host = await fixture(mode, changing); t.after(host.close)
     const transport = createOpenCodeV2ExecutionTransport({ endpoint: host.endpoint, directory: host.directory,
     nativeSessionId: sessionID,
       version: '2.0.21', deadline: Date.now() + 10_000, readPassword: () => 'TEST-private' })
@@ -119,7 +141,11 @@ test('native cut read rejects changing history, pagination cycles and original w
     await assert.rejects(readOpenCodeV2NativeCut(transport,
       { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
       { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
-    mode === 'changing' ? /mutable_native_readback/ : mode === 'cycle' ? /incomplete_native_transcript/ : mode === 'flat' ? /invalid_native_envelope/ : /binding_mismatch/)
+    changing ? /mutable_native_readback/ : mode === 'cycle' ? /incomplete_native_transcript/ : mode === 'flat' ? /invalid_native_envelope/ : /binding_mismatch/)
+    if (changing) {
+      assert.deepEqual(host.finalPageCounts(), [2, 2])
+      assert.deepEqual(failures, [], 'ordinary mutable-cut observation is not a terminal diagnostic')
+    }
     if (mode === 'cycle') {assert.equal(host.counts().pages, 2)}
     if (mode === 'foreign' || mode === 'flat') {assert.deepEqual(host.counts(), { logs: 0, pages: 0, requests: 1 })}
   }
@@ -424,7 +450,7 @@ test('public native read cut refuses a never-settling injected fetch after admis
   assert.equal(nativeSignal?.aborted, true)
 })
 
-test('public native read cut cancels a late fetch response after revocation', async () => {
+test('public native read cut cancels a late fetch response after revocation', async t => {
   const directory = resolve('TEST/native-cut'), controller = new AbortController()
   let deliver!: (response: Response) => void
   let fetched = 0, lateCancellations = 0, nativeSignal: AbortSignal | null | undefined
@@ -450,6 +476,46 @@ test('public native read cut cancels a late fetch response after revocation', as
   }), { status: 200, headers: { 'content-type': 'application/json' } }))
   await new Promise<void>(resolve => setImmediate(resolve))
   assert.equal(lateCancellations, 1)
+
+  const host = await fixture('stable'); t.after(host.close)
+  const failures: unknown[] = [], events = channel('agent-teams:opencode-v2:read-cut-failed')
+  const collect = (value: unknown) => { failures.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  let logReads = 0, sessionReads = 0, finalCancellations = 0
+  let finalSignal: AbortSignal | null | undefined, finishFinal!: (response: Response) => void
+  const paired = {
+    check() {},
+    fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/log') && ++logReads === 2) {
+        finalSignal = init?.signal
+        return new Promise<Response>(resolve => { finishFinal = resolve })
+      }
+      if (url.pathname === '/api/session/' + sessionID && ++sessionReads === 2)
+        return Promise.reject(new Error('TEST_PRIVATE_FINAL_SESSION'))
+      return fetch(input, init)
+    },
+  }
+  await assert.rejects(readOpenCodeV2NativeCut(paired,
+    { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
+    { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+  (error: unknown) => error instanceof Error && error.message === 'native_read_cleanup_unknown')
+  assert.equal(logReads, 2); assert.equal(sessionReads, 2)
+  assert.equal(finalSignal?.aborted, true, 'the first failed sibling revokes its original pending pair')
+  assert.equal(failures.length, 1)
+  const diagnostic = failures[0] as Record<string, unknown>
+  assert.equal(Object.isFrozen(diagnostic), true)
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['aborted', 'deadlineExpired', 'elapsedMs', 'reason', 'stage'])
+  assert.equal(diagnostic.stage, 'after-session'); assert.equal(diagnostic.reason, 'unknown')
+  assert.equal(diagnostic.aborted, false, 'capture precedes the pair self-abort')
+  assert.equal(diagnostic.deadlineExpired, false)
+  assert.ok(Number.isSafeInteger(diagnostic.elapsedMs) && Number(diagnostic.elapsedMs) >= 0 && Number(diagnostic.elapsedMs) <= 60_000)
+  for (const secret of ['TEST_PRIVATE_FINAL_SESSION', sessionID, host.endpoint, host.directory])
+    assert.equal(JSON.stringify(failures).includes(secret), false)
+  finishFinal(new Response(new ReadableStream<Uint8Array>({ cancel() { finalCancellations++ } }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } }))
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.equal(finalCancellations, 1, 'late original body is reclaimed without rewriting the failed cut')
 })
 
 test('public native read cut cancels a never-settling injected body read on revocation', async () => {

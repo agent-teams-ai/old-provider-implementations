@@ -54,6 +54,13 @@ runtime supplies an already-owned loopback endpoint/directory and a private pass
 callback. There is no credential discovery or native SDK import. The callback and
 native response details never become error/proof payloads. Redirects are refused.
 
+The execution, session-control and credential wires set a fixed `Connection: close`
+on their finite HTTP/1.1 loopback requests. A later full custody check can outlive
+the native server's idle timeout; its next operation must not reuse that idle socket.
+Each response body, including finite SSE, is still consumed completely before the
+connection retires. This does not change the server, global dispatcher, request
+deadlines or one-dispatch mutation rule. A lost response remains unknown without retry.
+
 The explicit `2.1.4` dialect uses the same bounded wire and existing Session SPI,
 with ascending order on the first message page and native cursor order thereafter.
 Its native HTTP/persistent-events composition was checked against the immutable
@@ -74,6 +81,24 @@ variant is captured as the exact native `default` before effects and must echo
 back unchanged. The saved-grants read exports no grant details and has no mutation
 API. Host must attest isolated database custody before relying on a global empty
 result; `always` grants remain refused by session control.
+
+An optional typed credential witness contains only the captured scope digest and
+native credential ID. It is written at creation as
+`session.metadata.agentTeamsCredential`, checked on creation/readback, and never
+inserted into session instructions or prompt content. The exact native 2.1.4
+`Session.create` stores this metadata in its session row and `SessionInfo.fromRow`
+returns it after reopening. `SessionModelRequest.prepare` builds model system,
+messages, tools and headers from explicit fields, excluding session metadata.
+Unrelated native metadata is neither exported nor overwritten; arbitrary metadata
+and keys are not accepted by this adapter. The caller remains responsible for
+verifying the witness against the original credential namespace before readiness.
+
+`readDirectory` projects all native providers, model metadata and plain-key
+integration availability from four finite GETs. It shares the selected catalog's
+decoders and byte budget, filters credential/configuration fields, and makes no
+per-provider global-model reread. The session execution wire cannot use this
+owner-only inventory capability. Connection state and selected-account imports
+remain Host responsibilities; this read never submits a key or a model prompt.
 
 Both execution and control transports can await the captured Host `beforeRequest`
 callback before reading credentials. Its optional release capability remains held

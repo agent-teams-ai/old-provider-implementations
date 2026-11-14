@@ -58,7 +58,7 @@ export function createV1DriverBackend(config: OpenCodeV1DriverConfig, signal: Ab
           const cut = await wire.use((client, questions) => readV1DriverCut(client, questions, config, nativeInputID, text))
           if (!cut) {return { facts: [], permissions: [] }}
           for (const permission of cut.permissions) {turns.set(permission.requestId, { id: nativeInputID, text })}
-          return { facts: output(cut), terminal: cut.terminal, permissions: cut.permissions,
+          return { facts: output(cut), terminal: cut.terminal, ...(cut.terminalCode ? { terminalCode: cut.terminalCode } : {}), permissions: cut.permissions,
             ...(config.capture ? { observations: cut.messages.flatMap(message => message.toolCalls.flatMap(tool =>
               typeof message.id === 'string' && message.id.length > 0 && typeof tool.partId === 'string' && tool.partId.length > 0
                 && typeof tool.callId === 'string' && tool.callId.length > 0 && typeof tool.toolName === 'string' && tool.toolName.length > 0 ? [{ messageId: message.id, partId: tool.partId,

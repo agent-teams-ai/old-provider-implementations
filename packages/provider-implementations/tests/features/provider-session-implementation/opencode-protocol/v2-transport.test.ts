@@ -33,7 +33,8 @@ test('V2 execution transport never forwards caller headers with native credentia
         assert(nativeRequest instanceof Request)
         const headers = new Headers(init?.headers)
         seen.push([...headers.keys()].sort())
-        assert.deepEqual([...nativeRequest.headers.keys()].sort(), [...headers.keys()].sort())
+        assert.deepEqual([...nativeRequest.headers], [...headers])
+        assert.equal(headers.get('connection'), 'close')
         assert.equal(nativeRequest.credentials, 'omit')
         assert.equal(nativeRequest.redirect, 'error')
         assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST_PRIVATE_PASSWORD').toString('base64'))
@@ -45,12 +46,13 @@ test('V2 execution transport never forwards caller headers with native credentia
     })
     t.after(() => wire.dispose())
     const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
-      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
+      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain',
+      connection: 'keep-alive' }
     await wire.fetch(endpoint + '/api/session/ses_A', { headers: injected, credentials: 'include', redirect: 'follow' })
     await wire.fetch(endpoint + '/api/session/ses_A/prompt', {
       method: 'POST', headers: injected, credentials: 'include', redirect: 'follow', body: JSON.stringify(prompt),
     })
-    assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
+    assert.deepEqual(seen, [['authorization', 'connection'], ['authorization', 'connection', 'content-type']])
   }
 })
 
@@ -376,7 +378,13 @@ test('V2 transport cleanup cancels only its requests on a shared host; neighbori
 
 test('V2 finite log enforces complete frames and media type; exact floor activation remains supported', async t => {
   let reads = 0
+  const sockets = new Set<IncomingMessage['socket']>()
   const host = await peer((req, res) => {
+    assert.equal(req.headers.connection, 'close')
+    // The prior call consumes its whole body before the next call begins.
+    // Compare original socket objects, not a response header or a reused port.
+    assert.equal(sockets.has(req.socket), false)
+    sockets.add(req.socket)
     if (req.url!.startsWith('/api/plugin/await-activation')) { res.writeHead(204); res.end(); return }
     res.setHeader('content-type', 'text/event-stream')
     res.end(++reads === 2
@@ -391,6 +399,7 @@ test('V2 finite log enforces complete frames and media type; exact floor activat
   const floor = createOpenCodeV2ExecutionTransport(config(host.endpoint, '2.0.0')); t.after(() => floor.dispose())
   const activation = await floor.fetch(host.endpoint + '/api/plugin/await-activation?location[directory]=/TEST/original', { method: 'POST' })
   assert.equal(activation.status, 204)
+  assert.equal(sockets.size, 3)
 })
 
 test('V2 mutation redirect never forwards credentials or effects to another endpoint', async t => {
