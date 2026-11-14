@@ -77,6 +77,20 @@ created temporary directory. It contains no Codex executable, account or network
 provider; these tests qualify the technical protocol mechanism only. Actual Codex
 version/capability behavior, process custody and full team parity remain pending.
 
+## Finite account login
+
+`startAccountLogin` accepts only `chatgpt` and `chatgptDeviceCode`; its private reply
+preserves the selected native login ID and HTTPS presentation. The caller must
+install `onAccountLoginCompleted` when creating the client, before sending start.
+That typed observer receives early, foreign and null-ID facts without putting them
+in conversation events. The caller owns a bounded early buffer and must correlate
+only the exact returned login ID; null/foreign facts cannot establish completion.
+Successful account readback, credential fencing and native cleanup remain caller-owned.
+`cancelAccountLogin` sends only the supplied original ID and preserves canceled vs
+notFound. Neither cancellation nor local client close logs out or removes credentials.
+Observer delivery stops with the client's notification reader. Lost acceptance is
+unknown and never retried; URLs/codes/errors remain private and must not be logged.
+
 ## Canonical session binding
 
 The factory receives explicit Host configuration and selected checkpoint ports.

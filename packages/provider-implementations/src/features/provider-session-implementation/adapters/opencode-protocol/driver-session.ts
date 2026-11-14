@@ -173,15 +173,16 @@ export class OpenCodeDriverSession implements Session {
       if (Date.now() >= deadline) { this.seal('unknown'); return }
       const snapshot = await turn.read()
       if (!this.isOpen() || this.active !== pending) {return}
+      const terminalCode = snapshot.terminal === 'failed' && snapshot.terminalCode === 'unsupported' ? 'unsupported' as const : undefined
       this.knownTerminal = snapshot.terminal ? { kind: 'result', outcome: snapshot.terminal, sessionRef: this.sessionRef,
-        inputId: pending.input.inputId, operationRef: pending.input.operationRef } : undefined
+        inputId: pending.input.inputId, operationRef: pending.input.operationRef, ...(terminalCode ? { code: terminalCode } : {}) } : undefined
       for (const fact of snapshot.facts) {this.emit(fact, pending)}
       if (!this.isOpen()) {return}
       if (snapshot.terminal) {
         pending.interactionsRevoked = true; pending.interactionAbort.abort()
         await pending.capture?.after(turn.nativeInputId, snapshot.terminal, snapshot.observations ?? [])
         if (!this.isOpen() || this.active !== pending) {return}
-        this.emit({ kind: 'result', outcome: snapshot.terminal }, pending)
+        this.emit({ kind: 'result', outcome: snapshot.terminal, ...(terminalCode ? { code: terminalCode } : {}) }, pending)
         this.knownTerminal = undefined; this.interactions.clear(); if (this.active === pending) {this.active = undefined}
         return
       }

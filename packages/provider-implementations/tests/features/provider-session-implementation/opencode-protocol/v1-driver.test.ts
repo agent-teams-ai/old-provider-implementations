@@ -110,6 +110,26 @@ test('V1 native ToolStateError preserves its error text without an output field'
     assert.ok(result?.kind === 'tool-result')
     assert.equal(result.inputId, 'TEST-error'); assert.equal(result.isError, true); assert.equal(result.content, 'TEST failed')
   } finally { await driver.close(); await done }
+  for (const statusCode of [400, 422] as const) {
+    const rejectedHost = await v1Peer(); rejectedHost.hold(); t.after(rejectedHost.close)
+    const rejectedConfig = configuration(rejectedHost); rejectedConfig.version = '1.19.4'
+    const rejected = (await factory(rejectedConfig).open(request)).driver
+    const observed = observe(rejected)
+    try {
+      assert.equal((await rejected.submit({ inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op', content: 'TEST rejected request' })).ok, true)
+      rejectedHost.complete()
+      const latest = rejectedHost.messages.at(-1)!
+      latest.info.error = { name: 'APIError', data: { statusCode, message: 'TEST private provider error', isRetryable: false } }
+      delete latest.info.finish
+      await until(() => observed.events.some(event => event.kind === 'result'))
+      assert.deepEqual(observed.events.find(event => event.kind === 'result'), {
+        kind: 'result', outcome: 'failed', code: 'unsupported', sessionRef: request.sessionId,
+        inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op',
+      })
+      assert.equal(JSON.stringify(observed.events).includes('TEST private provider error'), false)
+      assert.equal(rejectedHost.submittedIds.length, 1); assert.equal(rejectedHost.aborted.length, 0)
+    } finally { await rejected.close(); await observed.done }
+  }
 })
 
 test('V1 unknown prompt response is not replayed and queued neighbor remains known not sent', async t => {

@@ -42,6 +42,7 @@ export function createV2DriverBackend(config: OpenCodeV2DriverConfig, signal: Ab
           facts = []; output.accept(cut, turn)
           if (turn.state === 'unknown') {return empty}
           if (turn.state !== 'pending') {return { facts, terminal: turn.state, permissions: [],
+            ...(turn.state === 'failed' && turn.terminalCode ? { terminalCode: turn.terminalCode } : {}),
             ...(config.capture ? { observations: turn.tools.map(tool => ({
               dialect: 'v2', protocolRevision: cut.pin, messageId: tool.assistantMessageId,
               callId: tool.toolCallId, tool: tool.toolName, status: tool.status as 'completed' | 'error',

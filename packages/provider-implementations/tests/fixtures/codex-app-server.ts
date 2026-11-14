@@ -8,6 +8,7 @@ type Command = { id: string | number } & (
   | { kind: 'raw'; text: string }
   | { kind: 'mcp-status'; mode: string }
   | { kind: 'metadata'; method: string; response: unknown }
+  | { kind: 'account-login'; response: unknown; beforeReply?: Record<string, unknown>[]; holdReply?: boolean }
   | { kind: 'sample-mode'; mode: 'success' | 'none' | 'wrong-turn' | 'unsupported' | 'hold' }
   | { kind: 'hold-interrupts' | 'release-interrupts' | 'disconnect' | 'reject-next-resume' }
 )
@@ -22,6 +23,7 @@ const finishedTurns = new Map<string, string>()
 const pendingSamples = new Map<string | number, NativeMessage>()
 const pendingInterrupts: NativeMessage[] = []
 const metadata = new Map<string, unknown>()
+let accountLogin: Extract<Command, { kind: 'account-login' }> | undefined
 const active = new Map<string, string>()
 const ownedThreads = new Set<string>()
 const emit = (payload: unknown) => process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -56,6 +58,11 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   ipc({ event: 'wire', message })
   if (typeof message.method !== 'string') {return}
   const params = message.params ?? {}
+  if (message.method === 'account/login/start' && accountLogin) {
+    for (const completion of accountLogin.beforeReply ?? []) { notify('account/login/completed', completion) }
+    if (!accountLogin.holdReply) { result(message.id, accountLogin.response) }
+    return
+  }
   if (metadata.has(message.method)) { return result(message.id, metadata.get(message.method)) }
   if (message.method === 'initialize') {return result(message.id, { userAgent: 'isolated-codex-fixture', codexHome: process.env.HOME, platformFamily: 'unix', platformOs: process.platform })}
   if (message.method === 'initialized') {return}
@@ -138,6 +145,7 @@ process.on('message', value => {
   if (command.kind === 'approval') {emit({ jsonrpc: '2.0', id: command.requestId, method: command.method, params: command.params })}
   if (command.kind === 'raw') {process.stdout.write(command.text)}
   if (command.kind === 'metadata') {metadata.set(command.method, command.response)}
+  if (command.kind === 'account-login') {accountLogin = command}
   if (command.kind === 'mcp-status') {mcpMode = command.mode; mcpReads = 0}
   if (command.kind === 'sample-mode') {sampleMode = command.mode}
   if (command.kind === 'hold-interrupts') {heldInterrupts = true}

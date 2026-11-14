@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts'
 import type { CodexModelOptions } from './model-options.ts'
 import type { CodexAppServerTransport } from './rpc-types.ts'
 
@@ -10,7 +11,7 @@ export type CodexModelProbeConfig = CodexModelOptions & {
   launch: (request: CodexModelProbeLaunch) => CodexModelProbeConnection
   canSubmit: () => boolean
 }
-const path = z.string().min(1).max(8192).startsWith('/').refine(value => !/[\0\r\n]/u.test(value))
+const path = z.string().min(1).max(8192).refine(value => isNativeAbsolutePath(value) && !/[\r\n]/u.test(value))
 const name = z.string().min(1).max(256).refine(value => !/[\0\r\n]/u.test(value))
 const schema = z.object({ cwd: path, executablePath: path, model: name, modelProvider: name.optional(), reasoningEffort: name.optional(), fastMode: z.boolean().optional(), timeoutMs: z.number().int().min(1).max(180000),
   environment: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u), z.string().max(65536)).refine(value => Object.keys(value).length <= 256),

@@ -7,6 +7,16 @@ test('delayed first legacy A approval after cross-turn item reuse cannot grant B
   const a = await opened(t); await a.driver.submit(input()); const first = ref(a.native)
   const item = { id: 'reused-item', type: 'commandExecution', command: 'TEST' }
   await a.native.command({ kind: 'notify', method: 'item/started', params: { ...first, item } })
+  const initialize = a.native.writes.find(frame => frame.method === 'initialize')?.params as Record<string, unknown>
+  assert.equal((initialize.capabilities as Record<string, unknown> | undefined)?.requiredHumanApproval, undefined)
+  for (const [index, kind] of ['humanCommand', 'future-command', null, 42].entries()) {
+    const requestId = `unsupported-command-kind-${index}`
+    await a.native.command({ kind: 'approval', requestId, method: 'item/commandExecution/requestApproval',
+      params: { ...first, itemId: item.id, kind } })
+    await a.native.waitFor(value => value.event === 'wire' && (value.message as Record<string, unknown>)?.id === requestId)
+    assert.deepEqual(a.native.writes.find(frame => frame.id === requestId)?.result, { decision: 'decline' })
+    assert.equal(a.events.some(event => event.kind === 'interaction'), false)
+  }
   await a.native.command({ kind: 'finish', ...first }); await until(() => a.events.some(event => event.kind === 'result'))
   await a.driver.submit(input(2)); const second = ref(a.native, 'turn-2')
   await a.native.command({ kind: 'notify', method: 'item/started', params: { ...second, item } })
@@ -16,7 +26,7 @@ test('delayed first legacy A approval after cross-turn item reuse cannot grant B
   const refused = a.native.writes.find(frame => frame.id === 'delayed-FIRST-legacy-A')
   assert.equal(refused?.result, undefined); assert.deepEqual(refused?.error, { code: -32000, message: 'codex.protocol.request-rejected' })
   assert.equal(a.events.some(event => event.kind === 'interaction'), false)
-  await a.native.command({ kind: 'approval', requestId: 'modern-B', method: 'item/commandExecution/requestApproval', params: { ...second, itemId: 'reused-item' } })
+  await a.native.command({ kind: 'approval', requestId: 'modern-B', method: 'item/commandExecution/requestApproval', params: { ...second, itemId: 'reused-item', kind: 'command' } })
   await until(() => a.events.some(event => event.kind === 'interaction'))
   const permission = a.events.find(event => event.kind === 'interaction'); assert(permission?.kind === 'interaction'); assert.equal(permission.operationRef, 'op-2')
   assert.deepEqual(await a.driver.respondToInteraction(permission.interactionRef, { kind: 'permission', decision: 'allow' }), { ok: true, value: undefined })

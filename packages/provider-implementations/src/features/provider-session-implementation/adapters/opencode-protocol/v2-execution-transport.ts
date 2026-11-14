@@ -193,10 +193,14 @@ class OpenCodeV2ExecutionFetch {
     return chunks
   }
   private requestHeaders(request: Request, signal: AbortSignal): Headers {
-    // Only the trusted native Basic credential and validated JSON media type
-    // may leave this boundary. Caller headers (Cookie/X-Forwarded-*/etc.)
+    // Only the trusted native Basic credential, validated JSON media type and
+    // fixed finite connection policy leave this boundary. Caller headers
+    // (Cookie/X-Forwarded-*/etc.)
     // are not part of the session capability.
     const headers = new Headers()
+    // A later full custody check may outlive the native server's idle timeout.
+    // Retire this HTTP/1.1 connection after its complete response, without replay.
+    headers.set('connection', 'close')
     if (request.body !== null) headers.set('content-type', 'application/json')
     const password = this.readPassword()
     executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')

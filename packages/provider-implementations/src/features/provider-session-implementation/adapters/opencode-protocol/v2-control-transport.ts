@@ -160,6 +160,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // The caller may supply arbitrary headers to this raw control wire;
       // never forward them with the Host-owned Basic credential.
       const headers = new Headers()
+      headers.set('connection', 'close')
       if (putInstruction || reply) {headers.set('content-type', 'application/json')}
       headers.set('authorization', 'Basic ' + Buffer.from('opencode:' + password).toString('base64'))
       // Keep injected fetches from observing the caller's original headers or

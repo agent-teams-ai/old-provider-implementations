@@ -64,10 +64,11 @@ function latestAssistant(window: readonly OpenCodeCanonicalMessage[]): OpenCodeC
   const latest = window.at(-1)
   return latest !== undefined && latest.role === 'assistant' && latest.id !== null && latest.id.length > 0 ? latest : null
 }
-export function qualifyOpenCodeV1TerminalProof(
+function qualifyTerminal(
   evidence: OpenCodeV1TerminalEvidence | null | undefined,
   sessionId: string,
   runtimePromptMessageId: string | null | undefined,
+  outcomeOf: (latest: OpenCodeCanonicalMessage) => 'success' | 'error' | null,
 ): { proof: OpenCodeV1TerminalProof | null; diagnostics: string[] } {
   if (!validOriginalIdentity(evidence, sessionId, runtimePromptMessageId)) { return rejectTerminal('Missing or conflicting native session/prompt identity') }
   if (!completeEvidence(evidence)) { return rejectTerminal('Incomplete transcript or unsettled interaction evidence') }
@@ -86,9 +87,16 @@ export function qualifyOpenCodeV1TerminalProof(
   const unsettled = windowProblem(window)
   if (unsettled !== null) { return rejectTerminal(unsettled) }
   if (!settledAssistant(latest)) { return rejectTerminal('Latest assistant is incomplete or has invalid completion timestamp') }
-  const outcome = nativeTerminalOutcome(latest)
+  const outcome = outcomeOf(latest)
   if (outcome === null) { return rejectTerminal(`Unqualified native finish/error: ${latest.finishReason ?? 'none'}/${latest.errorName ?? 'none'}`) }
   return { proof: { sessionId, runtimePromptMessageId: runtimePromptMessageId as string, assistantMessageId: latest.id!, outcome, evidence }, diagnostics: [] }
+}
+
+export function qualifyOpenCodeV1TerminalProof(
+  evidence: OpenCodeV1TerminalEvidence | null | undefined, sessionId: string,
+  runtimePromptMessageId: string | null | undefined,
+): { proof: OpenCodeV1TerminalProof | null; diagnostics: string[] } {
+  return qualifyTerminal(evidence, sessionId, runtimePromptMessageId, nativeTerminalOutcome)
 }
 
 /** Recovery must select the original native/workspace generation before qualifying its turn. */
@@ -103,4 +111,19 @@ export function qualifyOpenCodeV1BoundTerminalProof(
     return { proof: null, diagnostics: ['Original native workspace/run/host binding is missing or conflicting'] }
   }
   return qualifyOpenCodeV1TerminalProof(evidence, binding.nativeSessionId, runtimePromptMessageId)
+}
+
+/** Private adapter classification; public recovery still accepts only its original outcomes. */
+export function qualifyOpenCodeV1BoundRequestRejection(
+  evidence: OpenCodeV1TerminalEvidence,
+  binding: { nativeSessionId: string; workspacePath: string; hostKey: string; runId: string; profileRootKey: string },
+  runtimePromptMessageId: string,
+  failure: { assistantMessageId: string; status: 400 | 422 } | undefined,
+): OpenCodeV1TerminalProof | null {
+  const authority = evidence.authority
+  if (!failure || !authority || authority.hostKey !== binding.hostKey || authority.runId !== binding.runId
+    || authority.profileRootKey !== binding.profileRootKey || authority.projectPath !== binding.workspacePath) return null
+  return qualifyTerminal(evidence, binding.nativeSessionId, runtimePromptMessageId, latest =>
+    latest.id === failure.assistantMessageId && latest.hasError && latest.errorName === 'APIError'
+      && latest.finishReason === null && (failure.status === 400 || failure.status === 422) ? 'error' : null).proof
 }
