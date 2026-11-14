@@ -131,7 +131,7 @@ A suggestion may be shown **only if all are true at read/publish time**:
 - The consumer explicitly enabled suggestions for this captured session.
 - The specific operationRef belonged to a **human-authored direct input**, not a tool, agent-to-agent message, group, bootstrap, task or scheduled action.
 - SPI result was succeeded; an exact native source turn terminal is confirmed.
-- The original session, generation, member/lane and conversation remain current; no subsequent accepted user input, start, restart, rewind, clear, or session switch supersedes it.
+- The original session, generation, member/lane and conversation remain current; no **later separately executed native turn**, restart, rewind, clear or session switch supersedes it. A queued message cancelled before execution is not automatically a later executed turn. A human Steer delivered into the **same** native turn may qualify only when Host has an exact lineage/operation mapping; otherwise suppress. Never infer latest executed turn from the largest UI run ordinal.
 - The composer is empty and editable, without active IME, attachments/chips, slash/mention menu, queued draft, approval input or other keyboard owner.
 - The candidate is nonempty, bounded, not dismissed for that operation and generated inside the current revision.
 
@@ -151,7 +151,7 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 
 1. On the **same initialized CodexAppServerClient**, after a successful completed native turn, capture exact source threadId, native turnId, operationRef and ownership from the bound CodexThreadSession. Do not query another process or another account's CODEX_HOME.
 2. Verify selected binary/protocol capability, persistent **root** thread, idle state and no new accepted input. **0.162.0 is unsupported until upgraded and separately qualified**; version alone is not proof if experimentalApi/method authorization is unavailable.
-3. Issue **one** typed JSON-RPC request:
+3. Issue **one** typed JSON-RPC request. The low effort override is optional: omit it when the selected model/provider does not support reason-effort updates; never change selected provider/model to make sampling work:
 
 ~~~json
 {
@@ -165,9 +165,12 @@ On uncertainty, **hide**, not cross-fallback to another provider or guessed conv
 }
 ~~~
 
-4. Decode the *actual* response: sourceTurnId equals the captured turn, text is string or null, and the source thread is still current. Treat null/empty/whitespace as none. Bound text and validation **before** handing a candidate to Host. A tool-call attempt, rate limit, request timeout, method-not-found, cancel, source changed or foreign turn must not surface user text.
-5. Use existing RPC framing, limits and beforeWrite fence. On new input/cancel/disposal, cancel the sample through the supported protocol path if available; no turn/interrupt of the parent and **never retry after uncertain request admission**. Timeouts/unknown transport lead to discard, not replay.
-6. The sample is an ephemeral fork; source history/checkpoint, native thread/turn counts and tool effects must remain unchanged. The provider library does not own physical process custody and does not infer that RPC close means child exit.
+4. Decode the *actual* response: sourceTurnId equals the captured turn, text is string or null, and the source thread is still current. Treat null/empty/whitespace as none. Bound text and validation **before** handing a candidate to Host. Preserve optional native input/output token counts for **Host-owned** quota accounting without exposing them to renderer. A tool-call attempt, rate limit, request timeout, method-not-found, cancel, source changed or foreign turn must not surface user text.
+5. Use existing RPC framing, limits and beforeWrite fence. If supported, track the pending **sample RPC request ID** and cancel with the protocol's sample cancellation method (not turn/interrupt on the parent). Abort or discard on new input/cancel/disposal. A local AbortSignal alone may stop waiting without stopping native inference; therefore do **not** report cleanup confirmed without a native cancellation/terminal or owned process cleanup receipt. **Never retry after uncertain request admission**. Timeouts/unknown transport lead to discard, not replay.
+6. The sample is an ephemeral fork; source history/checkpoint, native thread/turn counts and tool effects must remain unchanged. The instruction "Do not use tools" is not a security boundary: verify that any attempted tool call yields **no candidate and no tool effect**. Where supported, select disableMcp for eligible Responses Lite / incremental-tool sources, but never count it as a universal sandbox. The provider library does not own physical process custody and does not infer that RPC close means child exit.
+
+
+**Source-turn guards:** validate native completion against captured turn/start and turn/completed notifications. Before request write and after response, check the same native thread/turn, no newer **executed** turn and no blocked/uncertain pending input. A stale or missing completion ID is not repaired from UI message order. The temporary fork may cost additional tokens; Host opts in and accounts for it as a native model request, not a free read.
 
 **Compatibility gate:** Confirm exact minimum supported Codex version and experimentalApi initialization against the selected real binary before enabling; verify existence of thread/sample rather than accepting a method from type definitions alone. If the current selected binary lacks it, report unsupported and leave core chat unaffected. No behind-the-scenes upgrade in the feature.
 
@@ -225,7 +228,7 @@ Use current SDK QueryFactory fixture and CodexAppServerTransport/subprocess fixt
 1. Two real TEST teammates, Claude and Codex, each receives a **human direct input** through existing composer, not a test-only endpoint. Fixture inference completes; only the recipient gets its suggestion.
 2. One host restart/Resume/new generation: restored session is correct and old suggestion disappears. Reopening with new source does not resurrect a prior candidate.
 3. Active queue, group/team/task/tool/background message: no suggestion for agent-origin work. An extra completed internal turn cannot become the user's proposed next prompt.
-4. While suggestion visible, type/paste, open @ or / menu, IME composition, Tab/Shift-Tab, Escape, change recipient/team/selected conversation. Existing key priority wins; no auto-send, no mutation of saved draft or attachments.
+4. While suggestion visible, type/paste, open @ or / menu, IME composition, Tab/Shift-Tab, Escape, change recipient/team/selected conversation. Existing key priority wins; no auto-send, no mutation of saved draft or attachments. Also test a **cancelled-before-start queued UI run**: an earlier truly completed native turn remains eligible only with exact provenance, matching the defect class in T3 Code #33705; a newer executed turn always invalidates it.
 5. Verify Electron IPC and HTTP/browser adapter parity via same use case, not by calling provider from renderer. The actual DOM/CSS placement is checked visually; API-only tests cannot substitute for the UI gate.
 6. Process cleanup: native provider children and Host stop, no orphan processes or leaked ports; UNKNOWN custody must not be represented as confirmed exit.
 
@@ -277,7 +280,7 @@ A failed feasibility gate produces a documented **unsupported/HOLD** path; it mu
 This section records **design-only self-review**, not independent code-review approval. Three focused review passes are required before finalizing this document:
 
 1. **Ownership and clean boundaries (reviewed, corrected):** session-scoped Claude SDK flag can create inference on internal turns if enabled in a shared native session. Added **session-exclusivity eligibility before SDK construction**, rather than relying on Host/renderer filtering after generation. Keep provider package without engine/domain imports and preserve existing Session SPI.
-2. **Native protocol and state safety:** inspect Claude after-result delivery, exact Codex root/turn/version, races, cancellation, no retry/parent mutation.
+2. **Native protocol and state safety (reviewed, corrected):** a queued UI run may be the latest ordinal but never have executed; bind suggestions to the **last real native completed turn**, not a UI ordinal. Record Codex sourceTurnId/token counts, explicit sample request-id cancellation (where available), and UNKNOWN cleanup distinction. A prompt instruction is not tool isolation: no tool action must be observed.
 3. **E2E and scope:** ensure tests really execute native integrations where claimed, no subscriptions/real HOME, no silent skips, no alternate UI, realistic LOC and migration conflict isolation.
 
 Final corrections and explicit unresolved implementation-time gates must be recorded here after review.
