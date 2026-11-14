@@ -1,0 +1,52 @@
+name: Native prompt suggestions - Claude TEST E2E
+
+on:
+  pull_request:
+    paths:
+      - "scripts/native-prompt-suggestions-claude.mjs"
+      - ".github/workflows/native-prompt-suggestions-claude.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-claude-suggestions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  claude-native-suggestion:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Install pinned provider SDK without credentials or install scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack pnpm --version
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Actual SDK / native Claude Code CLI, locally scripted inference only
+        shell: bash
+        env:
+          NATIVE_SUGGESTIONS_CLAUDE_RECEIPT: ${{ github.workspace }}/native-prompt-suggestions-claude-receipt.json
+        run: |
+          set -euo pipefail
+          node --check scripts/native-prompt-suggestions-claude.mjs
+          node scripts/native-prompt-suggestions-claude.mjs
+      - name: Upload only bounded TEST receipt, never raw inference or credentials
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: claude-native-prompt-suggestions-TEST-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: native-prompt-suggestions-claude-receipt.json
