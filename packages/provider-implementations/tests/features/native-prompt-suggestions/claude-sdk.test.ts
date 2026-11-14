@@ -10,10 +10,11 @@ async function waitFor(check: () => boolean): Promise<void> {
   for (let i = 0; i < 30 && !check(); i++) await setImmediate();
   assert.ok(check(), 'fixture did not produce the expected native event');
 }
-const successfulResult = (uuid: string, sessionId: string) => ({
-  type: 'result', subtype: 'success', session_id: sessionId,
-  user_message_uuid: uuid, is_error: false,
-});
+const successfulResult = (uuid: string, sessionId: string | undefined) => {
+  assert.ok(sessionId, 'the captured SDK Query input must carry native session identity');
+  return { type: 'result', subtype: 'success', session_id: sessionId,
+    user_message_uuid: uuid, is_error: false };
+};
 
 test('same Claude SDK Query emits a single candidate AFTER terminal, without another model input', async () => {
   const fixture = new QueryFixture();
