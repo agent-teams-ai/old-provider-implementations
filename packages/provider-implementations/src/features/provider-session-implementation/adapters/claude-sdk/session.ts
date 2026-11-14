@@ -280,8 +280,11 @@ export class ClaudeSession implements Session {
   }
   private async accept(message: unknown): Promise<void> {
     const m = record(message);
-    if (Boolean(m.session_id) && m.session_id !== this.nativeSession) { this.unavailable('unknown'); return; }
     if (m.type === 'prompt_suggestion') {
+      // Auxiliary output is untrusted. A foreign/malformed suggestion must never
+      // seal or fail the original native conversation.
+      if (m.session_id !== this.nativeSession || m.parent_tool_use_id != null ||
+          m.agent_id !== undefined || m.resume_reason !== undefined) return;
       const input = this.lastSuccessfulInput;
       this.lastSuccessfulInput = undefined; // Single-use, even for invalid frames or observer failure.
       if (this.state === 'open' && input && this.active === undefined) {
@@ -292,6 +295,7 @@ export class ClaudeSession implements Session {
       }
       return; // Auxiliary provider output: not an SPI message or background event.
     }
+    if (Boolean(m.session_id) && m.session_id !== this.nativeSession) { this.unavailable('unknown'); return; }
     if (await this.capture?.acceptTask(m) === true) {return;}
     if (await this.acceptNested(m)) {return;}
     const input = this.correlate(m);
