@@ -31,6 +31,7 @@ test('same Claude SDK Query emits a single candidate AFTER terminal, without ano
     assert.equal((await session.submit({ inputId: 'input-1', operationRef: 'op-1', content: 'TEST human DM' })).ok, true);
     await waitFor(() => fixture.inputs.length === 1);
     const native = fixture.inputs[0]!;
+    assert.ok(native.uuid);
     fixture.emit(successfulResult(native.uuid, native.session_id));
     await waitFor(() => events.some(e => e.kind === 'result' && e.operationRef === 'op-1'));
     assert.equal(candidates.length, 0, 'SDK suggestion arrives after result, never before');
@@ -59,6 +60,7 @@ test('mixed Claude teammate session stays eligible for human DM, suppresses inte
   try {
     assert.equal((await session.submit({ inputId: 'system-1', operationRef: 'internal-task', content: 'TEST internal' })).ok, true);
     await waitFor(() => fixture.inputs.length === 1);
+    assert.ok(fixture.inputs[0]!.uuid);
     fixture.emit(successfulResult(fixture.inputs[0]!.uuid, fixture.inputs[0]!.session_id));
     await setImmediate();
     fixture.emit({ type: 'prompt_suggestion', session_id: fixture.inputs[0]!.session_id, suggestion: 'Do internal task' });
@@ -66,6 +68,7 @@ test('mixed Claude teammate session stays eligible for human DM, suppresses inte
     assert.equal(candidates.length, 0, 'internal provider suggestion is not published');
     assert.equal((await session.submit({ inputId: 'human-1', operationRef: 'human-direct', content: 'TEST human DM' })).ok, true);
     await waitFor(() => fixture.inputs.length === 2);
+    assert.ok(fixture.inputs[1]!.uuid);
     fixture.emit(successfulResult(fixture.inputs[1]!.uuid, fixture.inputs[1]!.session_id));
     await setImmediate();
     fixture.emit({ type: 'prompt_suggestion', session_id: fixture.inputs[1]!.session_id, suggestion: 'Run E2E' });
