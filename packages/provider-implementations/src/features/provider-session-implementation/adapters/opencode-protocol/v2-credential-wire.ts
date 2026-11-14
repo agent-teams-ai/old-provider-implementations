@@ -18,6 +18,38 @@ export function nativeIntegrationId(value: unknown): asserts value is string {
     'invalid_native_integration')
 }
 
+export function nativeSelectedSourceReference(value: unknown): asserts value is string {
+  executionAssert(typeof value === 'string' && value.length === 64 && /^[a-f0-9]{64}$/.test(value), 'invalid_native_source_reference')
+}
+
+type CredentialOperation = 'read' | 'connect' | 'rollback' | 'read-selected-source' | 'connect-selected-source'
+
+/** JSON.parse alone would discard duplicate private envelope fields. */
+function checkSelectedSourceFields(content: string): void {
+  const names = new Set<string>()
+  let depth = 0
+  for (let index = 0; index < content.length; index++) {
+    const char = content[index]
+    if (char === '"') {
+      const start = index++
+      for (; index < content.length; index++) {
+        if (content[index] === '\\') index++
+        else if (content[index] === '"') break
+      }
+      if (depth === 1) {
+        let next = index + 1
+        while (/\s/.test(content[next] ?? '')) next++
+        if (content[next] === ':') {
+          const name = JSON.parse(content.slice(start, index + 1)) as string
+          executionAssert(!names.has(name), 'invalid_native_source_proof')
+          names.add(name)
+        }
+      }
+    } else if (char === '{' || char === '[') depth++
+    else if (char === '}' || char === ']') depth--
+  }
+}
+
 /** Private finite credential wire. Never exported as a raw session capability. */
 export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfig) {
   const config = { ...supplied }, abort = new AbortController(), pending = new Set<Promise<unknown>>()
@@ -32,22 +64,29 @@ export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfi
   const track = <T>(work: Promise<T>): Promise<T> => {
     pending.add(work); void work.finally(() => pending.delete(work)).catch(() => {}); return work
   }
-  const request = async (operation: 'read' | 'connect' | 'rollback', value?: string): Promise<unknown> => {
+  const request = async (operation: CredentialOperation, value?: string): Promise<unknown> => {
     check()
+    const sourceDeadline = operation === 'read-selected-source' || operation === 'connect-selected-source'
+      ? Math.min(config.deadline, Date.now() + 30_000) : undefined
     const controller = new AbortController()
     const signal = AbortSignal.any([abort.signal, controller.signal, ...(config.signal ? [config.signal] : [])])
-    const remaining = () => Math.min(30_000, config.deadline - Date.now())
+    const remaining = () => sourceDeadline === undefined ? Math.min(30_000, config.deadline - Date.now()) : sourceDeadline - Date.now()
     const timer = setTimeout(() => controller.abort(), Math.max(0, remaining()))
     let invoked = false, response: Response | undefined, metadataValidated = false
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     const admission = createV2RequestAdmission(config.beforeRequest, signal, config.deadline, track)
     try {
+      if (sourceDeadline !== undefined) {
+        nativeSelectedSourceReference(value)
+        executionAssert(Number.isSafeInteger(sourceDeadline) && sourceDeadline > 0, 'invalid_native_source_deadline')
+      }
       let path = `/api/integration/${encodeURIComponent(config.integrationId)}`
       if (operation === 'connect') {
         executionAssert(typeof value === 'string' && value.trim().length > 0 &&
           Buffer.byteLength(value) <= 64 * 1024 && !/[\x00-\x1f\x7f]/.test(value), 'invalid_native_key')
         path += '/connect/key'
       }
+      if (operation === 'connect-selected-source') path += '/connect/key'
       if (operation === 'rollback') {
         executionAssert(typeof value === 'string' && /^cred_[A-Za-z0-9]{1,250}$/.test(value), 'invalid_native_credential')
         path = `/api/credential/${value}`
@@ -60,11 +99,20 @@ export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfi
       check(); signal.throwIfAborted()
       const headers = new Headers({ authorization: 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'),
         connection: 'close' })
-      if (operation === 'connect') headers.set('content-type', 'application/json')
+      if (operation === 'connect' || operation === 'connect-selected-source') headers.set('content-type', 'application/json')
+      if (operation === 'read-selected-source') {
+        headers.set('x-agent-teams-selected-source', 'v1:' + value)
+        headers.set('x-agent-teams-selected-source-deadline', String(sourceDeadline))
+      }
+      if (sourceDeadline !== undefined) executionAssert(remaining() > 0, 'authority_or_deadline')
       const native = new Request(config.endpoint + path, {
-        method: operation === 'read' ? 'GET' : operation === 'connect' ? 'POST' : 'DELETE',
+        method: operation === 'read' || operation === 'read-selected-source' ? 'GET'
+          : operation === 'connect' || operation === 'connect-selected-source' ? 'POST' : 'DELETE',
         headers, credentials: 'omit', redirect: 'error', signal,
         ...(operation === 'connect' ? { body: JSON.stringify({ key: value }) } : {}),
+        ...(operation === 'connect-selected-source' ? { body: JSON.stringify({ selectedSource: {
+          schemaVersion: 1, reference: value, deadline: sourceDeadline,
+        } }) } : {}),
       })
       invoked = true
       const receivedResponse = await boundV2Request(track((config.fetchImpl ?? fetch)(native, {
@@ -100,13 +148,14 @@ export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfi
       reader?.releaseLock(); reader = undefined
       check(); signal.throwIfAborted()
       const content = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
-      if (operation !== 'read') {
+      if (operation === 'connect' || operation === 'rollback') {
         executionAssert(receivedResponse.status === 204 && content === '', 'native_credential_mutation_unknown')
         return undefined
       }
       executionAssert(receivedResponse.status === 200 &&
         receivedResponse.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'application/json', 'invalid_native_integration')
       checkOpenCodeReadJson(content)
+      if (sourceDeadline !== undefined) checkSelectedSourceFields(content)
       return JSON.parse(content) as unknown
     } catch (error) {
       controller.abort()
@@ -128,7 +177,7 @@ export function createV2CredentialWire(supplied: OpenCodeV2CredentialClientConfi
     }
   }
   return {
-    request: (operation: 'read' | 'connect' | 'rollback', value?: string) => track(request(operation, value)),
+    request: (operation: CredentialOperation, value?: string) => track(request(operation, value)),
     async dispose() {
       closed = true; abort.abort()
       try { await boundV2Request(Promise.allSettled([...pending]), 2000) }

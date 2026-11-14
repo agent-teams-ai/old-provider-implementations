@@ -1,6 +1,6 @@
-import { executionAssert } from './v2-failures.ts'
+import { executionAssert, ExecutionTransportFailure } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
-import { createV2CredentialWire } from './v2-credential-wire.ts'
+import { createV2CredentialWire, nativeSelectedSourceReference } from './v2-credential-wire.ts'
 import type { OpenCodeV2CredentialClientConfig } from './v2-credential-wire.ts'
 
 export type OpenCodeV2KeyIntegration = Readonly<{
@@ -12,6 +12,39 @@ export type OpenCodeV2KeyIntegration = Readonly<{
     Readonly<{ type: 'env'; needsAuth: boolean }>
   )[]
 }>
+
+export type OpenCodeV2SelectedSourceProof = Readonly<{
+  schemaVersion: 1
+  sourceReference: string
+  witness: string
+}>
+
+/** Synchronous Host acceptance after original wire/body cleanup, before the next request. */
+type AcceptSelectedSourceProof = (proof: OpenCodeV2SelectedSourceProof) => undefined
+
+function selectedSource(value: unknown, reference: string, reading: boolean) {
+  const envelope = record(value), fields = reading
+    ? ['schemaVersion', 'sourceReference', 'witness', 'integration'] : ['schemaVersion', 'sourceReference', 'witness']
+  if (envelope === null || Object.keys(envelope).length !== fields.length ||
+    Object.keys(envelope).some(key => !fields.includes(key)) || envelope.schemaVersion !== 1 ||
+    envelope.sourceReference !== reference || typeof envelope.witness !== 'string' ||
+    envelope.witness.length === 0 || envelope.witness.length > 64 * 1024 ||
+    !/^[A-Za-z0-9_-]+$/.test(envelope.witness) ||
+    Buffer.from(envelope.witness, 'base64url').toString('base64url') !== envelope.witness) {
+    throw new ExecutionTransportFailure('invalid_native_source_proof', 'unknown')
+  }
+  return { proof: Object.freeze({ schemaVersion: 1 as const, sourceReference: reference, witness: envelope.witness }),
+    integration: envelope.integration }
+}
+
+function acceptSelectedSource(proof: OpenCodeV2SelectedSourceProof, acceptProof: AcceptSelectedSourceProof): void {
+  try {
+    executionAssert(acceptProof(proof) === undefined, 'invalid_native_source_acceptance')
+  } catch {
+    // A Host refusal cannot expose private proof data or authorize replay/rollback.
+    throw new ExecutionTransportFailure('native_source_proof_refused', 'unknown')
+  }
+}
 
 function integration(value: unknown, config: OpenCodeV2CredentialClientConfig): OpenCodeV2KeyIntegration {
   const envelope = record(value), native = record(envelope?.data)
@@ -52,6 +85,14 @@ export function createOpenCodeV2CredentialClient(supplied: OpenCodeV2CredentialC
   const read = async () => integration(await wire.request('read'), config)
   return {
     read,
+    async readSelectedSource(reference: string, acceptProof: AcceptSelectedSourceProof): Promise<OpenCodeV2KeyIntegration> {
+      nativeSelectedSourceReference(reference)
+      executionAssert(typeof acceptProof === 'function', 'invalid_native_source_acceptance')
+      const selected = selectedSource(await wire.request('read-selected-source', reference), reference, true)
+      const result = integration(selected.integration, config)
+      acceptSelectedSource(selected.proof, acceptProof)
+      return result
+    },
     async connectKey(key: string): Promise<Readonly<{ integrationId: string; credentialId: string }>> {
       executionAssert(!attempted, 'native_key_already_attempted')
       // Claim synchronously before even the readback; concurrent callers cannot race a second POST.
@@ -59,6 +100,21 @@ export function createOpenCodeV2CredentialClient(supplied: OpenCodeV2CredentialC
       const before = await read()
       executionAssert(before.plainKey && before.connections.length === 0, 'native_key_existing_or_unsupported')
       await wire.request('connect', key)
+      const after = await read(), connection = after.connections[0]
+      executionAssert(after.plainKey && after.connections.length === 1 && connection?.type === 'credential' &&
+        connection.method === 'key', 'native_key_readback_unknown')
+      ownedCredential = connection.id
+      return { integrationId: config.integrationId, credentialId: connection.id }
+    },
+    async connectSelectedSource(reference: string, acceptProof: AcceptSelectedSourceProof): Promise<Readonly<{ integrationId: string; credentialId: string }>> {
+      executionAssert(!attempted, 'native_key_already_attempted')
+      attempted = true
+      nativeSelectedSourceReference(reference)
+      executionAssert(typeof acceptProof === 'function', 'invalid_native_source_acceptance')
+      const before = await read()
+      executionAssert(before.plainKey && before.connections.length === 0, 'native_key_existing_or_unsupported')
+      const selected = selectedSource(await wire.request('connect-selected-source', reference), reference, false)
+      acceptSelectedSource(selected.proof, acceptProof)
       const after = await read(), connection = after.connections[0]
       executionAssert(after.plainKey && after.connections.length === 1 && connection?.type === 'credential' &&
         connection.method === 'key', 'native_key_readback_unknown')
