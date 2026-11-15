@@ -2,6 +2,7 @@ name: Native prompt suggestions - Claude TEST E2E
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "scripts/native-prompt-suggestions-claude.mjs"
       - ".github/workflows/native-prompt-suggestions-claude.yml"
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   claude-native-suggestion:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:

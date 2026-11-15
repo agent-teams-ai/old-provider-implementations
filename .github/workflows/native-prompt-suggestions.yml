@@ -2,6 +2,7 @@ name: Native prompt suggestions - Codex TEST E2E
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "packages/provider-implementations/src/features/native-prompt-suggestions/**"
       - "packages/provider-implementations/src/features/provider-session-implementation/adapters/codex-protocol/**"
@@ -19,6 +20,7 @@ concurrency:
 
 jobs:
   codex-native-sample:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:

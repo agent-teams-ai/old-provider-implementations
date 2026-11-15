@@ -375,3 +375,39 @@ test('native-default checkpoints bind the captured HOME and explicit namespace',
     assert.equal(next.calls, 0);
   }
 });
+
+test('actual Claude Session SPI emits owned thinking separately from output without a second input', async () => {
+  const sdk = new QueryFixture(), c = configuration();
+  const { driver } = await createClaudeDriverFactory({
+    capabilities: ['text'], resolveConfiguration: async () => c, readCheckpoint: async () => undefined,
+  }, sdk.boundary).open(request);
+  const events: Event[] = [];
+  const observing = (async () => { for await (const event of driver.observe()) { events.push(event); } })();
+  try {
+    assert.equal((await driver.submit({ inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', content: 'TEST' })).ok, true);
+    await setImmediate();
+    const common = { type: 'stream_event', session_id: sdk.options.sessionId, parent_tool_use_id: null };
+    sdk.emit({ ...common, user_message_uuid: sdk.inputs[0]?.uuid, event: { type: 'message_start', message: { id: 'TEST-native-message' } } });
+    sdk.emit({ ...common, event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'TEST reasoning' } } });
+    sdk.emit({ ...common, event: { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'TEST answer' } } });
+    sdk.emit({ type: 'assistant', session_id: sdk.options.sessionId, parent_tool_use_id: null, uuid: 'TEST-native-wrapper',
+      message: { id: 'TEST-native-message', content: [
+        { type: 'thinking', thinking: 'TEST reasoning', signature: 'TEST-private-signature' },
+        { type: 'text', text: 'TEST answer' },
+      ] } });
+    sdk.emit({ type: 'result', subtype: 'success', session_id: sdk.options.sessionId, user_message_uuid: sdk.inputs[0]?.uuid });
+    await setImmediate();
+    const owner = { sessionRef: request.sessionId, inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', messageRef: 'TEST-native-message' };
+    assert.deepEqual(events.filter(event => event.kind === 'thinking'), [
+      { ...owner, kind: 'thinking', block: 0, text: 'TEST reasoning', phase: 'snapshot' },
+      { ...owner, kind: 'thinking', block: 0, text: 'TEST reasoning', phase: 'complete' },
+    ]);
+    assert.deepEqual(events.filter(event => event.kind === 'text'), [
+      { ...owner, kind: 'text', block: 1, text: 'TEST answer', phase: 'snapshot' },
+      { ...owner, kind: 'text', block: 1, text: 'TEST answer', phase: 'complete' },
+    ]);
+    assert.equal(events.filter(event => event.kind === 'result' && event.outcome === 'succeeded').length, 1);
+    assert.equal(JSON.stringify(events).includes('TEST-private-signature'), false);
+    assert.equal(sdk.inputs.length, 1);
+  } finally { assert.equal((await driver.close()).cleanup, 'confirmed'); await observing; }
+});

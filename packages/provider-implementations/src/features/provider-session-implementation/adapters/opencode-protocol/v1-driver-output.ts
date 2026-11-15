@@ -3,15 +3,16 @@ import type { readV1DriverCut } from './v1-driver-cut.ts'
 
 /** Retains raw native part indices and exact message/tool identity, never product receipts. */
 export function createV1DriverOutput() {
-  const text = new Map<string, string>(), calls = new Set<string>(), results = new Set<string>()
+  const content = new Map<string, string>(), calls = new Set<string>(), results = new Set<string>()
   return (cut: NonNullable<Awaited<ReturnType<typeof readV1DriverCut>>>): EventPayload[] => {
     const facts: EventPayload[] = []
     for (const [index, raw] of cut.raw.entries()) {
       const message = cut.messages[index]!
       for (const [block, part] of raw.parts.entries()) {
-        if (part.type === 'text' && typeof part.text === 'string') {
-          const phase = cut.terminal ? 'complete' : 'snapshot', key = message.id + ':' + part.id, value = phase + ':' + part.text
-          if (text.get(key) !== value) { facts.push({ kind: 'text', messageRef: message.id!, block, text: part.text, phase }); text.set(key, value) }
+        if ((part.type === 'text' || part.type === 'reasoning') && typeof part.text === 'string') {
+          const kind = part.type === 'reasoning' ? 'thinking' : 'text'
+          const phase = cut.terminal ? 'complete' : 'snapshot', key = kind + ':' + message.id + ':' + part.id, value = phase + ':' + part.text
+          if (content.get(key) !== value) { facts.push({ kind, messageRef: message.id!, block, text: part.text, phase }); content.set(key, value) }
         }
       }
       for (const tool of message.toolCalls) {

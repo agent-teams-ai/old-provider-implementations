@@ -25,6 +25,9 @@ const mandatoryTools: CodexDriverConfig['requiredMcpTools'] = { team: ['look-up.
 const finiteStatusMethod: CodexAppServerClient['listMcpServerStatus'] | undefined = undefined;
 if (mandatoryTools.team?.[0] !== 'look-up.raw' || finiteStatusMethod !== undefined) throw Error('finite native MCP contracts');
 const compaction: EventPayload = { kind: 'compaction', sourceRef: 'opaque', reason: 'automatic' };
+const thinking: Extract<EventPayload, { kind: 'thinking' }> = { kind: 'thinking', messageRef: 'TEST-message', block: 0, text: 'TEST reasoning', phase: 'complete' };
+const output: Extract<EventPayload, { kind: 'text' }> = { ...thinking, kind: 'text' };
+if (thinking.kind !== 'thinking' || output.kind !== 'text') throw Error('distinct thinking and output contracts');
 const nativeOptions: ClaudeConfig['nativeOptions'] = { permissionMode: 'acceptEdits', settingSources: ['project'], projectInstructions: { append: 'TEST' }, effort: 'high', fastMode: false, context: 'model-default' };
 const namespace: ClaudeConfig['configNamespace'] = 'native-default';
 const attachmentRefs: Input['attachments'] = [{ artifactId: 'TEST-image', mimeType: 'image/png', byteLength: 1, digest: '0'.repeat(64) }];
