@@ -311,7 +311,8 @@ test('V1 HTTP reasoning retains native part identity through snapshots and compl
   try {
     assert.equal((await driver.submit({ inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', content: 'TEST reasoning' })).ok, true)
     const assistant = host.messages.at(-1)!
-    const reasoning = { id: 'prt_TESTthinking', type: 'reasoning', sessionID: host.nativeSessionId, messageID: assistant.info.id, text: 'TEST partial reasoning' }
+    const messageRef = assistant.info.id; assert.ok(typeof messageRef === 'string')
+    const reasoning = { id: 'prt_TESTthinking', type: 'reasoning', sessionID: host.nativeSessionId, messageID: messageRef, text: 'TEST partial reasoning' }
     assistant.parts.splice(1, 0, reasoning)
     await until(() => events.some(event => event.kind === 'thinking' && event.text === 'TEST partial reasoning'))
     const reads = host.reads(); await until(() => host.reads() >= reads + 4)
@@ -320,13 +321,13 @@ test('V1 HTTP reasoning retains native part identity through snapshots and compl
     await until(() => events.some(event => event.kind === 'thinking' && event.text === 'TEST complete reasoning'))
     host.complete()
     await until(() => events.some(event => event.kind === 'result'))
-    const owner = { sessionRef: request.sessionId, inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', messageRef: assistant.info.id, block: 1, kind: 'thinking' }
+    const owner = { sessionRef: request.sessionId, inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', messageRef, block: 1, kind: 'thinking' }
     assert.deepEqual(events.filter(event => event.kind === 'thinking'), [
       { ...owner, text: 'TEST partial reasoning', phase: 'snapshot' },
       { ...owner, text: 'TEST complete reasoning', phase: 'snapshot' },
       { ...owner, text: 'TEST complete reasoning', phase: 'complete' },
     ])
-    assert.ok(events.some(event => event.kind === 'text' && event.messageRef === assistant.info.id && event.block === 0 && event.phase === 'complete' && event.text === 'TEST V1 reply'))
+    assert.ok(events.some(event => event.kind === 'text' && event.messageRef === messageRef && event.block === 0 && event.phase === 'complete' && event.text === 'TEST V1 reply'))
     assert.ok(events.some(event => event.kind === 'tool-result' && event.inputId === 'TEST-thinking'))
     assert.equal(events.filter(event => event.kind === 'result' && event.outcome === 'succeeded').length, 1)
     assert.equal(host.submittedIds.length, 1)
