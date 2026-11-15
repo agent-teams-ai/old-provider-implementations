@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { CODEX_NEXT_PROMPT_SAMPLE_INSTRUCTION, supportsNativeCodexSampling, decodeCodexPromptSuggestion } from '../../../native-prompt-suggestions/adapters/codex-sample.ts'
+import { eligibleNativeInput, offerNativeSuggestion } from '../../../native-prompt-suggestions/core/policy.ts'
 import { CodexInputWindowCapture } from './input-window-capture.ts'
 import type { CloseReceipt, Event, EventPayload, FailureCode, Handoff, Input, InteractionReply, Reply, Session } from '@agent-teams/provider-session-contracts'
 import { bounded, deferred, EventFeed } from '../provider-session-io/io.ts'
@@ -41,6 +43,9 @@ export class CodexDriverSession implements Session {
   private closing: Promise<CloseReceipt> | undefined
   private turnBytes = 0
   private turnEvents = 0
+  /** Auxiliary native sample has no authority over normal turn, queue or lifecycle. */
+  private sampleAbort: AbortController | undefined
+  private sampleRevision = 0
   constructor(config: CodexDriverConfig, restored?: CodexDriverCheckpoint) {
     this.config = config; this.sessionRef = config.binding.sessionId
     for (const [item, owner] of restored?.itemOwners ?? []) {
@@ -82,6 +87,7 @@ export class CodexDriverSession implements Session {
       || this.queued.some(item => item.input.inputId === input.inputId || item.input.operationRef === input.operationRef)) {return Promise.resolve(failure('stale', true))}
     if (this.queued.length >= this.config.limits.queuedInputs) {return Promise.resolve(failure('backpressure', true))}
     const pending: Pending = { input, ownerKey: randomUUID(), receipt: deferred(), abort: new AbortController(), revoked: false, early: [], earlyBytes: 0 }
+    this.invalidateSample()
     this.queued.push(pending); this.advance(); return pending.receipt.promise
   }
   observe(): AsyncIterable<Event> { return this.feed }
@@ -204,7 +210,10 @@ export class CodexDriverSession implements Session {
       if (!this.isCurrent(owner)) {return}
       this.active = undefined
       if (terminal.outcome === 'unknown') {this.seal('unknown')}
-      else {this.advance()}
+      else {
+        if (terminal.outcome === 'completed' && this.queued.length === 0) this.observeSuggestion(owner)
+        this.advance()
+      }
     } catch (error) {
       if (error instanceof AttachmentFailure && !owner.turn) {
         owner.receipt.resolve(failure(error.code, true)); owner.abort.abort();
@@ -215,6 +224,41 @@ export class CodexDriverSession implements Session {
       this.seal(unsent ? 'dependency-unavailable' : 'unknown', unsent)
     }
   }
+  private invalidateSample(): void {
+    this.sampleRevision++
+    this.sampleAbort?.abort()
+    this.sampleAbort = undefined
+  }
+
+  /** Exact native turn, never an unrelated UI run or inferred latest message. */
+  private observeSuggestion(owner: Pending): void {
+    const binding = this.config.promptSuggestions
+    const ref = owner.ref, thread = this.thread
+    if (!binding || !ref || !thread || !eligibleNativeInput(binding, owner.input) ||
+      !supportsNativeCodexSampling(this.config.protocolRevision,
+        this.config.initialize.capabilities?.experimentalApi === true,
+        this.config.threadParams.ephemeral === true) || !thread.canSample()) return
+    const revision = ++this.sampleRevision
+    const abort = new AbortController()
+    this.sampleAbort = abort
+    const current = () => this.state === 'open' && !this.abort.signal.aborted && !abort.signal.aborted &&
+      this.sampleRevision === revision && this.thread === thread && this.active === undefined &&
+      this.queued.length === 0 && thread.canSample()
+    const origin = {
+      sessionRef: this.sessionRef, inputId: owner.input.inputId, operationRef: owner.input.operationRef,
+      nativeSessionRef: thread.threadId, nativeTurnRef: ref.turnId,
+    }
+    void this.client.samplePromptSuggestion({
+      threadId: ref.threadId, expectedTurnId: ref.turnId, prompt: CODEX_NEXT_PROMPT_SAMPLE_INSTRUCTION,
+    }, abort.signal, current).then(response => {
+      if (current()) offerNativeSuggestion(binding, decodeCodexPromptSuggestion(response, origin))
+    }).catch(() => {
+      // Experimental method failures are best-effort and never fail an accepted turn.
+    }).finally(() => {
+      if (this.sampleAbort === abort) this.sampleAbort = undefined
+    })
+  }
+
   private nativeEvent(event: CodexAppServerEvent): void {
     const owner = this.active
     if (!owner || this.state !== 'open' || event.threadId !== this.thread?.threadId) {return}
@@ -236,7 +280,7 @@ export class CodexDriverSession implements Session {
   }
   private seal(code: FailureCode, unsent = false): void {
     if (this.state !== 'open') {return}
-    this.state = 'unavailable'; this.abort.abort()
+    this.state = 'unavailable'; this.invalidateSample(); this.abort.abort()
     const owner = this.active; this.active = undefined
     const knownUnsent = unsent || !!(owner && !owner.turn)
     if (owner) { owner.revoked = true; owner.abort.abort(); owner.receipt.resolve(failure(code, knownUnsent)) }

@@ -17,6 +17,8 @@ test('packed consumer imports codecs and declarations without donor checkout or 
 import type { CodexDriverConfig, CodexDriverHost } from '@agent-teams/provider-implementations/codex';
 import { createClaudeDriverFactory, openClaudeSession, readClaudeMetadata, probeClaudeModel } from '@agent-teams/provider-implementations/claude';
 import { EventFeed } from '@agent-teams/provider-implementations/session-io';
+import { supportsNativeCodexSampling, nativeSuggestionCandidate } from '@agent-teams/provider-implementations/prompt-suggestions';
+import type { NativePromptSuggestionBinding } from '@agent-teams/provider-implementations/prompt-suggestions';
 import type { DriverFactory, Session, EventPayload, Input } from '@agent-teams/provider-session-contracts';
 import type { ClaudeConfig, ClaudeDriverHost } from '@agent-teams/provider-implementations/claude';
 const mandatoryTools: CodexDriverConfig['requiredMcpTools'] = { team: ['look-up.raw'] };
@@ -32,6 +34,8 @@ if (compaction.kind !== 'compaction' || nativeOptions.fastMode !== false || name
 const factory: (host: ClaudeDriverHost) => DriverFactory = createClaudeDriverFactory;
 const codexFactory: (host: CodexDriverHost) => DriverFactory = createCodexDriverFactory;
 if (typeof codexFactory !== 'function') throw Error('Codex canonical adapter');
+const optionalSuggestionBinding: NativePromptSuggestionBinding = { eligible: () => false, offer: () => {} };
+if (!optionalSuggestionBinding || !supportsNativeCodexSampling('0.165.0', true, false) || typeof nativeSuggestionCandidate !== 'function') throw Error('optional native suggestion facade');
 if (typeof factory !== 'function' || typeof openClaudeSession !== 'function' || typeof readClaudeMetadata !== 'function' || typeof probeClaudeModel !== 'function' || typeof EventFeed !== 'function') throw Error('provider API');
 type ConsumerSession = Pick<Session, 'submit' | 'observe' | 'interrupt' | 'close'>;
 export type { ConsumerSession };

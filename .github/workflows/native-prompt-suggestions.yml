@@ -1,0 +1,63 @@
+name: Native prompt suggestions - Codex TEST E2E
+
+on:
+  pull_request:
+    paths:
+      - "packages/provider-implementations/src/features/native-prompt-suggestions/**"
+      - "packages/provider-implementations/src/features/provider-session-implementation/adapters/codex-protocol/**"
+      - "packages/provider-implementations/src/features/provider-session-implementation/adapters/claude-sdk/**"
+      - "scripts/native-prompt-suggestions-codex.mjs"
+      - ".github/workflows/native-prompt-suggestions.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-prompt-suggestions-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codex-native-sample:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Select one official native Codex CLI in a disposable runner prefix
+        shell: bash
+        env:
+          npm_config_audit: "false"
+          npm_config_fund: "false"
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-next-prompt-codex" "$RUNNER_TEMP/native-next-prompt-home"
+          HOME="$RUNNER_TEMP/native-next-prompt-home" npm install \
+            --prefix "$RUNNER_TEMP/native-next-prompt-codex" --no-save \
+            --package-lock=true --ignore-scripts --no-audit --no-fund \
+            @openai/codex@0.166.0
+          HOME="$RUNNER_TEMP/native-next-prompt-home" npm ls \
+            --prefix "$RUNNER_TEMP/native-next-prompt-codex" --depth=0 @openai/codex
+      - name: Verify actual App Server native turn and ephemeral fork (no vendor subscription)
+        shell: bash
+        env:
+          NATIVE_SUGGESTIONS_CODEX_PREFIX: ${{ runner.temp }}/native-next-prompt-codex
+          NATIVE_SUGGESTIONS_RECEIPT: ${{ github.workspace }}/native-prompt-suggestions-codex-receipt.json
+        run: |
+          set -euo pipefail
+          node --check scripts/native-prompt-suggestions-codex.mjs
+          node scripts/native-prompt-suggestions-codex.mjs
+      - name: Upload bounded TEST evidence (not vendor or Desktop qualification)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: codex-native-prompt-suggestions-TEST-${{ github.sha }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: native-prompt-suggestions-codex-receipt.json

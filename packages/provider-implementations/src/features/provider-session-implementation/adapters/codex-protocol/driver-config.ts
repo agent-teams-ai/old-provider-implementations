@@ -1,4 +1,6 @@
 import { captureCodexMcpPolicy, managedCodexMcpParameters } from './mcp-policy.ts'
+import { validNativeSuggestionBinding } from '../../../native-prompt-suggestions/core/policy.ts'
+import type { NativePromptSuggestionBinding } from '../../../native-prompt-suggestions/contracts.ts'
 import type { CodexMcpPolicy } from './mcp-policy.ts'
 import { createHash } from 'node:crypto'
 import { snapshotInputWindowPort } from './input-window-capture.ts'
@@ -38,6 +40,8 @@ export type CodexDriverConfig = {
   readonly probe: (signal: AbortSignal) => Promise<boolean>
   /** Caller confirms owned native work/process cleanup. Local protocol close alone cannot prove it. */
   readonly confirmStopped: () => Promise<boolean>
+  /** Host-authorized auxiliary native completion observation, not a Session SPI event. */
+  readonly promptSuggestions?: NativePromptSuggestionBinding
 }
 
 // Host objects are structural ports, not JSON records: retain class, callable
@@ -69,6 +73,7 @@ function validDriverConfiguration(value: unknown, request: OpenConfig): boolean 
     && ['protocolRevision', 'trustedBinding', 'accountBinding'].every(key => typeof config[key] === 'string' && config[key].length > 0)
     && matchingBinding(config.binding, request) && validLimits(config.limits) && configuredClient(config)
     && typeof config.probe === 'function' && typeof config.confirmStopped === 'function'
+    && (config.promptSuggestions === undefined || validNativeSuggestionBinding(config.promptSuggestions))
     && thread !== null && turn !== null && !Object.hasOwn(thread, 'threadId') && !['input', 'threadId'].some(key => Object.hasOwn(turn, key))
 }
 function validRuntimeMcpServer(name: unknown, policy: CodexMcpPolicy | undefined, required: RequiredMcpTools | undefined): name is string {
@@ -91,6 +96,10 @@ export function captureDriverConfig(config: CodexDriverConfig, request: OpenConf
     ...(mcpPolicy !== undefined ? { mcpPolicy, verifyMcpCatalog: config.verifyMcpCatalog!.bind(config) } : {}),
     ...(runtimeMcpServer !== undefined ? { runtimeMcpServer } : {}),
     ...(config.attachments !== undefined ? { attachments: snapshotAttachmentPort(config.attachments)! } : {}),
+    ...(config.promptSuggestions ? { promptSuggestions: Object.freeze({
+      eligible: config.promptSuggestions.eligible.bind(config.promptSuggestions),
+      offer: config.promptSuggestions.offer.bind(config.promptSuggestions),
+    }) } : {}),
     threadParams: structuredClone(config.threadParams), turnParams: structuredClone(config.turnParams ?? {}), rpcLimits: { ...config.rpcLimits } }
 }
 

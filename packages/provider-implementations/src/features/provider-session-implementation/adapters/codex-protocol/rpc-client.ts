@@ -79,6 +79,7 @@ export class CodexRpcClient {
       void this.write(frame, context, () => {
         if (!this.pending.has(id)) {throw new CodexProtocolError('codex.protocol.request-expired', 'not-sent')}
         entry.sent = true
+        try { context.onSentId?.(id) } catch { /* Observers never affect original RPC custody. */ }
       }).catch((error: unknown) => { fail(error instanceof CodexProtocolError ? error.code : 'codex.protocol.transport-lost') })
       if (context.signal?.aborted === true) {cancel()}
     })

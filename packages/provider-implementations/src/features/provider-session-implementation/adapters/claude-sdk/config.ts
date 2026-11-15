@@ -1,5 +1,7 @@
 import { captureClaudeExtraArgs } from '../provider-session-io/extra-argv.ts';
 import { isNativeAbsolutePath } from '../provider-session-io/native-path.ts';
+import { validNativeSuggestionBinding } from '../../../native-prompt-suggestions/core/policy.ts';
+import type { NativePromptSuggestionBinding } from '../../../native-prompt-suggestions/contracts.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { McpServerConfig, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { Limits } from '@agent-teams/provider-session-contracts';
@@ -61,6 +63,8 @@ export type ClaudeConfig = {
   observeClose?: (observation: ClaudeCloseObservation) => void | Promise<void>;
   /** Private read-only metadata from this live Query; the consumer owns command admission. */
   observeCommands?: (commands: readonly ClaudeCommandDescription[]) => void;
+  /** Explicit Host opt-in. A Claude Query may sample after internal turns; Host filters output. */
+  promptSuggestions?: NativePromptSuggestionBinding;
   sessionExists: (nativeSession: string) => Promise<boolean>;
   /** Runtime/test Host owns the actual child and must sanitize launch environment. */
   custody: {
@@ -94,6 +98,7 @@ export function validConfig(c: ClaudeConfig): boolean {
     validTools(c) && validDisallowedTools(c.disallowedTools) &&
     (!c.toolBinding || (c.toolBinding.matchedToolNames.length > 0 && c.toolBinding.matchedToolNames.every((name) => typeof name === 'string' && !!name) && typeof c.toolBinding.prepare === 'function')) &&
     validCapture(c.capture, c.observeClose) && (c.observeCommands === undefined || typeof c.observeCommands === 'function') &&
+    (c.promptSuggestions === undefined || validNativeSuggestionBinding(c.promptSuggestions)) &&
     Object.keys(c.requiredTools).every((name) => Object.hasOwn(c.mcpServers, name)));
 }
 export function options(c: ClaudeConfig, nativeSession: string, restore: boolean): Options {
@@ -106,6 +111,7 @@ export function options(c: ClaudeConfig, nativeSession: string, restore: boolean
     ...(c.disallowedTools !== undefined ? { disallowedTools: [...c.disallowedTools] } : {}),
     mcpServers: c.mcpServers, strictMcpConfig: true,
     persistSession: c.sessionPersistence !== 'ephemeral', includePartialMessages: true,
+    promptSuggestions: c.promptSuggestions !== undefined,
     ...(restore ? { resume: nativeSession } : { sessionId: nativeSession }),
     spawnClaudeCodeProcess: (spawnOptions) => c.custody.launch({ ...spawnOptions, ...(extraArgs.length ? { args: [...spawnOptions.args, ...extraArgs] } : {}), env: { ...c.environment } }),
   };
@@ -127,6 +133,7 @@ export function snapshotConfig(c: ClaudeConfig): ClaudeConfig {
     ...(c.attachments !== undefined ? { attachments: snapshotAttachmentPort(c.attachments)! } : {}),
     ...(c.nativeOptions ? { nativeOptions: structuredClone(c.nativeOptions) } : {}),
     ...(c.disallowedTools !== undefined ? { disallowedTools: Object.freeze([...c.disallowedTools]) } : {}),
+    ...(c.promptSuggestions ? { promptSuggestions: Object.freeze({ eligible: c.promptSuggestions.eligible.bind(c.promptSuggestions), offer: c.promptSuggestions.offer.bind(c.promptSuggestions) }) } : {}),
     autoAllowedTools: [...c.autoAllowedTools], requiredTools: structuredClone(c.requiredTools),
     mcpServers: structuredClone(c.mcpServers), ...(c.toolBinding ? { toolBinding: { ...c.toolBinding, matchedToolNames: [...c.toolBinding.matchedToolNames] } } : {}), limits: { ...c.limits }, custody: { ...c.custody } };
 }
