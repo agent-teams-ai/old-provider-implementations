@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import type { OpenCodeMessage } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/types.ts'
 
-export async function v1Peer() {
+export async function v1Peer(reasoning?: string) {
   const directory = '/TEST/v1-original', nativeSessionId = 'ses_TESTv1', neighbor = 'ses_TESTneighbor'
   const messages: OpenCodeMessage[] = [], submittedIds: string[] = [], granted: string[] = [], aborted: string[] = []
   const submittedParts: unknown[][] = []
@@ -17,7 +17,8 @@ export async function v1Peer() {
     messages.push({ info: { id, sessionID: nativeSessionId, role: 'user', time: { created: now } },
       parts: [{ id: 'prt_user' + tick, type: 'text', sessionID: nativeSessionId, messageID: id, text }] })
     messages.push({ info: { id: assistant, parentID: parentWrong ? 'msg_foreign' : id, sessionID: nativeSessionId, role: 'assistant', providerID: 'TEST-provider', modelID: 'TEST-model', time: { created: tick++ } },
-      parts: [{ id: 'prt_text' + tick, type: 'text', sessionID: nativeSessionId, messageID: assistant, text: 'TEST V1 reply' },
+      parts: [...(reasoning === undefined ? [] : [{ id: 'prt_reasoning' + tick, type: 'reasoning', sessionID: nativeSessionId, messageID: assistant, text: reasoning }]),
+        { id: 'prt_text' + tick, type: 'text', sessionID: nativeSessionId, messageID: assistant, text: 'TEST V1 reply' },
         { id: 'prt_tool' + tick, type: 'tool', callID: 'call_TEST' + tick, tool: 'TEST.tool', sessionID: nativeSessionId, messageID: assistant,
           state: { status: 'running', input: { resource: 'TEST' }, time: { start: tick } } }] })
     active = id

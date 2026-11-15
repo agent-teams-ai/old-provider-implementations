@@ -65,6 +65,40 @@ test('canonical V1 factory serializes actual HTTP turns with native ascending ID
   } finally { await opened.driver.close(); await done }
 })
 
+test('V1 native reasoning keeps original part indices, scoped snapshots and a deduplicated complete phase', async t => {
+  const host = await v1Peer('TEST V1 thought'); host.hold(); t.after(host.close)
+  const { driver } = await factory(configuration(host)).open(request), { events, done } = observe(driver)
+  const thoughts = () => events.filter(event => event.kind === 'thinking')
+  try {
+    assert.ok((await driver.submit({ inputId: 'TEST-thought', operationRef: 'TEST-thought-op', content: 'TEST reasoning' })).ok)
+    await until(() => thoughts().length === 1)
+    const assistant = host.messages.at(-1)!, part = assistant.parts.find(value => value.type === 'reasoning')!
+    assert.deepEqual(events.slice(0, 3).map(event => event.kind), ['thinking', 'text', 'tool'])
+    assert.deepEqual(thoughts()[0], { kind: 'thinking', messageRef: assistant.info.id, block: 0,
+      text: 'TEST V1 thought', phase: 'snapshot', sessionRef: request.sessionId, inputId: 'TEST-thought', operationRef: 'TEST-thought-op' })
+    const output = events.find(event => event.kind === 'text'); assert.ok(output?.kind === 'text')
+    assert.equal(output.messageRef, assistant.info.id); assert.equal(output.block, 1)
+    const reads = host.reads(); await until(() => host.reads() >= reads + 4)
+    assert.equal(thoughts().length, 1, 'unchanged native reasoning is not emitted again')
+    part.text = 'TEST V1 thought continued'
+    await until(() => thoughts().length === 2)
+    host.complete(); await until(() => events.some(event => event.kind === 'result'))
+    assert.deepEqual(thoughts().map(event => [event.phase, event.text]), [
+      ['snapshot', 'TEST V1 thought'], ['snapshot', 'TEST V1 thought continued'], ['complete', 'TEST V1 thought continued'],
+    ])
+    assert.ok(thoughts().every(event => event.messageRef === assistant.info.id && event.block === 0 &&
+      event.sessionRef === request.sessionId && event.inputId === 'TEST-thought' && event.operationRef === 'TEST-thought-op'))
+    assert.equal(events.filter(event => event.kind === 'tool').length, 1)
+    assert.equal(events.filter(event => event.kind === 'tool-result').length, 1)
+    assert.ok((await driver.submit({ inputId: 'TEST-neighbor', operationRef: 'TEST-neighbor-op', content: 'TEST next turn' })).ok)
+    host.complete(); await until(() => events.filter(event => event.kind === 'result').length === 2)
+    const next = thoughts().filter(event => event.inputId === 'TEST-neighbor')
+    assert.ok(next.length > 0)
+    assert.ok(next.every(event => event.messageRef !== assistant.info.id && event.operationRef === 'TEST-neighbor-op' && event.text === 'TEST V1 thought'))
+    assert.equal(next.at(-1)?.phase, 'complete')
+  } finally { await driver.close(); await done }
+})
+
 test('V1 omitted idle status with a busy neighbor qualifies only exact settled turns and admits the next input', async t => {
   const host = await v1Peer(); t.after(host.close)
   const c = configuration(host); c.version = '1.18.35'; c.limits = { ...c.limits, timeoutMs: 500 }

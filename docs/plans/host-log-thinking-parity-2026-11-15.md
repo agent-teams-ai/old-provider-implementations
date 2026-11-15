@@ -179,3 +179,25 @@ the child observation boundary must remain explicit in tests. No `push` workflow
 exists at the inspected base; keep PR creation and checked artifact adoption on
 HOLD until an authorized qualification route is available. This review is not a
 source/test PASS and does not waive `pnpm check` or either packed-consumer test.
+
+### Candidate source review and controlled verification
+
+The exact candidate modifies the three production and seven test files listed
+above, with 166 insertions and 15 deletions before this record. Root reviewed the
+complete diff independently: GO for the bounded source branch, without PR or app
+adoption. The distinct contract variant, kind-separated accumulation, native
+indices, wrapper deduplication, child ownership and unchanged output budgets are
+covered by the controlled tests; no other provider behavior is changed.
+
+Using the exact Node 24.21.0 binary, the existing Claude normalize, factory and
+subagent suites plus V1 driver suite pass **49/49, zero skipped**. The log SHA-256
+is `a707b78675834334db91a5973fa4932daee277b771828f81ac1dd4b32950e221`.
+A scoped TypeScript 7.0.2 no-emit check covers the ten changed files and their
+imports against the actual source SPI. Runtime dependencies match the pinned
+versions; locally available Node types are 24.12.4 instead of the pinned 24.13.3,
+so this is limited source evidence. `git diff --check` passes.
+
+Canonical pnpm 11.18.0 full `pnpm check`, both CI Node versions, both packed-consumer
+runs, OpenCode native qualification and checked immutable archives remain on
+HOLD. Added packed-consumer assertions have been reviewed, not executed here.
+No archive or qualified receipt was manufactured from these local checks.

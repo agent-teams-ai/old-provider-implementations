@@ -25,6 +25,10 @@ const mandatoryTools: CodexDriverConfig['requiredMcpTools'] = { team: ['look-up.
 const finiteStatusMethod: CodexAppServerClient['listMcpServerStatus'] | undefined = undefined;
 if (mandatoryTools.team?.[0] !== 'look-up.raw' || finiteStatusMethod !== undefined) throw Error('finite native MCP contracts');
 const compaction: EventPayload = { kind: 'compaction', sourceRef: 'opaque', reason: 'automatic' };
+const thinkingFact: Extract<EventPayload, { kind: 'thinking' }> = { kind: 'thinking', messageRef: 'TEST-message', block: 0, text: 'TEST thought', phase: 'complete' };
+const textFact: Extract<EventPayload, { kind: 'text' }> = { kind: 'text', messageRef: 'TEST-message', block: 1, text: 'TEST output', phase: 'snapshot' };
+function logText(payload: EventPayload): string | undefined { return payload.kind === 'thinking' || payload.kind === 'text' ? payload.text : undefined; }
+if (logText(thinkingFact) !== 'TEST thought' || logText(textFact) !== 'TEST output') throw Error('distinct log content contracts');
 const nativeOptions: ClaudeConfig['nativeOptions'] = { permissionMode: 'acceptEdits', settingSources: ['project'], projectInstructions: { append: 'TEST' }, effort: 'high', fastMode: false, context: 'model-default' };
 const namespace: ClaudeConfig['configNamespace'] = 'native-default';
 const attachmentRefs: Input['attachments'] = [{ artifactId: 'TEST-image', mimeType: 'image/png', byteLength: 1, digest: '0'.repeat(64) }];

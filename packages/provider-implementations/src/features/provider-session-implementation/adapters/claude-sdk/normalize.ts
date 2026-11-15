@@ -45,15 +45,21 @@ export class Normalizer {
     const key = `${this.streamMessage}:${e.index}`;
     if (e.type === 'content_block_start') {
       const b = record(e.content_block);
-      if (b.type === 'text') {this.blocks.set(key, typeof b.text === 'string' ? b.text : '');}
+      if (b.type === 'text' || b.type === 'thinking') {
+        const value = b.type === 'text' ? b.text : b.thinking;
+        this.blocks.set(`${key}:${b.type}`, typeof value === 'string' ? value : '');
+      }
     }
-    if (e.type !== 'content_block_delta' || record(e.delta).type !== 'text_delta') {return [];}
-    const delta = record(e.delta).text;
-    if (typeof delta !== 'string') {return [];}
-    const text = (this.blocks.get(key) ?? '') + delta;
+    if (e.type !== 'content_block_delta') {return [];}
+    const delta = record(e.delta);
+    const kind = delta.type === 'text_delta' ? 'text' : delta.type === 'thinking_delta' ? 'thinking' : undefined;
+    if (kind === undefined) {return [];}
+    const value = kind === 'text' ? delta.text : delta.thinking;
+    if (typeof value !== 'string') {return [];}
+    const blockKey = `${key}:${kind}`, text = (this.blocks.get(blockKey) ?? '') + value;
     if (Buffer.byteLength(text) > this.maxBytes) {throw new OutputLimitError('output-limit');}
-    this.blocks.set(key, text);
-    return [{ kind: 'text', messageRef: this.streamMessage, block: e.index, text, phase: 'snapshot' }];
+    this.blocks.set(blockKey, text);
+    return [{ kind, messageRef: this.streamMessage, block: e.index, text, phase: 'snapshot' }];
   }
   private assistant(message: Record<string, unknown>): Fact[] {
     if (typeof message.id !== 'string' || !Array.isArray(message.content)) {return [];}
@@ -62,6 +68,7 @@ export class Normalizer {
     for (const value of message.content) {
       const b = record(value);
       if (b.type === 'text' && typeof b.text === 'string') {facts.push({ kind: 'text', messageRef: message.id, block: index, text: b.text, phase: 'complete' });}
+      if (b.type === 'thinking' && typeof b.thinking === 'string') {facts.push({ kind: 'thinking', messageRef: message.id, block: index, text: b.thinking, phase: 'complete' });}
       if (b.type === 'tool_use' && typeof b.id === 'string' && typeof b.name === 'string') {facts.push({ kind: 'tool', messageRef: message.id, toolRef: b.id, name: b.name, input: b.input });}
       index += 1;
     }

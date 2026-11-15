@@ -30,10 +30,43 @@ test('canonical DriverFactory uses a pinned Host projection and preserves runtim
     assert.deepEqual(receipt, { ok: true, value: { inputId: 'input-1', operationRef: 'operation-1', delivery: 'client-consumed', providerAcceptance: 'unknown' } });
     await setImmediate();
     assert.equal(sdk.options.model, 'fixture-model');
+    const native = { session_id: sdk.options.sessionId, parent_tool_use_id: null };
+    sdk.emit({ ...native, type: 'stream_event', user_message_uuid: sdk.inputs[0]?.uuid,
+      event: { type: 'message_start', message: { id: 'TEST-thinking-message' } } });
+    sdk.emit({ ...native, type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } } });
+    sdk.emit({ ...native, type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'TEST thought' } } });
+    sdk.emit({ ...native, type: 'assistant', uuid: 'TEST-thinking-wrapper',
+      message: { id: 'TEST-thinking-message', content: [{ type: 'thinking', thinking: 'TEST thought' }] } });
     sdk.emit({ type: 'result', subtype: 'success', session_id: sdk.options.sessionId, user_message_uuid: sdk.inputs[0]?.uuid });
     await setImmediate();
+    assert.deepEqual(events.filter(event => event.kind === 'thinking'), ['snapshot', 'complete'].map(phase => ({
+      kind: 'thinking', messageRef: 'TEST-thinking-message', block: 0, text: 'TEST thought', phase,
+      sessionRef: c.sessionRef, inputId: 'input-1', operationRef: 'operation-1',
+    })));
     assert.ok(events.some(event => event.kind === 'result' && event.outcome === 'succeeded' && event.inputId === 'input-1' && event.operationRef === 'operation-1'));
   } finally { assert.equal((await opened.driver.close()).cleanup, 'confirmed'); await observer; }
+});
+
+test('final thinking uses the existing Session byte and event budgets without replay', async () => {
+  for (const limit of [{ outputBytes: 128 }, { outputEvents: 1 }]) {
+    const sdk = new QueryFixture(), c = configuration(); c.limits = { ...c.limits, ...limit };
+    const { driver } = await createClaudeDriverFactory({ capabilities: ['text'],
+      resolveConfiguration: async () => c, readCheckpoint: async () => {},
+    }, sdk.boundary).open(request);
+    const events: Event[] = [], observer = (async () => { for await (const event of driver.observe()) { events.push(event); } })();
+    try {
+      assert.ok((await driver.submit({ inputId: 'TEST-limited', operationRef: 'TEST-operation', content: 'TEST' })).ok);
+      await setImmediate();
+      sdk.emit({ type: 'assistant', session_id: sdk.options.sessionId, user_message_uuid: sdk.inputs[0]?.uuid,
+        message: { id: 'TEST-message', content: [{ type: 'thinking', thinking: 'é'.repeat(100) }, { type: 'thinking', thinking: 'TEST second block' }] } });
+      await setImmediate();
+      assert.deepEqual(await driver.checkReadiness(), { ok: false, code: 'output-limit' });
+      assert.deepEqual(events.filter(event => event.kind === 'result'), [{ kind: 'result', outcome: 'unknown', code: 'output-limit',
+        sessionRef: c.sessionRef, inputId: 'TEST-limited', operationRef: 'TEST-operation' }]);
+      assert.equal(events.filter(event => event.kind === 'thinking').length, 'outputBytes' in limit ? 0 : 1);
+      assert.equal(sdk.inputs.length, 1);
+    } finally { assert.equal((await driver.close()).cleanup, 'confirmed'); await observer; }
+  }
 });
 
 test('unsupported capability and mismatched configuration reject before query construction', async () => {

@@ -75,12 +75,16 @@ test('native child transcript and usage retain child provenance without entering
   try {
     await f.start();
     f.sdk.emit({ type: 'assistant', session_id: f.sdk.options.sessionId, agent_id: 'child-A', parent_tool_use_id: 'parent-tool', uuid: 'child-message-uuid',
-      message: { id: 'child-message', content: [{ type: 'text', text: 'TEST child transcript' }, { type: 'tool_use', id: 'child-tool', name: 'Write', input: { file_path: '/TEST-unused/child.txt' } }] } });
+      message: { id: 'child-message', content: [{ type: 'thinking', thinking: 'TEST child thought' }, { type: 'text', text: 'TEST child transcript' }, { type: 'tool_use', id: 'child-tool', name: 'Write', input: { file_path: '/TEST-unused/child.txt' } }] } });
     f.sdk.emit({ type: 'user', session_id: f.sdk.options.sessionId, parent_tool_use_id: 'parent-tool', message: { content: [{ type: 'tool_result', tool_use_id: 'child-tool', content: 'TEST child effect result' }] } });
     f.sdk.emit({ type: 'system', subtype: 'task_progress', session_id: f.sdk.options.sessionId, task_id: 'child-A', tool_use_id: 'parent-tool', usage: { total_tokens: 27, tool_uses: 1, duration_ms: 50 } });
     await setImmediate();
-    assert.deepEqual(f.facts.map(fact => fact.phase), ['started', 'fact', 'fact', 'fact', 'usage']);
+    assert.deepEqual(f.facts.map(fact => fact.phase), ['started', 'fact', 'fact', 'fact', 'fact', 'usage']);
+    assert.deepEqual(f.facts.filter(fact => fact.phase === 'fact').map(fact => fact.fact.kind), ['thinking', 'text', 'tool', 'tool-result']);
+    const thought = f.facts[1]; assert.ok(thought?.phase === 'fact');
+    assert.deepEqual(thought.fact, { kind: 'thinking', messageRef: 'child-message', block: 0, text: 'TEST child thought', phase: 'complete' });
     assert.ok(f.facts.every(fact => fact.sessionRef === f.config.sessionRef && fact.inputId === 'input-A' && fact.operationRef === 'operation-A' && fact.childRef === 'child-A' && fact.parentToolRef === 'parent-tool'));
+    assert.equal(f.events.some(event => event.kind === 'thinking'), false);
     assert.equal(f.events.some(event => event.kind === 'text' && event.text === 'TEST child transcript'), false);
     assert.equal(f.events.some(event => event.kind === 'usage'), false);
     assert.equal(f.events.some(event => event.kind === 'tool' && event.toolRef === 'child-tool'), false);

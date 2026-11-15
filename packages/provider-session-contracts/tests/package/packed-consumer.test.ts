@@ -24,6 +24,10 @@ test('real packed contracts install and strict consumer build require no engine,
   const lock = await readFile(join(root, 'pnpm-lock.yaml'), 'utf8');
   for (const forbidden of ['agent-execution', 'filesystem-custody', 'pg@', 'anthropic', 'claude-runtime', 'link:']) {assert.ok(!lock.includes(forbidden), forbidden);}
   await writeFile(join(root, 'consumer.ts'), `import type {DriverFactory, Session, Input, Reply, Handoff, OpenConfig, FailureCode, EventPayload} from '@agent-teams/provider-session-contracts';
+const thinkingFact: Extract<EventPayload, {kind: 'thinking'}> = {kind: 'thinking', messageRef: 'TEST-message', block: 0, text: 'TEST thought', phase: 'complete'};
+const textFact: Extract<EventPayload, {kind: 'text'}> = {kind: 'text', messageRef: 'TEST-message', block: 1, text: 'TEST output', phase: 'snapshot'};
+function logText(payload: EventPayload): string | undefined { return payload.kind === 'thinking' || payload.kind === 'text' ? payload.text : undefined; }
+if (logText(thinkingFact) !== 'TEST thought' || logText(textFact) !== 'TEST output') throw Error('distinct log content contracts');
 export async function consume(factory: DriverFactory, config: OpenConfig, input: Input): Promise<Reply<Handoff>> {
  const session: Session = (await factory.open(config)).driver;
  const result = await session.submit(input);
