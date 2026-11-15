@@ -70,6 +70,7 @@ export class CodexAppServerClient {
   private opening = 0
   private handshakeComplete = false
   private initialization: unknown
+  private sampleUncertain = false
 
   constructor(options: CodexAppServerOptions) {
     this.options = options
@@ -123,15 +124,17 @@ export class CodexAppServerClient {
       throw new CodexProtocolError('codex.sample.not-initialized', 'not-sent')
     }
     const session = this.sessions.get(input.threadId)
-    const eligible = () => this.rpc.isOpen() && this.sessions.get(input.threadId) === session &&
+    const eligible = () => !this.sampleUncertain && this.rpc.isOpen() && this.sessions.get(input.threadId) === session &&
       session !== undefined && session.canSample() && current()
     if (!input.threadId || !input.expectedTurnId || !input.prompt || !eligible() || signal.aborted) {
       throw new CodexProtocolError('codex.sample.stale', 'not-sent')
     }
     let sentId: string | number | undefined
-    let settled = false
+    let settled = false, received = false, cancelRequested = false
     const cancelNative = (): void => {
-      if (sentId === undefined || settled || !this.rpc.isOpen()) return
+      if (sentId === undefined || settled || received || cancelRequested || !this.rpc.isOpen()) return
+      this.sampleUncertain = true
+      cancelRequested = true
       // Best effort, separate from the source thread's control and main turn.
       void this.rpc.request('thread/sample/cancel', { requestId: sentId },
         { beforeWrite: () => this.rpc.isOpen() }).catch(() => {})
@@ -148,10 +151,19 @@ export class CodexAppServerClient {
         beforeWrite: eligible,
         onSentId: id => { sentId = id; if (signal.aborted) cancelNative() },
       })
+      received = true // Native settlement precedes the caller's reentrant eligibility check.
       if (!eligible() || signal.aborted) {
         throw new CodexProtocolError('codex.sample.stale')
       }
       return reply
+    } catch (error) {
+      const nativeError = error instanceof CodexProtocolError && error.code === 'codex.protocol.provider-error'
+      const notSent = error instanceof CodexProtocolError && error.acceptance === 'not-sent'
+      if (sentId !== undefined && !received && !nativeError && !notSent) {
+        this.sampleUncertain = true
+        cancelNative()
+      }
+      throw error
     } finally {
       settled = true
       signal.removeEventListener('abort', cancelNative)

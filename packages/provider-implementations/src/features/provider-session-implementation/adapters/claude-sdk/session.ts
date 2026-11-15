@@ -57,6 +57,9 @@ export class ClaudeSession implements Session {
   private knownTerminal: Extract<Event, { kind: 'result' }> | undefined;
   /** The SDK emits prompt_suggestion after result, when active has already retired. */
   private lastSuccessfulInput: Input | undefined;
+  private suggestionOwner: Input | undefined;
+  // The SDK has no input ID on suggestions; ambiguous ownership cannot recover in this Query.
+  private suggestionsUncertain = false;
   private wakeup = deferred<void>();
   private readonly inputClosed = deferred<void>();
   private control: Promise<Reply<{ requested: true; terminal: 'unconfirmed' }>> | undefined;
@@ -107,6 +110,7 @@ export class ClaudeSession implements Session {
     if (this.queued.length >= this.config.limits.queuedInputs) {return Promise.resolve(fail('backpressure'));}
     const pending: PendingInput = { input, handed: false, nativeRef: randomUUID(), receipt: deferred<Reply<Handoff>>(), interactionsCancelled: false, toolRevocation: new AbortController() };
     // A newly accepted input makes any delayed previous suggestion obsolete.
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
     this.lastSuccessfulInput = undefined;
     this.queued.push(pending); this.wake(); return pending.receipt.promise;
   }
@@ -177,6 +181,8 @@ export class ClaudeSession implements Session {
     if (this.control) {return this.control;}
     // Install the fence synchronously. A result cannot release the next handoff until this settles.
     const done = deferred<Reply<{ requested: true; terminal: 'unconfirmed' }>>(); this.control = done.promise;
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
+    this.lastSuccessfulInput = undefined;
     this.active.interactionsCancelled = true; this.active.toolRevocation.abort();
     this.interactions.cancel();
     void this.sendInterrupt(done);
@@ -269,6 +275,10 @@ export class ClaudeSession implements Session {
           if (this.active === pending) { this.active = undefined; } this.wake(); continue;
         }
       }
+      if (this.config.promptSuggestions) {
+        if (this.suggestionOwner !== undefined || this.queued.length > 0) { this.suggestionsUncertain = true; }
+        this.suggestionOwner = pending.input;
+      }
       pending.handed = true;
       pending.receipt.resolve({ ok: true, value: { inputId: pending.input.inputId, operationRef: pending.input.operationRef, delivery: 'client-consumed', providerAcceptance: 'unknown' } });
       yield { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, session_id: this.nativeSession, uuid: pending.nativeRef };
@@ -306,9 +316,11 @@ export class ClaudeSession implements Session {
       // seal or fail the original native conversation.
       if (m.session_id !== this.nativeSession || m.parent_tool_use_id != null ||
           m.agent_id !== undefined || m.resume_reason !== undefined) return;
-      const input = this.lastSuccessfulInput;
+      if (this.active !== undefined) { return; }
+      const input = this.lastSuccessfulInput, owner = this.suggestionOwner;
       this.lastSuccessfulInput = undefined; // Single-use, even for invalid frames or observer failure.
-      if (this.state === 'open' && input && this.active === undefined) {
+      this.suggestionOwner = undefined;
+      if (this.state === 'open' && !this.suggestionsUncertain && input && owner === input) {
         offerNativeSuggestion(this.config.promptSuggestions, decodeClaudePromptSuggestion(m, this.nativeSession, {
           sessionRef: this.sessionRef, inputId: input.inputId, operationRef: input.operationRef,
           nativeSessionRef: this.nativeSession,
@@ -391,8 +403,11 @@ export class ClaudeSession implements Session {
     const active = this.active;
     if (input && active !== undefined && (active.input.operationRef === input.operationRef || active.input.inputId === input.inputId)) {
       this.emit({ kind: 'result', outcome: terminal, ...(failure ? { code: failure } : {}) }, input);
-      this.lastSuccessfulInput = terminal === 'succeeded' && this.state === 'open' &&
-        eligibleNativeInput(this.config.promptSuggestions, active.input) ? active.input : undefined;
+      const eligible = terminal === 'succeeded' && this.state === 'open' &&
+        eligibleNativeInput(this.config.promptSuggestions, active.input);
+      // Eligibility may synchronously accept a successor or close this Session.
+      this.lastSuccessfulInput = eligible && this.state === 'open' && !this.suggestionsUncertain &&
+        this.suggestionOwner === active.input ? active.input : undefined;
       active.toolRevocation.abort(); this.active = undefined; this.interactions.cancel(); this.wake();
       if (terminal === 'unknown') {this.unavailable(failure ?? 'unknown');}
     } else { this.emit({ kind: 'result', outcome: 'unknown', code: 'unknown' }); this.unavailable('unknown'); }
@@ -471,6 +486,7 @@ export class ClaudeSession implements Session {
   private unavailable(code: FailureCode): void {
     if (this.state === 'closed' || this.failure === 'output-limit') {return;}
     this.state = 'unavailable';
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
     this.lastSuccessfulInput = undefined;
     // A disappeared dependency during an accepted turn does not prove the turn stopped.
     this.failure = this.active && code === 'dependency-unavailable' ? 'unknown' : code;
