@@ -160,6 +160,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, cutSignal])
     let fetchPending = false
+    let fetchCleanupUnknown = false
     try {
       transport.check(); signal.throwIfAborted()
       fetchPending = true
@@ -174,6 +175,10 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
           throw new Error('native_read_cleanup_unknown')
         }
         return received
+      }, error => {
+        fetchPending = false
+        fetchCleanupUnknown = unknownCleanup(error)
+        throw error
       }), deadline - Date.now(), signal)
       fetchPending = false
       // Injected metadata getters can throw before the native response stream
@@ -222,7 +227,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
       const reject: (failure: Error) => never = (failure) => { remember(stage, error, signal, failure); throw failure }
       // A fetch which ignores abort/timeout has no confirmed response-body
       // custody. Do not misreport the unresolved operation as a clean refusal.
-      if (fetchPending && (signal.aborted || Date.now() >= deadline)) {
+      if ((fetchPending || fetchCleanupUnknown) && (signal.aborted || Date.now() >= deadline)) {
         reject(new Error('native_read_cleanup_unknown'))
       }
       // An injected public read transport can reject with raw native payloads,

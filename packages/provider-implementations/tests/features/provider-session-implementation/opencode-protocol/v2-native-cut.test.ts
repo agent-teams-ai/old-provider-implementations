@@ -450,6 +450,47 @@ test('public native read cut refuses a never-settling injected fetch after admis
   assert.equal(nativeSignal?.aborted, true)
 })
 
+for (const mode of ['settled-rejection', 'unknown-cleanup'] as const) test(
+  `public native read cut preserves ${mode} after its original sibling revokes the final fetch`, async t => {
+    const host = await fixture('stable'); t.after(host.close)
+    const firstFailure = new Error('invalid_native_read_response')
+    const rejectedFetch = new Error(mode === 'unknown-cleanup'
+      ? 'native_read_cleanup_unknown' : 'TEST_PRIVATE_ABORTED_FINAL_LOG')
+    let fetches = 0, logReads = 0, sessionReads = 0, rejected = 0
+    let finalSignal: AbortSignal | null | undefined
+    const transport = {
+      check() {},
+      fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+        fetches++
+        const url = new URL(String(input))
+        if (url.pathname.endsWith('/log') && ++logReads === 2) {
+          const signal = init?.signal
+          assert(signal && !signal.aborted)
+          finalSignal = signal
+          return new Promise<Response>((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              rejected++
+              reject(rejectedFetch)
+            }, { once: true })
+          })
+        }
+        if (url.pathname === '/api/session/' + sessionID && ++sessionReads === 2)
+          return Promise.reject(firstFailure)
+        return fetch(input, init)
+      },
+    }
+    await assert.rejects(readOpenCodeV2NativeCut(transport,
+      { endpoint: host.endpoint, directory: host.directory, sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
+    (error: unknown) => mode === 'settled-rejection' ? error === firstFailure
+      : error instanceof Error && error.message === 'native_read_cleanup_unknown')
+    assert.deepEqual({ fetches, logReads, sessionReads, rejected },
+      { fetches: 6, logReads: 2, sessionReads: 2, rejected: 1 })
+    assert.equal(finalSignal?.aborted, true)
+    assert.deepEqual(host.counts(), { logs: 1, pages: 2, requests: 4 })
+  }
+)
+
 test('public native read cut cancels a late fetch response after revocation', async t => {
   const directory = resolve('TEST/native-cut'), controller = new AbortController()
   let deliver!: (response: Response) => void
