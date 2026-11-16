@@ -1,5 +1,6 @@
 import { OpenCodeInputWindowCapture } from './input-window-capture.ts'
 import { createHash, randomUUID } from 'node:crypto'
+import { channel } from 'node:diagnostics_channel'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { CloseReceipt, Event, EventPayload, FailureCode, Input, InteractionReply, Reply, Session } from '@agent-teams/provider-session-contracts'
 import { bounded, deferred, EventFeed } from '../provider-session-io/io.ts'
@@ -7,6 +8,7 @@ import type { DriverPermission, DriverProtocol, DriverSessionConfig, DriverTurn 
 import { executionWasNotSubmitted } from './v2-failures.ts'
 import { AttachmentFailure, inputFingerprint, prepareAttachments, snapshotInput, validCanonicalInput, validateAttachments } from '../provider-session-io/attachments.ts'
 
+const closeFailureChannel = channel('agent-teams:opencode-v2:driver-close-failed')
 const failure = (code: FailureCode, unsent = false) => ({ ok: false as const, code, ...(unsent ? { delivery: 'known-not-sent' as const } : {}) })
 const handoff = (input: Input) => ({ ok: true as const, value: { inputId: input.inputId, operationRef: input.operationRef,
   delivery: 'client-consumed' as const, providerAcceptance: 'unknown' as const } })
@@ -111,12 +113,27 @@ export class OpenCodeDriverSession implements Session {
     if (this.closing) {return this.closing}
     this.seal('unknown'); this.state = 'closed'; this.abort.abort(); this.wake()
     this.closing = (async () => {
+      let stage: 'original-work' | 'protocol-dispose' | 'confirm-stopped' = 'original-work'
+      const observeFailure = (outcome: 'threw' | 'unconfirmed'): void => {
+        try {
+          if (!closeFailureChannel.hasSubscribers) return
+          const engine = Object.getOwnPropertyDescriptor(this.config, 'engine')
+          if (!engine || !('value' in engine) || engine.value !== 'opencode-v2') return
+          const field = Object.getOwnPropertyDescriptor(this.config, 'trustedBinding')
+          const trustedBinding: unknown = field && 'value' in field ? field.value : undefined
+          if (typeof trustedBinding !== 'string' || !/^[a-f0-9]{64}$/.test(trustedBinding)) return
+          closeFailureChannel.publish(Object.freeze({ stage, outcome, trustedBinding }))
+        } catch { /* Passive producer diagnostics cannot replace the original close receipt. */ }
+      }
       try {
         await bounded(Promise.all([this.loop, this.control, ...this.replies]), this.config.limits.timeoutMs)
+        stage = 'protocol-dispose'
         await bounded(this.protocol.dispose(), this.config.limits.timeoutMs)
+        stage = 'confirm-stopped'
         const stopped = await bounded(this.config.confirmStopped(), this.config.limits.timeoutMs)
+        if (!stopped) observeFailure('unconfirmed')
         return { logicallyClosed: true as const, cleanup: stopped ? 'confirmed' as const : 'unknown' as const }
-      } catch { return { logicallyClosed: true as const, cleanup: 'unknown' as const } }
+      } catch { observeFailure('threw'); return { logicallyClosed: true as const, cleanup: 'unknown' as const } }
       finally { this.feed.end() }
     })()
     return this.closing

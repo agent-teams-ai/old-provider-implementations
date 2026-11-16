@@ -453,6 +453,9 @@ test('public native read cut refuses a never-settling injected fetch after admis
 for (const mode of ['settled-rejection', 'unknown-cleanup'] as const) test(
   `public native read cut preserves ${mode} after its original sibling revokes the final fetch`, async t => {
     const host = await fixture('stable'); t.after(host.close)
+    const diagnostics: unknown[] = [], events = channel('agent-teams:opencode-v2:read-cut-failed')
+    const collect = (value: unknown) => { diagnostics.push(value) }
+    events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
     const firstFailure = new Error('invalid_native_read_response')
     const rejectedFetch = new Error(mode === 'unknown-cleanup'
       ? 'native_read_cleanup_unknown' : 'TEST_PRIVATE_ABORTED_FINAL_LOG')
@@ -488,6 +491,14 @@ for (const mode of ['settled-rejection', 'unknown-cleanup'] as const) test(
       { fetches: 6, logReads: 2, sessionReads: 2, rejected: 1 })
     assert.equal(finalSignal?.aborted, true)
     assert.deepEqual(host.counts(), { logs: 1, pages: 2, requests: 4 })
+    assert.equal(diagnostics.length, 1)
+    const diagnostic = diagnostics[0] as Record<string, unknown>
+    assert.equal(Object.isFrozen(diagnostic), true)
+    assert.equal(diagnostic.stage, 'after-session')
+    assert.equal(diagnostic.reason, 'invalid_native_read_response')
+    assert.equal(diagnostic.finalReason, mode === 'unknown-cleanup' ? 'native_read_cleanup_unknown' : 'invalid_native_read_response')
+    assert.equal(diagnostic.aborted, false); assert.equal(diagnostic.deadlineExpired, false)
+    assert.equal(JSON.stringify(diagnostics).includes('TEST_PRIVATE'), false)
   }
 )
 
@@ -546,8 +557,9 @@ test('public native read cut cancels a late fetch response after revocation', as
   assert.equal(failures.length, 1)
   const diagnostic = failures[0] as Record<string, unknown>
   assert.equal(Object.isFrozen(diagnostic), true)
-  assert.deepEqual(Object.keys(diagnostic).sort(), ['aborted', 'deadlineExpired', 'elapsedMs', 'reason', 'stage'])
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['aborted', 'deadlineExpired', 'elapsedMs', 'finalReason', 'reason', 'stage'])
   assert.equal(diagnostic.stage, 'after-session'); assert.equal(diagnostic.reason, 'unknown')
+  assert.equal(diagnostic.finalReason, 'native_read_cleanup_unknown')
   assert.equal(diagnostic.aborted, false, 'capture precedes the pair self-abort')
   assert.equal(diagnostic.deadlineExpired, false)
   assert.ok(Number.isSafeInteger(diagnostic.elapsedMs) && Number(diagnostic.elapsedMs) >= 0 && Number(diagnostic.elapsedMs) <= 60_000)
@@ -782,5 +794,40 @@ test('V2 public read cut counts physical native bytes behind spoofed accessors',
       { nativeInputID, beforeCursor: 0, text: 'TEST input' }),
     (error: unknown) => error instanceof Error && error.message === 'native_cut_byte_budget')
     assert.deepEqual({ reads, cancels, fetches }, { reads: 1, cancels: 1, fetches: 1 })
+  }
+})
+
+test('final read-cut classification retains the actual error and never invokes diagnostic accessors', async t => {
+  const diagnostics: unknown[] = [], events = channel('agent-teams:opencode-v2:read-cut-failed')
+  const collect = (value: unknown) => { diagnostics.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  for (const mode of ['allowed', 'private', 'accessor'] as const) {
+    diagnostics.length = 0
+    let messageReads = 0, stackReads = 0, fetches = 0
+    const original = new Error(mode === 'private' ? 'TEST_PRIVATE_NATIVE_DETAIL' : 'frame_limit')
+    Object.defineProperty(original, 'stack', { get() { stackReads++; throw new Error('TEST_PRIVATE_STACK') } })
+    if (mode === 'accessor') Object.defineProperty(original, 'message', {
+      get() { messageReads++; return 'frame_limit' },
+    })
+    const transport = { check() {}, async fetch(): Promise<Response> { fetches++; throw original } }
+    const caught: unknown = await readOpenCodeV2NativeCut(transport,
+      { endpoint: 'http://127.0.0.1:12345', directory: resolve('TEST/native-cut'), sessionID, pin: '2.0.21' },
+      { nativeInputID, beforeCursor: 0, text: 'TEST input' })
+      .then(() => assert.fail('the original failure must reject'), (error: unknown) => error)
+    if (mode === 'private') {
+      assert.ok(caught instanceof Error); assert.equal(caught.message, 'invalid_native_read_response')
+    } else { assert.equal(caught, original) }
+    assert.equal(fetches, 1)
+    // The original read refusal reads message once; neither diagnostic classifier invokes its accessor.
+    assert.equal(messageReads, mode === 'accessor' ? 1 : 0); assert.equal(stackReads, 0)
+    assert.equal(diagnostics.length, 1)
+    const diagnostic = diagnostics[0] as Record<string, unknown>
+    assert.equal(Object.isFrozen(diagnostic), true)
+    assert.deepEqual(Object.keys(diagnostic).sort(), ['aborted', 'deadlineExpired', 'elapsedMs', 'finalReason', 'reason', 'stage'])
+    assert.equal(diagnostic.stage, 'before-session')
+    assert.equal(diagnostic.reason, mode === 'allowed' ? 'frame_limit' : 'unknown')
+    assert.equal(diagnostic.finalReason, mode === 'allowed' ? 'frame_limit' : mode === 'private' ? 'invalid_native_read_response' : 'unknown')
+    assert.equal(diagnostic.aborted, false); assert.equal(diagnostic.deadlineExpired, false)
+    assert.equal(JSON.stringify(diagnostics).includes('TEST_PRIVATE'), false)
   }
 })

@@ -42,9 +42,11 @@ function failureReason(error: unknown): CutFailure['reason'] {
       ? value as CutFailure['reason'] : 'unknown'
   } catch { return 'unknown' }
 }
-function publishFailure(failure: CutFailure): void {
+function publishFailure(failure: CutFailure, error: unknown): void {
   if (failure.reason === 'mutable_native_readback') return
-  try { if (failureChannel.hasSubscribers) failureChannel.publish(failure) }
+  try {
+    if (failureChannel.hasSubscribers) failureChannel.publish(Object.freeze({ ...failure, finalReason: failureReason(error) }))
+  }
   catch { /* Passive diagnostics cannot replace the original read failure. */ }
 }
 function unknownCleanup(error: unknown): boolean {
@@ -292,7 +294,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   } catch (error) {
     if (!failures.has(error)) remember('comparison', error)
     cutAbort.abort()
-    publishFailure(originalFailure!)
+    publishFailure(originalFailure!, error)
     throw error
   }
 }

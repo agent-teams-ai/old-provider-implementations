@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict'
+import { channel } from 'node:diagnostics_channel'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Event } from '@agent-teams/provider-session-contracts'
 import { createV2DriverSession } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-session.ts'
+import { OpenCodeDriverSession } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts'
+import type { DriverSessionConfig } from '../../../../src/features/provider-session-implementation/adapters/opencode-protocol/driver-protocol.ts'
 import { nativeConfig } from './v2-driver-support.ts'
 import { driverPeer } from './v2-driver-peer.ts'
 
@@ -275,4 +278,158 @@ test('observed terminal revokes a held permission reply preflight before grant a
     await until(() => events.some(event => event.kind === 'result' && event.inputId === 'TEST-next'))
     assert.equal(host.counts().replies, 1)
   } finally { host.releaseReplyPreflight(); await session.close(); await observed }
+})
+
+type CloseDiagnosticCase = 'original-work' | 'protocol-dispose' | 'confirm-false' | 'confirm-throw' | 'confirmed' | 'truthy'
+function closeDiagnosticFixture(mode: CloseDiagnosticCase,
+  alter: (config: DriverSessionConfig) => DriverSessionConfig = value => value) {
+  const calls: string[] = []
+  let releaseQueue!: () => void, signal!: AbortSignal, queued = false, queueReturned = false
+  const heldQueue = new Promise<void>(resolve => { releaseQueue = resolve })
+  const config = alter({
+    binding: { tenantId: 'TEST-tenant', projectId: 'TEST-project', sessionId: 'TEST-close-session', generation: 1 },
+    nativeSessionId: 'ses_TESTclose', trustedBinding: 'a'.repeat(64), engine: 'opencode-v2', compatibility: 'TEST-close',
+    limits: { queuedInputs: 2, inputBytes: 4096, outputBytes: 100_000, outputEvents: 100, pendingInteractions: 2, timeoutMs: 50 },
+    probe: async () => true,
+    confirmStopped: async () => {
+      calls.push('confirm-stopped')
+      if (mode === 'confirm-throw') throw new Error('TEST_PRIVATE_STOP_FAILURE')
+      return mode === 'truthy' ? 1 as unknown as boolean : mode === 'confirmed'
+    },
+  })
+  const session = new OpenCodeDriverSession(config, ownerSignal => {
+    signal = ownerSignal
+    return {
+      pollIntervalMs: 1,
+      async queue() {
+        calls.push('queue'); queued = true
+        await heldQueue; queueReturned = true
+        return { nativeInputId: 'msg_TESTclose', read: async () => ({ facts: [], permissions: [] }), interrupt: async () => {} }
+      },
+      async replyPermission() { assert.fail('the close fixture must never grant a permission') },
+      async dispose() {
+        calls.push('protocol-dispose')
+        if (mode === 'protocol-dispose') throw new Error('TEST_PRIVATE_DISPOSE_FAILURE')
+      },
+    }
+  })
+  return { session, calls, signal, releaseQueue, queued: () => queued, queueReturned: () => queueReturned }
+}
+
+test('V2 close diagnostics retain each original failed stage, cached Promise and downstream call order', async t => {
+  const diagnostics: unknown[] = [], events = channel('agent-teams:opencode-v2:driver-close-failed')
+  const collect = (value: unknown) => { diagnostics.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  for (const mode of ['original-work', 'protocol-dispose', 'confirm-false', 'confirm-throw', 'confirmed', 'truthy'] as const) {
+    diagnostics.length = 0
+    const f = closeDiagnosticFixture(mode), observed: Event[] = []
+    const observation = (async () => { for await (const event of f.session.observe()) observed.push(event) })()
+    try {
+      assert.equal(f.signal.aborted, false)
+      if (mode === 'original-work') {
+        void f.session.submit({ inputId: 'TEST-close-input', operationRef: 'TEST-close-op', content: 'TEST close input' })
+        await until(f.queued)
+      }
+      const closing = f.session.close()
+      assert.equal(f.signal.aborted, true)
+      assert.equal(f.session.close(), closing, 'close preserves its original cached Promise')
+      const confirmed = mode === 'confirmed' || mode === 'truthy'
+      assert.deepEqual(await closing, { logicallyClosed: true, cleanup: confirmed ? 'confirmed' : 'unknown' })
+      assert.equal(f.session.close(), closing)
+      await observation
+      assert.deepEqual(observed, mode === 'original-work'
+        ? [{ kind: 'result', outcome: 'unknown', code: 'unknown', sessionRef: 'TEST-close-session', inputId: 'TEST-close-input', operationRef: 'TEST-close-op' }]
+        : [{ kind: 'diagnostic', code: 'unknown', sessionRef: 'TEST-close-session' }])
+      assert.deepEqual(f.calls, mode === 'original-work' ? ['queue'] : mode === 'protocol-dispose'
+        ? ['protocol-dispose'] : ['protocol-dispose', 'confirm-stopped'])
+      if (confirmed) assert.deepEqual(diagnostics, [])
+      else {
+        assert.equal(diagnostics.length, 1)
+        const diagnostic = diagnostics[0]
+        assert.equal(Object.isFrozen(diagnostic), true)
+        assert.deepEqual(diagnostic, { stage: mode === 'original-work' ? 'original-work'
+          : mode === 'protocol-dispose' ? 'protocol-dispose' : 'confirm-stopped',
+        outcome: mode === 'confirm-false' ? 'unconfirmed' : 'threw', trustedBinding: 'a'.repeat(64) })
+      }
+      assert.equal(JSON.stringify(diagnostics).includes('TEST_PRIVATE'), false)
+    } finally {
+      f.releaseQueue()
+      if (f.queued()) await until(f.queueReturned)
+      await f.session.close(); await observation
+    }
+  }
+})
+
+test('close diagnostics refuse V1 and non-data or malformed metadata without reading accessors', async t => {
+  const diagnostics: unknown[] = [], events = channel('agent-teams:opencode-v2:driver-close-failed')
+  const collect = (value: unknown) => { diagnostics.push(value) }
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  for (const mode of ['v1', 'missing-engine', 'inherited-engine', 'engine-accessor', 'missing-binding',
+    'inherited-binding', 'binding-accessor', 'object-binding', 'uppercase-binding', 'short-binding', 'descriptor-throws'] as const) {
+    let getters = 0, descriptorReads = 0
+    const f = closeDiagnosticFixture('confirm-false', config => {
+      if (mode === 'v1') config.engine = 'opencode-v1'
+      if (mode === 'missing-engine' || mode === 'inherited-engine') {
+        Reflect.deleteProperty(config, 'engine')
+        if (mode === 'inherited-engine') Object.setPrototypeOf(config, { engine: 'opencode-v2' })
+      }
+      if (mode === 'engine-accessor' || mode === 'binding-accessor') Object.defineProperty(config,
+        mode === 'engine-accessor' ? 'engine' : 'trustedBinding', {
+          get() { getters++; throw new Error('TEST_PRIVATE_CONFIG_ACCESSOR') },
+        })
+      if (mode === 'missing-binding' || mode === 'inherited-binding') {
+        Reflect.deleteProperty(config, 'trustedBinding')
+        if (mode === 'inherited-binding') Object.setPrototypeOf(config, { trustedBinding: 'a'.repeat(64) })
+      }
+      if (mode === 'object-binding') config.trustedBinding = { toString() {
+        getters++; throw new Error('TEST_PRIVATE_BINDING_COERCION')
+      } } as unknown as string
+      if (mode === 'uppercase-binding') config.trustedBinding = 'A'.repeat(64)
+      if (mode === 'short-binding') config.trustedBinding = 'a'.repeat(63)
+      return mode === 'descriptor-throws' ? new Proxy(config, {
+        getOwnPropertyDescriptor() { descriptorReads++; throw new Error('TEST_PRIVATE_DESCRIPTOR_FAILURE') },
+      }) : config
+    })
+    try {
+      assert.deepEqual(await f.session.close(), { logicallyClosed: true, cleanup: 'unknown' })
+      assert.deepEqual(f.calls, ['protocol-dispose', 'confirm-stopped'])
+      const observed: Event[] = []
+      for await (const event of f.session.observe()) observed.push(event)
+      assert.deepEqual(observed, [{ kind: 'diagnostic', code: 'unknown', sessionRef: 'TEST-close-session' }])
+      assert.equal(getters, 0); assert.equal(descriptorReads, mode === 'descriptor-throws' ? 1 : 0)
+      assert.deepEqual(diagnostics, [])
+    } finally { f.releaseQueue(); await f.session.close() }
+  }
+})
+
+test('absent subscribers and producer-side publication failure preserve the original unknown close', async t => {
+  const events = channel('agent-teams:opencode-v2:driver-close-failed')
+  assert.equal(events.hasSubscribers, false)
+  let descriptorReads = 0
+  const silent = closeDiagnosticFixture('confirm-false', config => new Proxy(config, {
+    getOwnPropertyDescriptor() { descriptorReads++; throw new Error('TEST_PRIVATE_UNUSED_DESCRIPTOR') },
+  }))
+  try {
+    assert.deepEqual(await silent.session.close(), { logicallyClosed: true, cleanup: 'unknown' })
+    assert.equal(descriptorReads, 0); assert.deepEqual(silent.calls, ['protocol-dispose', 'confirm-stopped'])
+  } finally { silent.releaseQueue(); await silent.session.close() }
+  const collect = () => {}
+  events.subscribe(collect); t.after(() => { events.unsubscribe(collect) })
+  let publications = 0
+  const published: unknown[] = []
+  // This exercises a publisher failure, not an arbitrary subscriber's uncaughtException semantics.
+  const publish = t.mock.method(events, 'publish', (value: unknown) => {
+    publications++; published.push(value); throw new Error('TEST_PRIVATE_PUBLISH_FAILURE')
+  })
+  const f = closeDiagnosticFixture('confirm-false')
+  try {
+    const closing = f.session.close()
+    assert.deepEqual(await closing, { logicallyClosed: true, cleanup: 'unknown' })
+    assert.equal(f.session.close(), closing); assert.equal(publications, 1)
+    assert.deepEqual(f.calls, ['protocol-dispose', 'confirm-stopped'])
+    assert.deepEqual(published, [{ stage: 'confirm-stopped', outcome: 'unconfirmed', trustedBinding: 'a'.repeat(64) }])
+    const observed: Event[] = []
+    for await (const event of f.session.observe()) observed.push(event)
+    assert.deepEqual(observed, [{ kind: 'diagnostic', code: 'unknown', sessionRef: 'TEST-close-session' }])
+  } finally { publish.mock.restore(); f.releaseQueue(); await f.session.close() }
 })
