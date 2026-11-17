@@ -163,15 +163,15 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     const signal = AbortSignal.any([controller.signal, cutSignal])
     let fetchPending = false
     let fetchCleanupUnknown = false
+    let pendingFetch: Promise<Response> | undefined
     try {
       transport.check(); signal.throwIfAborted()
       fetchPending = true
       // If injected fetch ignores abort and resolves *after* our bounded wait,
       // reclaim its late response body best-effort. Custody was already UNKNOWN:
       // never turn this asynchronous cancellation into a clean read receipt.
-      const pendingFetch = transport.fetch(binding.endpoint + path,
-        { method: 'GET', redirect: 'error', signal })
-      const response = await boundV2Request(pendingFetch.then(received => {
+      pendingFetch = transport.fetch(binding.endpoint + path,
+        { method: 'GET', redirect: 'error', signal }).then(received => {
         if (signal.aborted) {
           try { void received.body?.cancel().catch(() => {}) } catch { /* unknown custody */ }
           throw new Error('native_read_cleanup_unknown')
@@ -181,7 +181,8 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
         fetchPending = false
         fetchCleanupUnknown = unknownCleanup(error)
         throw error
-      }), deadline - Date.now(), signal)
+      })
+      const response = await boundV2Request(pendingFetch, deadline - Date.now(), signal)
       fetchPending = false
       // Injected metadata getters can throw before the native response stream
       // has a reader. Do not report a clean refusal while its body is unowned.
@@ -227,6 +228,15 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
     } catch (error) {
       remember(stage, error, signal)
       const reject: (failure: Error) => never = (failure) => { remember(stage, error, signal, failure); throw failure }
+      // Abort can win the bounded await before the original fetch rejects.
+      // Join only that original promise; late bodies and true cleanup debt stay UNKNOWN.
+      if (fetchPending && signal.aborted && pendingFetch) {
+        const cleanupDeadline = Math.min(deadline, Date.now() + 1000)
+        try {
+          await boundV2Request(pendingFetch.then(() => {}, () => {}), cleanupDeadline - Date.now())
+        } catch { fetchCleanupUnknown = true }
+        if (Date.now() >= cleanupDeadline) fetchCleanupUnknown = true
+      }
       // A fetch which ignores abort/timeout has no confirmed response-body
       // custody. Do not misreport the unresolved operation as a clean refusal.
       if ((fetchPending || fetchCleanupUnknown) && (signal.aborted || Date.now() >= deadline)) {
