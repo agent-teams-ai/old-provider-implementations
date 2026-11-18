@@ -20,9 +20,11 @@ test('ordered attachment snapshot and fingerprint include identity MIME length d
 test('finite native MIME and frozen budgets intersect Host capability without model-policy duplication', () => {
   const gif = artifact('TEST-gif', 'image/gif'), pdf = artifact('TEST-pdf', 'application/pdf'), video = artifact('TEST-video', 'video/mp4');
   for (const item of [gif, pdf]) { validateAttachments(attachedInput([item.reference]), 'claude', 'TEST-model', attachmentPort('TEST-model', [item])); }
-  for (const provider of ['codex', 'opencode-v1', 'opencode-v2'] as const) {
+  for (const provider of ['codex', 'opencode-v1'] as const) {
     for (const item of [gif, pdf]) { assert.throws(() => validateAttachments(attachedInput([item.reference]), provider, 'TEST-model', attachmentPort('TEST-model', [item])), /unsupported/u); }
   }
+  for (const item of [gif, pdf]) { validateAttachments(attachedInput([item.reference]), 'opencode-v2', 'TEST-model', attachmentPort('TEST-model', [item])); }
+  assert.throws(() => validateAttachments(attachedInput([video.reference]), 'opencode-v2', 'TEST-model', attachmentPort('TEST-model', [video])), /unsupported/u);
   validateAttachments(attachedInput([video.reference]), 'opencode-v1', 'TEST-model', attachmentPort('TEST-model', [video]));
   assert.throws(() => validateAttachments(attachedInput([video.reference]), 'claude', 'TEST-model', attachmentPort('TEST-model', [video])), /unsupported/u);
   assert.throws(() => validateAttachments(attachedInput([video.reference]), 'opencode-v1', 'other-model', attachmentPort('TEST-model', [video])), /unsupported/u);

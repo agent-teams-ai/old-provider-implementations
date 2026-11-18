@@ -4,11 +4,12 @@ import { once } from 'node:events'
 import { cut, editCut, rejectedRequestCut } from './v2-cut-fixture.ts'
 
 /** Real disposable HTTP peer, with two isolated native sessions on one synthetic host. */
-export async function driverPeer(options: { nativeEdit?: boolean; requestRejection?: 400 | 422 } = {}) {
+type NativeFile = { data: string; mime: string; source: { type: string }; name: string }
+export async function driverPeer(options: { nativeEdit?: boolean; requestRejection?: 400 | 422;
+  normalizeImages?: (files: NativeFile[]) => NativeFile[] } = {}) {
   const directory = '/TEST/native-driver', sessionId = 'ses_TESTdriver'
   let submitted = 0, interrupted = 0, foreign = false, lostReceipt = false, hold = false, permissionMode = false, replies = 0
   let flatSession = false, flatPrompt = false, flatPermissions = false, syncOnlyLog = false
-  type NativeFile = { data: string; mime: string; source: { type: string }; name: string }
   let value = cut(), base = cut(), queued: { id: string; text: string; files?: NativeFile[] } | undefined
   let pauseInterrupt = false, releaseInterrupt: (() => void) | undefined
   let holdGrant = false, releaseGrant: (() => void) | undefined
@@ -99,8 +100,9 @@ export async function driverPeer(options: { nativeEdit?: boolean; requestRejecti
       if (url.pathname.endsWith('/prompt')) {
         assert.equal(req.method, 'POST'); submitted++
         const input = JSON.parse(body) as { id: string; text: string; files?: { uri: string; name: string }[] }
-        const files = input.files?.map(file => ({ data: file.uri.slice('data:image/png;base64,'.length),
-          mime: 'image/png', source: { type: 'inline' }, name: file.name }))
+        const sourceFiles = input.files?.map(file => ({ data: file.uri.slice(file.uri.indexOf(',') + 1),
+          mime: file.uri.slice(5, file.uri.indexOf(';')), source: { type: 'inline' }, name: file.name }))
+        const files = sourceFiles && (options.normalizeImages?.(sourceFiles) ?? sourceFiles)
         submittedIds.push(input.id); queued = { id: input.id, text: input.text, ...(files ? { files } : {}) };
         base = structuredClone(value); if (!hold) {complete();} else if (permissionMode) {complete(true)}
         if (lostReceipt) { req.socket.destroy(); return }

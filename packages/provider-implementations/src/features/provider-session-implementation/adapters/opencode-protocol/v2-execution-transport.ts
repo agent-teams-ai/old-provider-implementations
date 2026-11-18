@@ -11,6 +11,8 @@ import { isV2ExecutionVersion } from './v2-protocol-version.ts'
 import type { V2ExecutionVersion } from './v2-protocol-version.ts'
 import { snapshotV2InlinePngs } from './v2-attachments.ts'
 import type { V2InlinePng } from './v2-attachments.ts'
+import { snapshotV2InlineMedia, V2_MEDIA_PROMPT_BYTES, V2_MEDIA_RESPONSE_BYTES, V2_MEDIA_FRAME_BYTES,
+  V2_MEDIA_DEADLINE_HEADER, V2_MEDIA_RECEIPT_HEADER } from './v2-media.ts'
 
 type ExecutionFetchInput = RequestInfo | URL
 type ExecutionFetchInit = RequestInit | undefined
@@ -85,8 +87,9 @@ class OpenCodeV2ExecutionFetch {
   private readonly fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   private readonly ownerScope: boolean
   private readonly pngInput: Readonly<{ id: string; files: readonly V2InlinePng[] }> | undefined
+  private readonly media: boolean
   constructor(config: OpenCodeV2TransportConfig, ownerScope = false,
-    pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>) {
+    pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>, media = false) {
     this.endpoint = config.endpoint; this.pin = config.version; this.directory = config.directory
     this.nativeSessionId = config.nativeSessionId
     this.readPassword = config.readPassword
@@ -94,8 +97,10 @@ class OpenCodeV2ExecutionFetch {
     this.context = { signal: config.signal, deadline: config.deadline }
     this.fetchImpl = config.fetchImpl ?? fetch
     this.ownerScope = ownerScope
+    this.media = media
     executionAssert(pngInput === undefined || config.version === '2.1.4' && !ownerScope && safeV2MessageID(pngInput.id), 'capabilities_pending')
-    this.pngInput = pngInput === undefined ? undefined : { id: pngInput.id, files: snapshotV2InlinePngs(pngInput.files) }
+    executionAssert(!media || config.version === '2.1.4' && !ownerScope, 'capabilities_pending')
+    this.pngInput = pngInput === undefined ? undefined : { id: pngInput.id, files: (media ? snapshotV2InlineMedia : snapshotV2InlinePngs)(pngInput.files) }
 
     executionAssert(isCanonicalOpenCodeV2LoopbackEndpoint(this.endpoint), 'authority_mismatch')
     executionAssert(isV2ExecutionVersion(this.pin), 'unqualified_version')
@@ -148,14 +153,14 @@ class OpenCodeV2ExecutionFetch {
           const chunk = nativeV2ByteView(part.value)
           executionAssert(chunk !== null, 'invalid_input')
           bodyBytes += chunk.byteLength
-          executionAssert(bodyBytes <= 1024 * 1024 && pieces.length < MAX_V2_CHUNKS, 'body_limit')
+          executionAssert(bodyBytes <= (this.media && this.pngInput ? V2_MEDIA_PROMPT_BYTES : 1024 * 1024) && pieces.length < MAX_V2_CHUNKS, 'body_limit')
           pieces.push(Buffer.from(chunk))
         }
         reader.releaseLock(); reader = undefined
         const body = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(pieces))
         checkOpenCodeReadJson(body)
         const parsed: unknown = JSON.parse(body)
-        validateExecutionBody(parsed, create, this.directory, this.nativeSessionId, this.pngInput)
+        validateExecutionBody(parsed, create, this.directory, this.nativeSessionId, this.pngInput, this.media)
         request = new Request(request.url, { method: request.method, headers: request.headers, body,
           signal: request.signal, credentials: 'omit', redirect: 'error' })
       }
@@ -187,7 +192,7 @@ class OpenCodeV2ExecutionFetch {
       const chunk = nativeV2ByteView(part.value)
       executionAssert(chunk !== null, 'invalid_response')
       bytes += chunk.byteLength
-      executionAssert(bytes <= 8 * 1024 * 1024 && chunks.length < MAX_V2_CHUNKS, 'body_limit')
+      executionAssert(bytes <= (this.media ? V2_MEDIA_RESPONSE_BYTES : 8 * 1024 * 1024) && chunks.length < MAX_V2_CHUNKS, 'body_limit')
       chunks.push(Buffer.from(chunk))
     }
     return chunks
@@ -205,6 +210,9 @@ class OpenCodeV2ExecutionFetch {
     const password = this.readPassword()
     executionAssert(typeof password === 'string' && password.length > 0 && Buffer.byteLength(password) <= 64 * 1024, 'credential_unavailable')
     headers.set('authorization', 'Basic ' + Buffer.from(`opencode:${password}`).toString('base64'))
+    if (this.media && this.pngInput && request.method === 'POST') {
+      headers.set(V2_MEDIA_DEADLINE_HEADER, String(Math.min(this.context.deadline, Date.now() + 30_000)))
+    }
     // Credential projection may synchronously dispose/abort; no fetch can precede these rechecks.
     this.check(); signal.throwIfAborted()
     // An injected fetch may inspect Request rather than RequestInit. Sanitize
@@ -269,12 +277,17 @@ class OpenCodeV2ExecutionFetch {
       executionAssert(response.status >= 200 && response.status < 300, 'http_failure')
       executionAssert(media === (log ? 'text/event-stream' : 'application/json'), 'media_type')
       const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
-      if (log) {checkExecutionSse(text)}
+      if (log) {checkExecutionSse(text, this.media ? V2_MEDIA_FRAME_BYTES : undefined)}
       else { checkOpenCodeReadJson(text); JSON.parse(text) }
       // Never relay arbitrary native response headers across the provider boundary.
       // Only the validated media type is part of the pinned protocol contract.
-      return new Response(text, { status: response.status,
-        headers: { 'content-type': log ? 'text/event-stream' : 'application/json' } })
+      const responseHeaders = new Headers({ 'content-type': log ? 'text/event-stream' : 'application/json' })
+      if (prompt && this.media && this.pngInput) {
+        const witness = response.headers.get(V2_MEDIA_RECEIPT_HEADER)
+        executionAssert(typeof witness === 'string' && /^v1\.[1-9]\d{0,15}\.[a-f0-9]{64}$/.test(witness), 'invalid_response')
+        responseHeaders.set(V2_MEDIA_RECEIPT_HEADER, witness)
+      }
+      return new Response(text, { status: response.status, headers: responseHeaders })
     } catch (error) {
       controller.abort()
       // A hostile native response can throw before a reader is acquired.
@@ -326,6 +339,12 @@ export function createOpenCodeV2ExecutionTransport(config: OpenCodeV2TransportCo
 /** Private prepared-input wire; intentionally absent from public package exports. */
 export function createV2PngTransport(config: OpenCodeV2TransportConfig, id: string, files: readonly V2InlinePng[]) {
   return new OpenCodeV2ExecutionFetch(config, false, { id, files })
+}
+
+/** Private media-session wire also bounds cold-history reads after later text inputs. */
+export function createV2MediaTransport(config: OpenCodeV2TransportConfig,
+  input?: Readonly<{ id: string; files: readonly V2InlinePng[] }>) {
+  return new OpenCodeV2ExecutionFetch(config, false, input, true)
 }
 
 /** Internal owner-client wire. Never exposed as a raw Session SPI capability. */

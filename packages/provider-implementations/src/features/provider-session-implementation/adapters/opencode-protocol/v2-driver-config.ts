@@ -11,6 +11,8 @@ import type { Limits, OpenConfig } from '@agent-teams/provider-session-contracts
 import type { OpenCodeV2TransportConfig } from './v2-execution-transport.ts'
 import { attachmentCompatibility, snapshotAttachmentPort } from '../provider-session-io/attachments.ts'
 import type { AttachmentPort } from '../provider-session-io/attachments.ts'
+import { snapshotV2MediaReceipt, V2_MEDIA_MIMES } from './v2-media.ts'
+import type { OpenCodeV2MediaReceipt } from './v2-media.ts'
 
 /** Private Host-selected existing session. Runtime owns creation, lease and current generation. */
 export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' | 'signal'> & {
@@ -21,8 +23,10 @@ export type OpenCodeV2DriverConfig = Omit<OpenCodeV2TransportConfig, 'deadline' 
   accountBinding: string
   limits: Limits
   capture?: OpenCodeInputWindowPort
-  /** Host-approved PNG delivery for the exact selected 2.1.4 model and policy. */
+  /** Host-approved delivery for the exact selected 2.1.4 model and policy. */
   attachments?: AttachmentPort
+  /** Optional private packaged-child attestation for native image normalization. */
+  mediaReceipt?: OpenCodeV2MediaReceipt
   /** Read-only host/package/MCP/model/custody qualification for this exact binding. */
   probe: (signal: AbortSignal) => Promise<boolean>
   /** Confirms this owned execution stopped; never stops a shared host. */
@@ -80,12 +84,16 @@ export function snapshotDriverConfig(config: OpenCodeV2DriverConfig, request: Op
     || ['queuedInputs', 'inputBytes', 'outputBytes', 'outputEvents', 'pendingInteractions', 'timeoutMs'].some(key => { const value = captured.limits[key as keyof Limits]; return !Number.isSafeInteger(value) || value <= 0 })
     || !['tenantId', 'projectId', 'sessionId', 'generation'].every(key => captured.binding[key as keyof typeof captured.binding] === request[key as keyof typeof captured.binding]))
     {throw new Error('opencode.driver.invalid-config')}
-  const { capture: suppliedCapture, attachments: suppliedAttachments, ...base } = captured
+  const { capture: suppliedCapture, attachments: suppliedAttachments, mediaReceipt: suppliedMedia, ...base } = captured
   const capture = snapshotOpenCodeCapture(suppliedCapture)
   if (suppliedAttachments !== undefined && captured.version !== '2.1.4') throw new Error('opencode.driver.unsupported')
   const attachments = snapshotAttachmentPort(suppliedAttachments)
-  if (attachments?.mimeTypes.some(mime => mime !== 'image/png')) throw new Error('opencode.driver.unsupported')
-  return { ...base, ...(capture ? { capture } : {}), ...(attachments ? { attachments } : {}) }
+  const mediaReceipt = snapshotV2MediaReceipt(suppliedMedia)
+  if (mediaReceipt && (!attachments || captured.version !== '2.1.4') ||
+    attachments?.mimeTypes.some(mime => mediaReceipt ? !(V2_MEDIA_MIMES as readonly string[]).includes(mime) : mime !== 'image/png')) {
+    throw new Error('opencode.driver.unsupported')
+  }
+  return { ...base, ...(capture ? { capture } : {}), ...(attachments ? { attachments } : {}), ...(mediaReceipt ? { mediaReceipt } : {}) }
 }
 export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
   // The owned 2.1.4 process may use a new loopback port on cold restore. Its
@@ -97,7 +105,8 @@ export function driverCompatibility(config: OpenCodeV2DriverConfig): string {
     directory: config.directory, nativeSessionId: config.nativeSessionId, trustedBinding: config.trustedBinding,
     accountBinding: config.accountBinding, configRevision: config.configRevision,
     tenantId: config.binding.tenantId, projectId: config.binding.projectId, sessionId: config.binding.sessionId,
-    ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}) })).digest('hex')
+    ...(config.attachments ? { attachments: attachmentCompatibility(config.attachments) } : {}),
+    ...(config.mediaReceipt ? { mediaRevision: config.mediaReceipt.revision } : {}) })).digest('hex')
 }
 function snapshotCheckpoint(value: unknown): { nativeSessionId: string; compatibility: string } | undefined {
   // Durable checkpoint bytes are untrusted. A getter or Proxy can forge the

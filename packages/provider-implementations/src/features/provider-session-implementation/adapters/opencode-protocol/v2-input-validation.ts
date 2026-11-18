@@ -3,10 +3,11 @@ import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { snapshotV2InlinePngs } from './v2-attachments.ts'
+import { snapshotV2InlineMedia } from './v2-media.ts'
 import type { V2InlinePng } from './v2-attachments.ts'
 import { readOpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
 export function validateExecutionBody(parsed: unknown, create: boolean, directory: string, nativeSessionId?: string,
-  pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>): void {
+  pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>, media = false): void {
   executionAssert(typeof parsed === 'object' && parsed !== null)
   if (create) {
     executionAssert('location' in parsed)
@@ -31,7 +32,7 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
   executionAssert(fields.agents === undefined && fields.skills === undefined, 'capabilities_pending')
   if (!pngInput) executionAssert(fields.files === undefined, 'capabilities_pending')
   else executionAssert(fields.id === pngInput.id &&
-    canonicalExecutionJSON(snapshotV2InlinePngs(fields.files)) === canonicalExecutionJSON(pngInput.files), 'authority_mismatch')
+    canonicalExecutionJSON((media ? snapshotV2InlineMedia : snapshotV2InlinePngs)(fields.files)) === canonicalExecutionJSON(pngInput.files), 'authority_mismatch')
 }
 
 function executionMethodAllowed(method: string, flags: { session: boolean; list: boolean; log: boolean; scoped: boolean; create: boolean; prompt: boolean; activation: boolean }): boolean {

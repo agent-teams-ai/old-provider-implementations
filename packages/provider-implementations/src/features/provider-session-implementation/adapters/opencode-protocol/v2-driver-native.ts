@@ -1,13 +1,15 @@
-import { createOpenCodeV2ExecutionTransport, createV2PngTransport } from './v2-execution-transport.ts'
+import { createHash } from 'node:crypto'
+import { createOpenCodeV2ExecutionTransport, createV2PngTransport, createV2MediaTransport } from './v2-execution-transport.ts'
 import { createOpenCodeV2SessionControl } from './v2-session-control.ts'
-import { decodeV2DataEnvelope, decodeV2Log, decodeV2Session } from './v2-cut-codecs.ts'
-import { readOpenCodeV2NativeCut } from './v2-native-cut.ts'
+import { decodeV2DataEnvelope, decodeV2Log, decodeV2MediaLog, decodeV2Session } from './v2-cut-codecs.ts'
+import { readOpenCodeV2NativeCut, readOpenCodeV2MediaNativeCut } from './v2-native-cut.ts'
 import { record } from './v2-projection-helpers.ts'
 import { ExecutionTransportFailure, unsubmitted } from './v2-failures.ts'
 import { safeV2MessageID } from './v2-native-identifiers.ts'
 import type { OpenCodeV2DriverConfig } from './v2-driver-config.ts'
 import type { PreparedAttachment } from '../provider-session-io/attachments.ts'
 import { matchesNativeV2Pngs, nativeV2PngDigest, serializeV2PngAttachments, V2_PNG_PROMPT_BYTES } from './v2-attachments.ts'
+import { nativeV2MediaDigest, serializeV2MediaAttachments, V2_MEDIA_PROMPT_BYTES, V2_MEDIA_RECEIPT_HEADER } from './v2-media.ts'
 
 export type NativeDriverInput = { nativeInputID: string; text: string; beforeCursor: number | null; nativeFilesDigest?: string }
 /** Each operation has a fresh finite deadline. No mutable transport lasts across turns. */
@@ -46,9 +48,9 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     assertUsable()
     activeOperations++
     try {
-      const wire = createOpenCodeV2ExecutionTransport(wireConfig())
+      const wire = config.mediaReceipt ? createV2MediaTransport(wireConfig()) : createOpenCodeV2ExecutionTransport(wireConfig())
       try {
-        const result = await readOpenCodeV2NativeCut(wire, { endpoint: config.endpoint, directory: config.directory,
+        const result = await (config.mediaReceipt ? readOpenCodeV2MediaNativeCut : readOpenCodeV2NativeCut)(wire, { endpoint: config.endpoint, directory: config.directory,
           sessionID: config.nativeSessionId, pin: config.version }, original)
         // A concurrent close may revoke physical custody after readback succeeds.
         assertUsable()
@@ -76,11 +78,11 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     // A text under 256 KiB can exceed the raw transport's 1 MiB POST budget
     // after JSON escaping (e.g. NUL). Admit the exact serialized body before
     // reading Host credentials or preflighting the native session.
-    const files = attachments.length ? serializeV2PngAttachments(attachments) : undefined
-    const nativeFilesDigest = files ? nativeV2PngDigest(files) : undefined
+    const files = attachments.length ? (config.mediaReceipt ? serializeV2MediaAttachments : serializeV2PngAttachments)(attachments) : undefined
+    let nativeFilesDigest = files && !config.mediaReceipt ? nativeV2PngDigest(files) : undefined
     const promptBody = validText ? JSON.stringify({ id: nativeInputID, text, resume: true, delivery: 'queue', ...(files ? { files } : {}) }) : ''
-    if (!validText || files && (config.version !== '2.1.4' || !config.attachments?.mimeTypes.includes('image/png')) ||
-        Buffer.byteLength(promptBody) > (files ? V2_PNG_PROMPT_BYTES : 1024 * 1024)) {
+    if (!validText || files && (config.version !== '2.1.4' || attachments.some(item => !config.attachments?.mimeTypes.includes(item.reference.mimeType))) ||
+        Buffer.byteLength(promptBody) > (files ? config.mediaReceipt ? V2_MEDIA_PROMPT_BYTES : V2_PNG_PROMPT_BYTES : 1024 * 1024)) {
       const failure = new ExecutionTransportFailure('invalid_input', 'not_submitted')
       unsubmitted.add(failure)
       throw failure
@@ -93,12 +95,13 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
     queueActive = true
     activeOperations++
     try {
-      const wire = files ? createV2PngTransport(wireConfig(), nativeInputID, files) : createOpenCodeV2ExecutionTransport(wireConfig())
+      const wire = config.mediaReceipt ? createV2MediaTransport(wireConfig(), files ? { id: nativeInputID, files } : undefined)
+        : files ? createV2PngTransport(wireConfig(), nativeInputID, files) : createOpenCodeV2ExecutionTransport(wireConfig())
       let mutation = false
       try {
       const selected = decodeV2Session(await (await wire.fetch(config.endpoint + path)).json() as unknown, config.nativeSessionId, config.directory)
       if (files && `${selected.model.providerID}/${selected.model.id}` !== config.attachments!.model) throw new Error('native_attachment_model_mismatch')
-      const log = decodeV2Log(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
+      const log = (config.mediaReceipt ? decodeV2MediaLog : decodeV2Log)(await (await wire.fetch(config.endpoint + `/api/experimental/session/${config.nativeSessionId}/log?follow=false`)).text(),
         config.nativeSessionId, config.directory)
       // The stock V2 CLI can acknowledge a prompt while exposing only log.synced
       // (event retention disabled). Without the original durable session prefix,
@@ -107,11 +110,21 @@ export function createDriverNative(config: OpenCodeV2DriverConfig, signal: Abort
       // Close can race a preflight GET; never admit a POST after shutdown.
       assertUsable(true)
       mutation = true
-      const receipt = record(decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
-        headers: { 'content-type': 'application/json' }, body: promptBody })).json() as unknown))
+      const response = await wire.fetch(config.endpoint + path + '/prompt', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: promptBody })
+      const receipt = record(decodeV2DataEnvelope(await response.json() as unknown))
       if (!receipt || receipt.id !== nativeInputID || receipt.sessionID !== config.nativeSessionId
         || receipt.type !== 'user' || receipt.delivery !== 'queue' || record(receipt.payload)?.text !== text ||
         nativeFilesDigest && !matchesNativeV2Pngs(record(receipt.payload)?.files, nativeFilesDigest)) {throw new Error('native_handoff_identity_mismatch')}
+      if (files && config.mediaReceipt) {
+        const projectionDigest = nativeV2MediaDigest(record(receipt.payload)?.files, files)
+        const witness = response.headers.get(V2_MEDIA_RECEIPT_HEADER)
+        if (!witness || config.mediaReceipt.verify({ sessionId: config.nativeSessionId, inputId: nativeInputID,
+          sourceDigest: createHash('sha256').update(promptBody).digest('hex'), projectionDigest, witness }) !== true) {
+          throw new Error('native_media_receipt_mismatch')
+        }
+        nativeFilesDigest = projectionDigest
+      }
       // A close that raced the acknowledged POST cannot be reported as clean.
       assertUsable(true)
       return { nativeInputID, text, beforeCursor: log.watermark, ...(nativeFilesDigest ? { nativeFilesDigest } : {}) }

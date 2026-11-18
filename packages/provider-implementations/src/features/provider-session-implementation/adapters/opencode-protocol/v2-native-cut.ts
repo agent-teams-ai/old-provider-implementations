@@ -7,7 +7,8 @@ import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { checkOpenCodeReadJson, MAX_V2_CHUNKS } from './v2-json-budget.ts'
 import { boundV2Request } from './v2-bounded-await.ts'
 import { ExecutionTransportFailure } from './v2-failures.ts'
-import { decodeV2Log, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
+import { decodeV2Log, decodeV2MediaLog, decodeV2MessagePage, decodeV2Session } from './v2-cut-codecs.ts'
+import { V2_MEDIA_RESPONSE_BYTES, V2_MEDIA_CUT_BYTES } from './v2-media.ts'
 import { isV2ExecutionVersion } from './v2-protocol-version.ts'
 import type { V2ExecutionVersion } from './v2-protocol-version.ts'
 import type { OpenCodeV2NativeMessage, OpenCodeV2NativeTurnCut } from './v2-projection-types.ts'
@@ -55,7 +56,8 @@ function unknownCleanup(error: unknown): boolean {
 }
 
 async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadTransport,
-  budget: { bytes: number }, deadline: number, signal: AbortSignal, failed: (error: unknown) => void): Promise<string> {
+  budget: { bytes: number }, deadline: number, signal: AbortSignal, failed: (error: unknown) => void,
+  media: boolean): Promise<string> {
   // A public injected Response can already have a locked body. If reader
   // ownership cannot be acquired, cancellation is not confirmed: never
   // describe an unobserved native stream as a clean invalid response.
@@ -79,7 +81,8 @@ async function nativeResponseBody(response: Response, transport: OpenCodeV2ReadT
         const chunk = nativeV2ByteView(part.value)
         if (chunk === null) throw new Error('invalid_native_read_response')
         responseBytes += chunk.byteLength; budget.bytes += chunk.byteLength
-        if (responseBytes > 8 * 1024 * 1024 || budget.bytes > 32 * 1024 * 1024 || chunks.length >= MAX_V2_CHUNKS) {
+        if (responseBytes > (media ? V2_MEDIA_RESPONSE_BYTES : 8 * 1024 * 1024) ||
+          budget.bytes > (media ? V2_MEDIA_CUT_BYTES : 32 * 1024 * 1024) || chunks.length >= MAX_V2_CHUNKS) {
           // A byte cap alone permits millions of tiny chunks and unbounded array overhead.
           throw new Error('native_cut_byte_budget')
         }
@@ -138,6 +141,18 @@ function validateReadBinding(binding: OpenCodeV2ReadBinding, input: Readonly<{ n
 export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport,
   supplied: OpenCodeV2ReadBinding,
   original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string; nativeFilesDigest?: string }>): Promise<OpenCodeV2NativeTurnCut> {
+  return readNativeCut(transport, supplied, original, false)
+}
+/** Private retained media profile, including a later text-only input's history. */
+export async function readOpenCodeV2MediaNativeCut(transport: OpenCodeV2ReadTransport,
+  supplied: OpenCodeV2ReadBinding,
+  original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string; nativeFilesDigest?: string }>): Promise<OpenCodeV2NativeTurnCut> {
+  if (supplied.pin !== '2.1.4') throw new Error('invalid_native_read_binding')
+  return readNativeCut(transport, supplied, original, true)
+}
+async function readNativeCut(transport: OpenCodeV2ReadTransport, supplied: OpenCodeV2ReadBinding,
+  original: Readonly<{ nativeInputID: string; beforeCursor: number | null; text: string; nativeFilesDigest?: string }>,
+  media: boolean): Promise<OpenCodeV2NativeTurnCut> {
   const binding = structuredClone(supplied), input = structuredClone(original)
   validateReadBinding(binding, input)
   const started = Date.now(), budget = { bytes: 0 }, deadline = started + MAX_V2_NATIVE_CUT_READ_MS
@@ -222,7 +237,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
         throw new Error('invalid_native_read_response')
       }
       const text = await nativeResponseBody(response, transport, budget, deadline, signal,
-        error => remember(stage, error, signal))
+        error => remember(stage, error, signal), media)
       transport.check()
       return text
     } catch (error) {
@@ -258,7 +273,7 @@ export async function readOpenCodeV2NativeCut(transport: OpenCodeV2ReadTransport
   const session = (stage: CutStage) => observe(stage, async () =>
     decodeV2Session(parseNativeReadJSON(await read(sessionPath, stage)), binding.sessionID, binding.directory))
   const log = (stage: CutStage) => observe(stage, async () =>
-    decodeV2Log(await read(`/api/experimental/session/${encodeURIComponent(binding.sessionID)}/log?follow=false`, stage),
+    (media ? decodeV2MediaLog : decodeV2Log)(await read(`/api/experimental/session/${encodeURIComponent(binding.sessionID)}/log?follow=false`, stage),
       binding.sessionID, binding.directory))
   try {
     // The initial session binding must pass before any log or message access.

@@ -72,7 +72,7 @@ function sameBinding(actual: Binding | undefined, expected: Binding): boolean {
 }
 type Provider = 'claude' | 'codex' | 'opencode-v1' | 'opencode-v2';
 function nativeKind(mime: string, provider: Provider): 'image' | 'file' | 'video' | undefined {
-  if (provider === 'opencode-v2') { return mime === 'image/png' ? 'image' : undefined; }
+  if (provider === 'opencode-v2') { return mime === 'application/pdf' ? 'file' : ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime) ? 'image' : undefined; }
   if (['image/png', 'image/jpeg', 'image/webp'].includes(mime) || (provider === 'claude' && mime === 'image/gif')) { return 'image'; }
   if (provider === 'claude' && (mime === 'application/pdf' || mime.startsWith('text/'))) { return 'file'; }
   if (provider === 'opencode-v1' && ['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) { return 'video'; }

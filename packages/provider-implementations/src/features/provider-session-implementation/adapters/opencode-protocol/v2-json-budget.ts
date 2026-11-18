@@ -21,12 +21,12 @@ export function checkOpenCodeReadJson(text: string): void {
   }
 }
 
-export function checkExecutionSse(text: string): void {
+export function checkExecutionSse(text: string, frameBytes = 256 * 1024): void {
   const frames = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n\n')
   executionAssert(frames.length <= 4098, 'frame_limit')
   executionAssert(frames.at(-1) === '', 'incomplete_stream')
   for (const frame of frames) {
-    executionAssert(Buffer.byteLength(frame) <= 256 * 1024, 'frame_limit')
+    executionAssert(Buffer.byteLength(frame) <= frameBytes, 'frame_limit')
     // Match the pinned native log decoder: do not silently ignore arbitrary
     // SSE directives while relaying the original stream to a raw caller.
     const lines = frame.split('\n')
