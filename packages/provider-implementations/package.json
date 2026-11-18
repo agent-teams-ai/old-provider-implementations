@@ -19,6 +19,14 @@
       "types": "./dist/composition.d.ts",
       "import": "./dist/composition.js"
     },
+    "./captured-configuration": {
+      "types": "./dist/captured-configuration.d.ts",
+      "import": "./dist/captured-configuration.js"
+    },
+    "./codex-mcp-catalog": {
+      "types": "./dist/codex-mcp-catalog.d.ts",
+      "import": "./dist/codex-mcp-catalog.js"
+    },
     "./claude": {
       "types": "./dist/claude.d.ts",
       "import": "./dist/claude.js"

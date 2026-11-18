@@ -13,9 +13,62 @@ test('packed consumer imports codecs and declarations without donor checkout or 
   const { archive, contractArchive, packageDir } = await installPackedConsumer(root, sandbox)
   const files = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' })
   assert.ok(!files.split('\n').some(path => /^package\/(?:src|tests|node_modules)\//u.test(path)))
-  const consumer = `import { CodexAppServerClient, createCodexDriverFactory, mapCodexNativeExecLine } from '@agent-teams/provider-implementations/codex';
+  // A fresh installed consumer cannot borrow SDK modules loaded by the broader API checks.
+  await writeFile(join(sandbox, 'configuration-only.mjs'), `
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+let sdkAttempts = 0;
+const refused = () => { sdkAttempts++; throw Error('TEST narrow entry requested an SDK'); };
+const hooks = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier.startsWith('@anthropic-ai/') || specifier === '@modelcontextprotocol/sdk' || specifier.startsWith('@modelcontextprotocol/sdk/')) return refused();
+    return nextResolve(specifier, context);
+  },
+  load(url, context, nextLoad) {
+    if (url.includes('/@anthropic-ai/') || url.includes('/@modelcontextprotocol/sdk/')) return refused();
+    return nextLoad(url, context);
+  },
+});
+try {
+  const captured = await import('@agent-teams/provider-implementations/captured-configuration');
+  const catalog = await import('@agent-teams/provider-implementations/codex-mcp-catalog');
+  assert.deepEqual(Object.keys(captured).sort(), ['captureClaudeExtraArgs', 'captureCodexConfiguredMcpCatalog', 'captureCodexExtraArgs', 'captureOpenCodeExtraArgs']);
+  assert.deepEqual(Object.keys(catalog), ['readCodexConfiguredMcpCatalog']);
+  assert.deepEqual(captured.captureClaudeExtraArgs(['--max-turns', '2']), ['--max-turns', '2']);
+  assert.deepEqual(captured.captureCodexExtraArgs(['--strict-config']), ['--strict-config']);
+  assert.deepEqual(captured.captureOpenCodeExtraArgs(['--log-level', 'DEBUG']), ['--log-level', 'DEBUG']);
+  assert.deepEqual(captured.captureCodexConfiguredMcpCatalog({ digest: '0'.repeat(64), servers: [] }), { digest: '0'.repeat(64), servers: [] });
+  let launches = 0, disposals = 0;
+  const config = { cwd: process.cwd(), executablePath: process.execPath,
+    environment: { HOME: process.cwd(), CODEX_HOME: process.cwd() }, timeoutMs: 1000, canRead: () => true,
+    launch(request) {
+      launches++;
+      assert.deepEqual(request.args, ['mcp', 'list', '--json']);
+      assert.equal(request.command, process.execPath);
+      assert.equal(request.cwd, process.cwd());
+      assert.deepEqual(request.env, { HOME: process.cwd(), CODEX_HOME: process.cwd() });
+      return { async *read() { yield Buffer.from('[]'); },
+        terminal: Promise.resolve({ exitCode: 0, signal: null }),
+        async dispose() { disposals++; return true; } };
+    },
+  };
+  await assert.rejects(catalog.readCodexConfiguredMcpCatalog({ ...config, canRead: () => false }), /cancelled/);
+  assert.equal(launches, 0); assert.equal(disposals, 0);
+  const observed = await catalog.readCodexConfiguredMcpCatalog(config);
+  assert.deepEqual(observed.servers, []); assert.match(observed.digest, /^[a-f0-9]{64}$/);
+  assert.equal(launches, 1); assert.equal(disposals, 1);
+  assert.equal(sdkAttempts, 0);
+  await assert.rejects(import('@anthropic-ai/claude-agent-sdk'), /TEST narrow entry requested an SDK/);
+  assert.equal(sdkAttempts, 1, 'The SDK refusal hook is active before any SDK module is loaded');
+} finally { hooks.deregister(); }
+`)
+  execFileSync(process.execPath, ['configuration-only.mjs'], { cwd: sandbox, stdio: 'pipe', timeout: 5000 })
+  const consumer = `import { CodexAppServerClient, createCodexDriverFactory, mapCodexNativeExecLine, captureCodexExtraArgs, captureCodexConfiguredMcpCatalog, readCodexConfiguredMcpCatalog } from '@agent-teams/provider-implementations/codex';
 import type { CodexDriverConfig, CodexDriverHost } from '@agent-teams/provider-implementations/codex';
-import { createClaudeDriverFactory, openClaudeSession, readClaudeMetadata, probeClaudeModel } from '@agent-teams/provider-implementations/claude';
+import { createClaudeDriverFactory, openClaudeSession, readClaudeMetadata, probeClaudeModel, captureClaudeExtraArgs } from '@agent-teams/provider-implementations/claude';
+import * as capturedConfiguration from '@agent-teams/provider-implementations/captured-configuration';
+import { readCodexConfiguredMcpCatalog as narrowCatalogReader } from '@agent-teams/provider-implementations/codex-mcp-catalog';
+import type { CodexConfiguredMcpCatalog } from '@agent-teams/provider-implementations/codex-mcp-catalog';
 import { EventFeed } from '@agent-teams/provider-implementations/session-io';
 import { supportsNativeCodexSampling, nativeSuggestionCandidate } from '@agent-teams/provider-implementations/prompt-suggestions';
 import type { NativePromptSuggestionBinding } from '@agent-teams/provider-implementations/prompt-suggestions';
@@ -24,6 +77,8 @@ import type { ClaudeConfig, ClaudeDriverHost } from '@agent-teams/provider-imple
 const mandatoryTools: CodexDriverConfig['requiredMcpTools'] = { team: ['look-up.raw'] };
 const finiteStatusMethod: CodexAppServerClient['listMcpServerStatus'] | undefined = undefined;
 if (mandatoryTools.team?.[0] !== 'look-up.raw' || finiteStatusMethod !== undefined) throw Error('finite native MCP contracts');
+const capturedCatalog: CodexConfiguredMcpCatalog = capturedConfiguration.captureCodexConfiguredMcpCatalog({ digest: '0'.repeat(64), servers: [] });
+if (capturedCatalog.servers.length !== 0 || narrowCatalogReader !== readCodexConfiguredMcpCatalog || capturedConfiguration.captureCodexConfiguredMcpCatalog !== captureCodexConfiguredMcpCatalog || capturedConfiguration.captureClaudeExtraArgs !== captureClaudeExtraArgs || capturedConfiguration.captureCodexExtraArgs !== captureCodexExtraArgs) throw Error('narrow public exports retain original bindings');
 const compaction: EventPayload = { kind: 'compaction', sourceRef: 'opaque', reason: 'automatic' };
 const thinking: Extract<EventPayload, { kind: 'thinking' }> = { kind: 'thinking', messageRef: 'TEST-message', block: 0, text: 'TEST reasoning', phase: 'complete' };
 const output: Extract<EventPayload, { kind: 'text' }> = { ...thinking, kind: 'text' };
@@ -43,8 +98,9 @@ if (typeof factory !== 'function' || typeof openClaudeSession !== 'function' || 
 type ConsumerSession = Pick<Session, 'submit' | 'observe' | 'interrupt' | 'close'>;
 export type { ConsumerSession };
 import type { CodexApprovalReply, CodexNativeNormalizedEvent } from '@agent-teams/provider-implementations/codex';
-import { createOpenCodeV1DriverFactory, createOpenCodeV2DriverFactory, createOpenCodeV2OwnedSessionClient, createOpenCodeV2CredentialClient, readOpenCodeV2CheckpointSessionId, isCanonicalOpenCodeAscendingMessageId } from '@agent-teams/provider-implementations/opencode';
+import { createOpenCodeV1DriverFactory, createOpenCodeV2DriverFactory, createOpenCodeV2OwnedSessionClient, createOpenCodeV2CredentialClient, readOpenCodeV2CheckpointSessionId, isCanonicalOpenCodeAscendingMessageId, captureOpenCodeExtraArgs } from '@agent-teams/provider-implementations/opencode';
 import type { OpenCodeV1DriverHost, OpenCodeV2DriverHost, OpenCodeV2TransportConfig, OpenCodeV2OwnedSessionSelection } from '@agent-teams/provider-implementations/opencode';
+if (capturedConfiguration.captureOpenCodeExtraArgs !== captureOpenCodeExtraArgs) throw Error('narrow OpenCode capture retains its original binding');
 const nativeVersion: OpenCodeV2TransportConfig['version'] = '2.1.4';
 const nativeSelection: OpenCodeV2OwnedSessionSelection = { agent: 'build', model: { providerID: 'TEST-provider', id: 'TEST-model' }, permissions: [{ action: 'external_directory', resource: '*', effect: 'deny' }] };
 if (typeof createOpenCodeV2OwnedSessionClient !== 'function' || typeof createOpenCodeV2CredentialClient !== 'function' || typeof readOpenCodeV2CheckpointSessionId !== 'function' || nativeVersion !== '2.1.4' || nativeSelection.agent !== 'build') throw Error('OpenCode owned native API');
