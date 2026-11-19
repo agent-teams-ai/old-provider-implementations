@@ -5,6 +5,9 @@ import { decodeV2DataEnvelope, decodeV2Session } from './v2-cut-codecs.ts'
 import { record } from './v2-projection-helpers.ts'
 import { executionAssert } from './v2-failures.ts'
 import { readOpenCodeV2OwnedCatalog } from './v2-owned-catalog.ts'
+import { readOpenCodeV2OwnedDirectory } from './v2-owned-directory.ts'
+import { readOpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
+import type { OpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
 
 export type OpenCodeV2SessionPermissionRule = Readonly<{
   action: string; resource: string; effect: 'allow' | 'ask' | 'deny'
@@ -13,6 +16,8 @@ export type OpenCodeV2OwnedSessionSelection = Readonly<{
   agent: string
   model: Readonly<{ providerID: string; id: string; variant?: string }>
   permissions: readonly OpenCodeV2SessionPermissionRule[]
+  /** Private equality witness in session metadata, never an instruction or credential value. */
+  credential?: OpenCodeV2CredentialBinding
 }>
 function text(value: unknown): asserts value is string {
   executionAssert(typeof value === 'string' && value.length > 0 && value.length <= 4096, 'invalid_native_identity')
@@ -33,11 +38,12 @@ function selection(value: unknown, captureDefault = false): OpenCodeV2OwnedSessi
   text(selected.agent); text(model.providerID); text(model.id)
   if (model.variant !== undefined) text(model.variant)
   const variant = model.variant === undefined && captureDefault ? 'default' : model.variant
+  const capturedCredential = readOpenCodeV2CredentialBinding(selected.credential)
   return { agent: selected.agent,
     // Exact 2.1.4 canonical model variant; capture it before create effects,
     // then require the same readback rather than accepting an arbitrary default.
     model: { providerID: model.providerID, id: model.id, ...(variant === undefined ? {} : { variant: variant as string }) },
-    permissions: rules(selected.permissions) }
+    permissions: rules(selected.permissions), ...(capturedCredential ? { credential: capturedCredential } : {}) }
 }
 
 /** Finite native protocol operations for an already-owned 2.1.4 child.
@@ -52,7 +58,9 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
   const session = (value: unknown) => {
     const decoded = decodeV2Session(value, config.nativeSessionId, config.directory)
     const raw = record(decodeV2DataEnvelope(value))
-    const picked = selection(raw)
+    const metadata = raw?.metadata === undefined ? undefined : record(raw.metadata)
+    executionAssert(metadata !== null, 'invalid_native_credential_binding')
+    const picked = selection({ ...raw, credential: metadata?.agentTeamsCredential })
     return { id: decoded.id, directory: decoded.directory, ...picked }
   }
   return {
@@ -68,9 +76,11 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
       // Native session.create supports a caller-chosen id. Its durable owner
       // captures this exact identity before effects; a lost ACK is never retried.
       createAttempted = true
+      const { credential: capturedCredential, ...nativeSelection } = captured
       const created = session(await (await wire.fetch(config.endpoint + '/api/session', {
         method: 'POST', body: JSON.stringify({ id: config.nativeSessionId,
-          location: { directory: config.directory }, ...captured }),
+          location: { directory: config.directory }, ...nativeSelection,
+          ...(capturedCredential ? { metadata: { agentTeamsCredential: capturedCredential } } : {}) }),
       })).json() as unknown)
       executionAssert(JSON.stringify(selection(created)) === JSON.stringify(captured), 'native_selection_mismatch')
       return created
@@ -79,6 +89,7 @@ export function createOpenCodeV2OwnedSessionClient(supplied: OpenCodeV2Transport
       return session(await (await wire.fetch(config.endpoint + `/api/session/${config.nativeSessionId}`)).json() as unknown)
     },
     readCatalog: (providerId: string) => readOpenCodeV2OwnedCatalog(wire.fetch, config.endpoint, config.directory, providerId),
+    readDirectory: () => readOpenCodeV2OwnedDirectory(wire.fetch, config.endpoint, config.directory),
     /** Isolated owner database only. Never exports saved grant details or mutates them. */
     async savedPermissionsEmpty(): Promise<boolean> {
       const value = decodeV2DataEnvelope(await (await wire.fetch(config.endpoint + '/api/permission/saved')).json() as unknown)

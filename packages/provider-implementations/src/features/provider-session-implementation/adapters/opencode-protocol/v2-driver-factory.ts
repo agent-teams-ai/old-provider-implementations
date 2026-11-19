@@ -34,7 +34,8 @@ export function createOpenCodeV2DriverFactory(host: OpenCodeV2DriverHost): Drive
         if (!resolved) {throw new Error('missing')}
         config = snapshotDriverConfig(resolved, selected)
         if (Boolean(config.attachments) !== capabilities.includes('attachments') ||
-            capabilities.includes('attachments') && (config.version !== '2.1.4' || !config.attachments?.mimeTypes.includes('image/png'))) {
+            capabilities.includes('attachments') && (config.version !== '2.1.4' ||
+              (config.mediaReceipt ? !config.attachments?.mimeTypes.length : !config.attachments?.mimeTypes.includes('image/png')))) {
           throw new Error('unsupported')
         }
       } catch { throw new Error('opencode.driver.invalid-config') }

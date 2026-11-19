@@ -8,7 +8,8 @@ export function createV2RequestAdmission(
   beforeRequest: V2RequestAdmission | undefined,
   signal: AbortSignal,
   deadline: number,
-  track: <T>(work: Promise<T>) => Promise<T>
+  track: <T>(work: Promise<T>) => Promise<T>,
+  lifecycleSignal?: AbortSignal
 ) {
   let release: (() => void) | undefined, closed = false, pending = false, cleanupUnknown = false
   const close = (): void => {
@@ -38,6 +39,19 @@ export function createV2RequestAdmission(
       }, error => { pending = false; throw error }))
       try { await boundV2Request(work, deadline - Date.now(), signal) }
       catch (error) {
+        // Abort can win before the original Host callback finishes releasing its
+        // reservation. Join only that work within this request's original cutoff;
+        // the original context shutdown must still interrupt the settlement.
+        if (pending && signal.aborted && Date.now() < deadline) {
+          try { await boundV2Request(work, deadline - Date.now(), lifecycleSignal) }
+          catch (settlementError) {
+            if (pending || Date.now() >= deadline) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+            if (error instanceof ExecutionTransportFailure &&
+                (error.disposition === 'unknown' || error.code === 'cleanup_unknown')) throw error
+            throw settlementError
+          }
+          if (Date.now() >= deadline) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
+        }
         // Native bytes were not sent, but an unresolved Host acquisition may
         // already own a lease. Do not relabel unknown custody as safely retryable.
         if (pending) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')

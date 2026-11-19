@@ -3,16 +3,23 @@ import { executionAssert } from './v2-failures.ts'
 import { record } from './v2-projection-helpers.ts'
 import { canonicalExecutionJSON } from './v2-canonical-json.ts'
 import { snapshotV2InlinePngs } from './v2-attachments.ts'
+import { snapshotV2InlineMedia } from './v2-media.ts'
 import type { V2InlinePng } from './v2-attachments.ts'
+import { readOpenCodeV2CredentialBinding } from './v2-credential-binding.ts'
 export function validateExecutionBody(parsed: unknown, create: boolean, directory: string, nativeSessionId?: string,
-  pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>): void {
+  pngInput?: Readonly<{ id: string; files: readonly V2InlinePng[] }>, media = false): void {
   executionAssert(typeof parsed === 'object' && parsed !== null)
   if (create) {
     executionAssert('location' in parsed)
     const location = record(parsed.location)
     executionAssert(location !== null && location.directory === directory, 'authority_mismatch')
     executionAssert('id' in parsed && parsed.id === nativeSessionId &&
-      Object.keys(parsed).every(key => ['id', 'location', 'agent', 'model', 'permissions'].includes(key)), 'authority_mismatch')
+      Object.keys(parsed).every(key => ['id', 'location', 'agent', 'model', 'permissions', 'metadata'].includes(key)), 'authority_mismatch')
+    if ('metadata' in parsed) {
+      const metadata = record(parsed.metadata)
+      executionAssert(metadata !== null && Object.keys(metadata).join(',') === 'agentTeamsCredential', 'authority_mismatch')
+      executionAssert(readOpenCodeV2CredentialBinding(metadata.agentTeamsCredential) !== undefined, 'authority_mismatch')
+    }
     return
   }
   const fields = parsed as Record<string, unknown>
@@ -25,7 +32,7 @@ export function validateExecutionBody(parsed: unknown, create: boolean, director
   executionAssert(fields.agents === undefined && fields.skills === undefined, 'capabilities_pending')
   if (!pngInput) executionAssert(fields.files === undefined, 'capabilities_pending')
   else executionAssert(fields.id === pngInput.id &&
-    canonicalExecutionJSON(snapshotV2InlinePngs(fields.files)) === canonicalExecutionJSON(pngInput.files), 'authority_mismatch')
+    canonicalExecutionJSON((media ? snapshotV2InlineMedia : snapshotV2InlinePngs)(fields.files)) === canonicalExecutionJSON(pngInput.files), 'authority_mismatch')
 }
 
 function executionMethodAllowed(method: string, flags: { session: boolean; list: boolean; log: boolean; scoped: boolean; create: boolean; prompt: boolean; activation: boolean }): boolean {
@@ -46,7 +53,7 @@ export function validateExecutionRoute(request: Request, pin: string, directory:
   // A workspace query cannot authorize global model or agent inventories.
   // Real model-binding discovery/effective permission policy remains HOLD.
   const scoped = url.pathname === '/api/location' || ownerScope &&
-    ['/api/mcp', '/api/plugin', '/api/provider', '/api/model', '/api/model/default'].includes(url.pathname)
+    ['/api/mcp', '/api/plugin', '/api/provider', '/api/model', '/api/model/default', '/api/integration'].includes(url.pathname)
   const ownerRead = ownerScope && (url.pathname === '/api/info' || url.pathname === '/api/permission/saved')
   const activation = pin === '2.0.0' && url.pathname === '/api/plugin/await-activation'
   // Native /api/info (2.0.21) exposes process paths and PID, and the

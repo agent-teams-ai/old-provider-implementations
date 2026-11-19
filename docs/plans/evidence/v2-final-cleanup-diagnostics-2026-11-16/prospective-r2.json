@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent prospective documentary R2",
+  "reviewer": "/root/qualification_audit",
+  "reviewedAt": "2026-11-16",
+  "verdict": "GO_PROSPECTIVE_DOCUMENTARY_ONLY",
+  "blockers": [],
+  "document": {
+    "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/documentary/2026-11-16-v2-final-cleanup-diagnostics.md",
+    "bytes": 10454,
+    "lines": 75,
+    "gitBlob": "fcedd5d5c3659ccf6fac38ba753e2a485f1e3c75",
+    "sha256": "0db18565a148642ad05718ea64727140eaf97769937e4c50059e1493d1de929b"
+  },
+  "reviewedParent": {
+    "repository": "agent-teams-ai/old-provider-implementations",
+    "commit": "c930d3c8b9a213762528d6e28c9ed0172ab1fa27",
+    "tree": "a9ce51413c87bc65b54fe07e45a1dc13b2b4c63a",
+    "pullRequest": 8,
+    "headRef": "feat/frontend-parity-20261112",
+    "baseRef": "bootstrap",
+    "baseCommit": "d58500bc983e897506e23d7b0bc8da1209864edd",
+    "draft": true,
+    "scope": "Parent/ref facts are the held root observation and exact immutable source binding. This review made no producer ref, PR or Actions query. Publication must recheck the actual refs."
+  },
+  "scope": {
+    "selected": "Exactly the two existing producer implementation files and two existing producer suites listed in the document.",
+    "excluded": [
+      "No production source afterimages were created or edited in this review.",
+      "No Session SPI, package exports, dependency, workflow, archive, dist or application source change selected.",
+      "No behavioral cleanup repair, deadline increase, retry, new request, ownership grant or error replacement selected.",
+      "Application passive collector and checked-package adoption remain separately unselected prospective work."
+    ],
+    "actualWrites": [
+      "One root-authorized documentary wording clarification and one paragraph delimiting diagnostics_channel neutrality.",
+      "Inert immutable source readbacks, hashes, document inverse diff and review artifacts only."
+    ],
+    "noExecution": "No project import/install/build/compiler/test/native/provider/GUI execution, no genuine Claude/Codex or version command, no Git mutation and no manual Actions operation. The separate root-requested app metadata guard did not qualify this producer proposal."
+  },
+  "evidence": {
+    "sourceManifestPath": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-documentary-source-manifest.json",
+    "dataChecksPath": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-documentary-data-checks.json",
+    "exactSourceAndBasis": [
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/documentary/subscriber-neutrality-before.md",
+        "bytes": 9877,
+        "lines": 73,
+        "gitBlob": "9e32dfc8adbcf4aeb134aa36eae80870ea4021d2",
+        "sha256": "42c4129e3a5586eedf5e74d9aa6f9ff308131c2801536c3ce7214353e2cf4b5c"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/documentary/2026-11-16-v2-final-cleanup-diagnostics.md",
+        "bytes": 10454,
+        "lines": 75,
+        "gitBlob": "fcedd5d5c3659ccf6fac38ba753e2a485f1e3c75",
+        "sha256": "0db18565a148642ad05718ea64727140eaf97769937e4c50059e1493d1de929b"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/proposal.json",
+        "bytes": 14597,
+        "lines": 144,
+        "gitBlob": "38e5b63fe18f7c21b4463e9bd6dfd393995ba039",
+        "sha256": "ce39326c978c739bc6386aa8a0b13927166e31afede35cb83dd72a1d8de0927b"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/root-prospective-research.json",
+        "bytes": 4370,
+        "lines": 70,
+        "gitBlob": "65eb1d69daf0efc2a2bad1f19747d8c62a3fcf01",
+        "sha256": "a43c472a0bb7382d333eb1f9664512bebcc33141e9feec1da16d21a384c384b9"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/AGENTS.md",
+        "bytes": 571,
+        "lines": 10,
+        "gitBlob": "e57b42d71de52315f36fe071f6f1b82fbe041123",
+        "sha256": "efd2f119f62e2ee532545d71b7cd10dff3cdb749fa130801001c2a5e43472170"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+        "bytes": 16708,
+        "lines": 298,
+        "gitBlob": "c074fa2c2219eab448e1d1276dbab75f2d9ade2e",
+        "sha256": "4fc5b7050b224c55070d81cc3f5eb0d355226bd5b20f4a8aabbf395c9a4f1a9e"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/reference/producer-c930/packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts",
+        "bytes": 15849,
+        "lines": 227,
+        "gitBlob": "6cea8b4842161ceef56750dde740799f506a1037",
+        "sha256": "4ad4c92e799e35bfcef4e8884b22f798e40bd381357739c696278ecff9058843"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-native-cut.test.ts",
+        "bytes": 38378,
+        "lines": 786,
+        "gitBlob": "3dc7e46b70b9786ad4f26220611f0865c2ebf4fb",
+        "sha256": "2ffb04cab741e0b936e56a930768f37b74cd35b119e8b1f62ec8763199956616"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-driver-session.test.ts",
+        "bytes": 20213,
+        "lines": 278,
+        "gitBlob": "a25c90eedfb5e2a5da110ced3109fa4cb52f8ea8",
+        "sha256": "b829818b1633c6cd30fdd01dd5a65fb33200faa85a458e5bb3e8c3f4d7ed8c8a"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-protocol.ts",
+        "bytes": 1584,
+        "lines": 24,
+        "gitBlob": "b083415cd3fb1fdfdf1c74eb52e30b6468c2e0b2",
+        "sha256": "90b2b49b472d5f0b8b2017c21b761195b42ea7c82de1434775cc28cca6f7a756"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/reference/producer-c930/packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-session.ts",
+        "bytes": 1086,
+        "lines": 19,
+        "gitBlob": "dc35fa285291300c9b4b47fc11706e806766775b",
+        "sha256": "6d7c2904ec2d436040f15dda1d513c4042a66e195b3f0baf7ea91a424249e88c"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/reference/producer-c930/.github/workflows/ci.yml",
+        "bytes": 4457,
+        "lines": 90,
+        "gitBlob": "7e2bb17761d783b7d0ed298c62c56680a6636279",
+        "sha256": "e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/reference/producer-c930/.github/workflows/native-v2-readonly.yml",
+        "bytes": 17330,
+        "lines": 287,
+        "gitBlob": "b4b88ce1c41c89559a584cce830de59fb5ec0fc0",
+        "sha256": "971cad0c24cb60cdcfb4dd344d91b70d9527ebe01bc88f1495dc09bded25517a"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/node-v24.21.0-diagnostics_channel.js",
+        "bytes": 11416,
+        "lines": 466,
+        "gitBlob": "bd4c9b4a926759c7202b38b75953e9df799637b4",
+        "sha256": "99171ff911d5909d1787f37b61545b392e95f27a62a5d787277f8c523a5dd8ed"
+      },
+      {
+        "path": "/tmp/e2e-original-artifacts/reviews/3be-v2-linux-r2/independent-actual-r2.json",
+        "bytes": 72714,
+        "gitBlob": "47013cde2bcb0e1ac8727ea1583930db23a7c273",
+        "sha256": "acf00cd6ef45671d86ad348ce9b8d4b95c27da7817bd8a14cbe99da2c9a1b741"
+      }
+    ],
+    "fullBodyRead": [
+      "Selected v2-native-cut.ts (298 lines)",
+      "Selected driver-session.ts (227 lines)",
+      "Selected v2-native-cut.test.ts (786 lines)",
+      "Selected v2-driver-session.test.ts (278 lines)",
+      "Existing private driver-protocol.ts (24 lines)",
+      "Existing V2 wrapper v2-driver-session.ts (19 lines)",
+      "Producer AGENTS.md (10 lines)",
+      "Producer CI workflow (90 lines)",
+      "Producer original native V2 workflow (287 lines)",
+      "Prospective document complete before and after clarification",
+      "proposal.json and root-prospective-research.json"
+    ],
+    "priorReceiptScope": "The already-owned exact 3be Linux actual R2 was rebound by full-file digest and its relevant failure/close evidence sections were re-read. Original artifacts or runtime were not fetched or repeated in this documentary task.",
+    "dataValidation": {
+      "passed": 14,
+      "meaning": "String/hash/selector/inverse-document checks only, not producer test execution",
+      "nativeMatrixTuples": 53
+    }
+  },
+  "originalFailureBoundary": {
+    "appHead": "3be1fb3ec43d5682aa2ca77a6af62e6fa27b597b",
+    "consumedProducer": "c930d3c8b9a213762528d6e28c9ed0172ab1fa27",
+    "implementationArchiveSha256": "9d66036c17a4c2bf86dde9171d94d3048e5df6f6f1ee17ff05758e3a7cf2be41",
+    "retained": "The fourth finite credential request is intentionally unanswered. The retained original run has a held resource and Host exit 1 where its unchanged fixture requires 0. The first three request results and original cut fields do not establish which final close await failed.",
+    "notEstablished": [
+      "No pending-fetch, body-cancellation, protocol-disposal or physical-confirmation cause selected from these facts.",
+      "Physical child absence does not establish that unresolved I/O or admission debt settled.",
+      "Producer c930 already contains the settled rejected-fetch distinction; reverting or reapplying that repair is not selected.",
+      "New diagnostics cannot retroactively qualify the old run."
+    ]
+  },
+  "readCutAssessment": {
+    "sourceGitBlob": "c074fa2c2219eab448e1d1276dbab75f2d9ade2e",
+    "finding": "The existing first-failure record and final thrown error can differ. Original final log and session reads settle through the same Promise.allSettled; an unknown-cleanup rejection has precedence over the earlier ordinary rejection.",
+    "exactSelectedOperation": "Classify the actual outer-catch error through the existing closed failureReason function for finalReason. Do not read failures.get(error) for that value because that map deliberately carries the earlier failure fact through error translation.",
+    "preserved": [
+      "The five original record values and their first capture point.",
+      "The original mutable_native_readback suppression.",
+      "The original self-abort location and same actual throw object.",
+      "The same original paired reads, allSettled, precedence, byte/frame/body limits and cleanup wait.",
+      "No additional Date.now, timer, deadline, network call, read, wait, abort or cleanup call."
+    ],
+    "dataBoundary": "Existing own-data descriptor classification permits only the closed reason vocabulary; raw message, stack, code text, URL, session, directory or credential cannot be published.",
+    "futureConsumer": "finalReason is an optional diagnostic addition. A missing or invalid optional value must not invalidate a valid older event. This producer document does not implement an application decoder.",
+    "proposedExistingTestSeams": [
+      {
+        "path": "v2-native-cut.test.ts",
+        "lines": "453–492",
+        "purpose": "The existing settled-rejection/unknown-cleanup pair has two final siblings, 6 fetches, 2 log reads, 2 session reads and one original abort rejection. Its settled branch already checks the original Error identity. It supports first-versus-final classification assertions without new transport or production seam."
+      },
+      {
+        "path": "v2-native-cut.test.ts",
+        "lines": "494–560",
+        "purpose": "The existing late final fetch case captures a first private after-session error then returns native_read_cleanup_unknown and later cancels the original body exactly once. It already verifies frozen original fields, capture-before-self-abort and secret exclusion. Extend its diagnostic shape for finalReason while preserving all current oracles."
+      },
+      {
+        "path": "v2-native-cut.test.ts",
+        "purpose": "Existing successful/mutable-read suppression, metadata getter, rejected fetch, unresolved fetch, body cleanup and limits checks remain. New classification checks must not introduce diagnostic accessor reads."
+      }
+    ]
+  },
+  "closeAssessment": {
+    "sourceGitBlob": "6cea8b4842161ceef56750dde740799f506a1037",
+    "originalControlFlow": "close() returns its cached promise; seals, marks closed, aborts and wakes once; then bounded-joins loop/control/replies, bounded-disposes protocol, bounded-confirms physical stop, returning the original receipt and ending the feed in finally.",
+    "selectedStages": [
+      {
+        "stage": "original-work",
+        "covers": "Only the existing bounded Promise.all([loop, control, ...replies]) await. A thrown or timed-out join does not imply every underlying promise settled."
+      },
+      {
+        "stage": "protocol-dispose",
+        "covers": "Only the existing bounded protocol.dispose() await, reached after the original work join."
+      },
+      {
+        "stage": "confirm-stopped",
+        "covers": "Only the existing bounded confirmStopped() await, reached after disposal."
+      }
+    ],
+    "selectedOutcomes": {
+      "threw": "The existing catch for the currently selected stage, without inspecting the raw thrown value.",
+      "unconfirmed": "The existing V2-normalized physical confirmation returned false at confirm-stopped."
+    },
+    "closedChannel": "agent-teams:opencode-v2:driver-close-failed",
+    "payload": "Only the closed stage, closed outcome and already supplied validated 64-hex trustedBinding. That binding is correlation metadata, never process or cancellation authority.",
+    "containment": "V2 selection, own-data descriptor reads, binding validation and publication belong inside producer best-effort handling. No inherited/accessor/malformed binding, V1, successful close or absent-subscriber event. No raw exception field is required.",
+    "preserved": [
+      "Original bounded await order and timeout arguments.",
+      "Original cached Promise identity and receipt shape.",
+      "Shared owner truthiness semantics; the unchanged V2 wrapper already normalizes confirmation with === true.",
+      "One original physical confirmation only when the original flow reaches it.",
+      "No physical confirmation after disposal failure.",
+      "Original seal/abort/wake and feed.end finally.",
+      "No sticky debt clearing, deadline reset, retry, or reinterpretation of later absence."
+    ],
+    "sourceFeasibleTests": "The already exported private OpenCodeDriverSession constructor accepts the existing typed DriverProtocol factory and DriverSessionConfig. The existing V2 driver suite can import that shared constructor, supply finite controlled queue/read/control/dispose/confirm promises, and test each original close branch. No production seam or new harness owner is necessary.",
+    "requiredProposedAssertions": [
+      "original-work timeout/refusal leaves downstream dispose/confirm uncalled; release original controlled work for test cleanup without changing the returned receipt",
+      "disposal throw leaves confirm uncalled",
+      "false and throwing confirmation each retain original unknown receipt and one confirm call",
+      "successful close yields the same confirmed receipt without a diagnostic",
+      "repeated close returns the same promise and does not duplicate observations",
+      "feed ends on the original finally path",
+      "V1/malformed/inherited/accessor bindings do not publish or invoke newly observed getters",
+      "all original V2 driver assertions and fixture budgets remain"
+    ],
+    "testStatus": "These are feasible prospective checks, not implemented, compiled or run by this review."
+  },
+  "resolvedDocumentaryFinding": {
+    "originalProblem": "An unqualified claim that diagnostic publication cannot affect close could be read as isolation of arbitrary subscriber errors. Node diagnostics_channel does not provide that guarantee.",
+    "authorisedCorrection": "Root explicitly authorized this one precision. The document now limits the obligation to producer-owned validation/publication failures and requires a future TEST collector to contain its own callback errors. It explicitly excludes process exception handlers, channel wrappers and universal observer isolation.",
+    "originalDocumentGitBlob": "9e32dfc8adbcf4aeb134aa36eae80870ea4021d2",
+    "finalDocumentGitBlob": "fcedd5d5c3659ccf6fac38ba753e2a485f1e3c75",
+    "diffPath": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/documentary/subscriber-neutrality-clarification.patch",
+    "inverseProof": "The sole phrase replacement and added paragraph reverse exactly to the held 73-line original document; all other plan bytes preserved.",
+    "primarySources": [
+      {
+        "url": "https://nodejs.org/download/release/v24.21.0/docs/api/diagnostics_channel.html#channelsubscribefunction",
+        "claim": "Subscriber callbacks are invoked synchronously; a throwing callback causes uncaughtException. No runtime experiment was performed."
+      },
+      {
+        "url": "https://raw.githubusercontent.com/nodejs/node/v24.21.0/lib/diagnostics_channel.js",
+        "localPath": "/tmp/e2e-original-artifacts/reviews/3be-v2-final-cleanup-diagnostic-proposal/independent-reference/node-v24.21.0-diagnostics_channel.js",
+        "gitBlob": "bd4c9b4a926759c7202b38b75953e9df799637b4",
+        "sha256": "99171ff911d5909d1787f37b61545b392e95f27a62a5d787277f8c523a5dd8ed",
+        "readScope": "Relevant publish implementation, lines 161–174; complete bytes saved and compared to the retrieved source.",
+        "claim": "publish invokes onMessage(data, this.name) synchronously; its catch schedules triggerUncaughtException through process.nextTick. A publisher-level try/catch cannot contain that scheduled exception."
+      }
+    ],
+    "timingLimit": "The selected channel retains synchronous subscriber work. Source-owned best-effort handling is not a latency bound or general isolation of arbitrary consumers."
+  },
+  "unchangedQualification": {
+    "guidance": "Producer AGENTS requires compatible public exports, private adapter details, caller-owned lifecycle/custody, disposable finite tests, no real providers or credentials and pnpm check. The selected document respects those limits.",
+    "controlledCI": "Existing CI uses Node 24.21.0 and 26.11.1 with pnpm 11.18.0, frozen ignore-scripts install and original pnpm check; its Node24 job retains exactly the two archives actually consumed by its package check.",
+    "nativeCI": "Both selected implementation paths match the existing native V2 workflow paths. All 53 original matrix tuples and the expected HOLD controls remain unchanged. Its native scopes remain separate from application Host, packaged Desktop, P08/P09/M16 or default-on qualification.",
+    "publication": "Publish and read back the selected document and independent R2 before preparing source afterimages; independently review the exact four-path source diff and preserved preimages. Root rechecks refs/history and useful original jobs before an ordinary expected-parent PR8 publication.",
+    "noManualActions": "No dispatch/rerun/cancel is selected. Genuine Claude/Codex jobs remain Draft-gated and uninvoked.",
+    "adoption": "A later application adoption requires separate review of the entire consumed-c930-to-resulting-source delta, original checked archives, source/toolchain identities and unchanged contracts. No archive or dist editing."
+  },
+  "conclusion": "The clarified exact document is a bounded, source-feasible selection of missing diagnostic facts. No remaining documentary blocker was found. This GO authorizes only the described documentary sequence and prospective four-path review; it is neither actual-source R2 nor runtime qualification, and it selects no cleanup behavior repair."
+}

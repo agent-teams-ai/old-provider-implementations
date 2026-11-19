@@ -13,8 +13,12 @@ import { nativeThreadId, nativeTurnId } from './notification-mapper.ts'
 import { captureModelListRequest, captureConfigReadRequest, decodeRuntimeIdentity, decodeAccountMetadata, decodeModelPage, decodeModelConfiguration } from './metadata.ts'
 import type { CodexRuntimeIdentity, CodexAccountMetadata, CodexModelListRequest, CodexModelPage, CodexConfigReadRequest, CodexModelConfiguration } from './metadata.ts'
 import { record, string } from './wire-frames.ts'
+import { decodeCodexConnectionNotification } from './connection-notifications.ts'
+import type { CodexConnectionNotification } from './connection-notifications.ts'
 import { captureMcpStatusRequest, decodeMcpStatusPage } from './mcp-status.ts'
 import type { CodexMcpStatusRequest, CodexMcpServerStatusPage } from './mcp-status.ts'
+import { captureAccountLoginId, captureAccountLoginType, decodeAccountLoginStart, decodeAccountLoginCancel, decodeAccountLoginCompleted } from './account-login.ts'
+import type { CodexAccountLoginType, CodexAccountLoginStart, CodexAccountLoginCompleted, CodexAccountLoginCancel } from './account-login.ts'
 
 export type CodexAppServerOptions = {
   readonly transport: CodexAppServerTransport
@@ -24,6 +28,10 @@ export type CodexAppServerOptions = {
   readonly onServerRequest?: () => void
   /** Attributed native item fact, including delta-only items. No permission authority is transferred. */
   readonly onItem?: (ref: CodexTurnRef, itemId: string) => void
+  /** Installed before start. The caller buffers early facts and correlates only an exact loginId. */
+  readonly onAccountLoginCompleted?: (completion: CodexAccountLoginCompleted) => void
+  /** Synchronous private observation only; exceptions cannot control the original RPC or Session. */
+  readonly onConnectionNotification?: (notification: CodexConnectionNotification) => void
   readonly limits?: Partial<CodexRpcLimits>
   readonly maxThreads?: number
   readonly maxQueuedTurns?: number
@@ -62,6 +70,7 @@ export class CodexAppServerClient {
   private opening = 0
   private handshakeComplete = false
   private initialization: unknown
+  private sampleUncertain = false
 
   constructor(options: CodexAppServerOptions) {
     this.options = options
@@ -102,6 +111,65 @@ export class CodexAppServerClient {
   /** Protocol availability only; this does not attest provider authentication or process custody. */
   isOpen(): boolean { return this.rpc.isOpen() }
 
+  /**
+   * One experimental out-of-band sample on this same captured idle native thread.
+   * No turn/start, new thread, auth, process or checkpoint mutation is performed.
+   */
+  async samplePromptSuggestion(
+    input: Readonly<{ threadId: string; expectedTurnId: string; prompt: string }>,
+    signal: AbortSignal,
+    current: () => boolean,
+  ): Promise<unknown> {
+    if (!this.initialized || !this.handshakeComplete) {
+      throw new CodexProtocolError('codex.sample.not-initialized', 'not-sent')
+    }
+    const session = this.sessions.get(input.threadId)
+    const eligible = () => !this.sampleUncertain && this.rpc.isOpen() && this.sessions.get(input.threadId) === session &&
+      session !== undefined && session.canSample() && current()
+    if (!input.threadId || !input.expectedTurnId || !input.prompt || !eligible() || signal.aborted) {
+      throw new CodexProtocolError('codex.sample.stale', 'not-sent')
+    }
+    let sentId: string | number | undefined
+    let settled = false, received = false, cancelRequested = false
+    const cancelNative = (): void => {
+      if (sentId === undefined || settled || received || cancelRequested || !this.rpc.isOpen()) return
+      this.sampleUncertain = true
+      cancelRequested = true
+      // Best effort, separate from the source thread's control and main turn.
+      void this.rpc.request('thread/sample/cancel', { requestId: sentId },
+        { beforeWrite: () => this.rpc.isOpen() }).catch(() => {})
+    }
+    signal.addEventListener('abort', cancelNative, { once: true })
+    try {
+      const reply = await this.rpc.request('thread/sample', {
+        threadId: input.threadId,
+        expectedTurnId: input.expectedTurnId,
+        prompt: input.prompt,
+        effort: 'low',
+      }, {
+        signal,
+        beforeWrite: eligible,
+        onSentId: id => { sentId = id; if (signal.aborted) cancelNative() },
+      })
+      received = true // Native settlement precedes the caller's reentrant eligibility check.
+      if (!eligible() || signal.aborted) {
+        throw new CodexProtocolError('codex.sample.stale')
+      }
+      return reply
+    } catch (error) {
+      const nativeError = error instanceof CodexProtocolError && error.code === 'codex.protocol.provider-error'
+      const notSent = error instanceof CodexProtocolError && error.acceptance === 'not-sent'
+      if (sentId !== undefined && !received && !nativeError && !notSent) {
+        this.sampleUncertain = true
+        cancelNative()
+      }
+      throw error
+    } finally {
+      settled = true
+      signal.removeEventListener('abort', cancelNative)
+    }
+  }
+
   /** Finite read-only native discovery for an actual thread owned by this client. */
   async listMcpServerStatus(supplied: CodexMcpStatusRequest, signal?: AbortSignal): Promise<CodexMcpServerStatusPage> {
     const request = captureMcpStatusRequest(supplied)
@@ -133,6 +201,19 @@ export class CodexAppServerClient {
   async logoutAccount(signal?: AbortSignal): Promise<void> {
     const response = record(await this.nativeAccountRequest('account/logout', undefined, signal))
     if (!response || Object.keys(response).length !== 0) { throw new CodexProtocolError('codex.protocol.invalid-metadata-response') }
+  }
+
+  /** Explicit login only. No browser, replay, credential storage or process lifecycle is owned here. */
+  async startAccountLogin(type: CodexAccountLoginType, signal?: AbortSignal): Promise<CodexAccountLoginStart> {
+    const captured = captureAccountLoginType(type)
+    if (!this.options.onAccountLoginCompleted) { throw new CodexProtocolError('codex.protocol.login-observer-required', 'not-sent') }
+    return decodeAccountLoginStart(await this.nativeAccountRequest('account/login/start', { type: captured }, signal), captured)
+  }
+
+  /** Cancels this exact native login only; never logs out or claims process cleanup. */
+  async cancelAccountLogin(loginId: string, signal?: AbortSignal): Promise<CodexAccountLoginCancel> {
+    const captured = captureAccountLoginId(loginId)
+    return decodeAccountLoginCancel(await this.nativeAccountRequest('account/login/cancel', { loginId: captured }, signal))
   }
 
   /** Read-only account quota summary; no auth refresh or inference is requested. */
@@ -204,6 +285,16 @@ export class CodexAppServerClient {
   }
 
   private notification(method: string, params: Record<string, unknown>): void {
+    if (method === 'account/login/completed') {
+      this.options.onAccountLoginCompleted?.(decodeAccountLoginCompleted(params))
+      return // Private auth facts never enter conversation events or their raw payloads.
+    }
+    const notification = decodeCodexConnectionNotification(method, params)
+    if (notification) {
+      if (!this.initialized) { throw new CodexProtocolError('codex.protocol.invalid-connection-notification') }
+      try { this.options.onConnectionNotification?.(notification) } catch { /* Observation cannot control the original connection. */ }
+      return
+    }
     const threadId = nativeThreadId(params)
     // Thread lifecycle can arrive after a turn starts. It has no turn identity
     // and must never enter that turn's notification buffer or output budget.
@@ -224,6 +315,12 @@ export class CodexAppServerClient {
   private approval(request: CodexAppServerRequest, signal: AbortSignal): Promise<CodexServerReply | null> {
     if (!isCodexAppServerApprovalMethod(request.method)) {
       return Promise.resolve({ error: { code: -32601, message: 'codex.protocol.unsupported-request' } })
+    }
+    const kind = request.params?.kind
+    // humanCommand requires a fresh human decision, a capability this client has not
+    // negotiated. Neither it nor a future kind may reach an automatic policy grant.
+    if (request.method === 'item/commandExecution/requestApproval' && kind !== undefined && kind !== 'command' && kind !== 'writeStdin') {
+      return Promise.resolve({ result: { decision: 'decline' } })
     }
     const normalized = normalizeCodexAppServerApprovalRequest(request)
     const session = normalized?.threadId !== null && normalized?.threadId !== undefined ? this.sessions.get(normalized.threadId) : undefined

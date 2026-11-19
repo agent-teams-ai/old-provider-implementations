@@ -232,29 +232,51 @@ test('started text and diagnostics without completed nonempty text never prove i
   }
 })
 test('malformed or foreign metadata, unknown notifications and metadata-looking requests remain refused', async t => {
-  const frames = [
+  const frames: Array<{ method: string; params: Record<string, unknown>; closesConnection?: true }> = [
     { method: 'warning', params: { threadId: 'foreign', message: 'TEST' } },
     { method: 'warning', params: { threadId: 'TEST-thread', turnId: 'foreign', message: 'TEST' } },
     { method: 'warning', params: { threadId: 'TEST-thread', message: 42 } },
     { method: 'warning', params: { threadId: 'TEST-thread', message: 'TEST', id: 'request' } },
     { method: 'thread/status/changed', params: { threadId: 'foreign', status: { type: 'idle' } } },
     { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: 'active', activeFlags: ['unknown'] } } },
-    { method: 'remoteControl/status/changed', params: { ...metadataFrames[0]!.params, threadId: 'foreign' } },
-    { method: 'remoteControl/status/changed', params: { status: 'unknown', serverName: 'TEST', installationId: 'TEST', environmentId: null } },
+    { method: 'remoteControl/status/changed', params: { ...metadataFrames[0]!.params, threadId: 'foreign' }, closesConnection: true },
+    { method: 'remoteControl/status/changed', params: { status: 'unknown', serverName: 'TEST', installationId: 'TEST', environmentId: null }, closesConnection: true },
     { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, primary: { usedPercent: 'bad' } } } },
     { method: 'account/rateLimits/updated', params: { rateLimits: {} } },
     { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, turnId: 'foreign' } } },
     { method: 'thread/status/changed', params: { threadId: 'TEST-thread', status: { type: ['idle'] } } },
-    { method: 'remoteControl/status/changed', params: { status: ['disabled'], serverName: 'TEST', installationId: 'TEST', environmentId: null } },
+    { method: 'remoteControl/status/changed', params: { status: ['disabled'], serverName: 'TEST', installationId: 'TEST', environmentId: null }, closesConnection: true },
     { method: 'account/rateLimits/updated', params: { rateLimits: { ...rates, rateLimitReachedType: ['rate_limit_reached'] } } },
     { method: 'TEST/unknown', params: {} },
   ]
-  for (const frame of frames) {
-    const s = await setup(t), pending = probeCodexModel(s.config); await s.started()
-    await s.native.command({ kind: 'notify', ...frame }); await s.finish(); assert.equal(await pending, false, frame.method)
+  for (const { closesConnection, ...frame } of frames) {
+    const s = await setup(t)
+    // Retain either original outcome before any awaited fixture traffic can reject it.
+    const pending = probeCodexModel(s.config).then(
+      value => ({ kind: 'value' as const, value }),
+      (error: unknown) => ({ kind: 'error' as const, error }),
+    )
+    await s.started()
+    await s.native.command({ kind: 'notify', ...frame })
+    if (!closesConnection) {await s.finish()}
+    const outcome = await pending
+    if (closesConnection) {
+      assert.ok(outcome.kind === 'error')
+      assert.ok(outcome.error instanceof Error)
+      assert.equal(outcome.error.message, 'codex.probe.unknown')
+    } else {assert.deepEqual(outcome, { kind: 'value', value: false }, frame.method)}
+    assert.deepEqual(s.counts(), { launches: 1, disposals: 1 })
+    assert.equal(s.native.writes.filter(row => row.method === 'turn/start').length, 1)
   }
-  const request = await setup(t), pending = probeCodexModel(request.config); await request.started()
+  const request = await setup(t)
+  const pending = probeCodexModel(request.config).then(
+    value => ({ kind: 'value' as const, value }),
+    (error: unknown) => ({ kind: 'error' as const, error }),
+  )
+  await request.started()
   await request.native.command({ kind: 'approval', requestId: 'TEST-request', method: 'warning', params: { threadId: 'TEST-thread', message: 'TEST' } })
   await request.native.waitFor(row => row.event === 'wire' && (row.message as Record<string, unknown> | undefined)?.id === 'TEST-request')
-  await request.finish(); assert.equal(await pending, false)
+  await request.finish(); assert.deepEqual(await pending, { kind: 'value', value: false })
+  assert.deepEqual(request.counts(), { launches: 1, disposals: 1 })
+  assert.equal(request.native.writes.filter(row => row.method === 'turn/start').length, 1)
 })

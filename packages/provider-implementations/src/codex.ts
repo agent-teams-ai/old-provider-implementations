@@ -7,6 +7,7 @@ export { encodeCodexApprovalResponse } from './features/provider-session-impleme
 export type { CodexApprovalReply, CodexApprovalResponse } from './features/provider-session-implementation/internal.ts'
 export { CodexAppServerClient } from './features/provider-session-implementation/internal.ts'
 export type { CodexAppServerOptions, CodexInitializeParams } from './features/provider-session-implementation/internal.ts'
+export type { CodexAccountLoginType, CodexAccountLoginStart, CodexAccountLoginCompleted, CodexAccountLoginCancel } from './features/provider-session-implementation/internal.ts'
 export { CodexProtocolError } from './features/provider-session-implementation/internal.ts'
 export type { CodexAppServerTransport, CodexRpcLimits } from './features/provider-session-implementation/internal.ts'
 export type { CodexAppServerEvent, CodexApprovalHandler, CodexTurnRef, CodexTurnOutcome, CodexTurnParams, CodexTurnSubmission } from './features/provider-session-implementation/internal.ts'

@@ -4,7 +4,7 @@ import { readV1Window, sameV1Window } from './v1-native-read.ts'
 import { openCodeTranscriptProjector } from './v1-transcript-projector.ts'
 import { normalizeOpenCodePermission } from './v1-permission-normalizer.ts'
 import { record } from './v2-projection-helpers.ts'
-import { qualifyOpenCodeV1BoundTerminalProof } from './terminal-proof.ts'
+import { qualifyOpenCodeV1BoundTerminalProof, qualifyOpenCodeV1BoundRequestRejection } from './terminal-proof.ts'
 import type { DriverPermission } from './driver-protocol.ts'
 import type { OpenCodeCanonicalMessage } from './canonical-message-types.ts'
 import type { OpenCodeMessage } from './types.ts'
@@ -88,10 +88,19 @@ export async function readV1DriverCut(client: OpenCodeClient, questions: () => P
   const unsettled = permissions.some(owns) || pendingQuestions.some(owns) || raw.slice(anchor).some(value => value.parts.some(unsettledPart))
   const evidence = { authority: { hostKey: config.trustedBinding, runId: config.runBinding, profileRootKey: config.profileBinding, projectPath: config.workspacePath },
     sessionId: config.nativeSessionId, messages: canonical, messageSessionIds: raw.map(value => String(value.info.sessionID)), complete: true, interactionsSettled: !unsettled, diagnostics: [] }
-  const proof = qualifyOpenCodeV1BoundTerminalProof(evidence, { nativeSessionId: config.nativeSessionId, workspacePath: config.workspacePath,
-    hostKey: config.trustedBinding, runId: config.runBinding, profileRootKey: config.profileBinding }, nativeInputID).proof
+  const binding = { nativeSessionId: config.nativeSessionId, workspacePath: config.workspacePath,
+    hostKey: config.trustedBinding, runId: config.runBinding, profileRootKey: config.profileBinding }
+  const proof = qualifyOpenCodeV1BoundTerminalProof(evidence, binding, nativeInputID).proof
+  // Status comes from the same twice-read original assistant, never a transport exception.
+  const latest = raw.at(-1), error = record(latest?.info.error), statusCode = record(error?.data)?.statusCode
+  const failure = latest?.info.role === 'assistant' && typeof latest.info.id === 'string' && error?.name === 'APIError'
+    && (statusCode === 400 || statusCode === 422)
+    ? { assistantMessageId: latest.info.id, status: statusCode } as const : undefined
+  const rejected = qualifyOpenCodeV1BoundRequestRejection(evidence, binding, nativeInputID, failure)
   const state = selectedNativeStatus(status, config.nativeSessionId)
-  const terminal = state === 'idle' && proof ? proof.outcome === 'success' ? 'succeeded' as const : 'cancelled' as const : undefined
+  const terminal = state === 'idle' ? proof ? proof.outcome === 'success' ? 'succeeded' as const : 'cancelled' as const
+    : rejected ? 'failed' as const : undefined : undefined
+  const terminalCode = terminal === 'failed' && rejected ? 'unsupported' as const : undefined
   const mayAsk = !terminal && ['busy', 'retry'].includes(String(state)) && relevant.length > 0 && relevant.every(message => !message.hasError)
-  return { raw: raw.slice(anchor + 1), messages: relevant, terminal, permissions: mayAsk ? qualifiedPermissions(permissions, relevant, config.nativeSessionId) : [] }
+  return { raw: raw.slice(anchor + 1), messages: relevant, terminal, ...(terminalCode ? { terminalCode } : {}), permissions: mayAsk ? qualifiedPermissions(permissions, relevant, config.nativeSessionId) : [] }
 }

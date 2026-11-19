@@ -65,6 +65,7 @@ const readJSON = async request => {
 }
 const marker = 'TEST_NATIVE_SPI_INSTRUCTIONS_EFFECTIVE'
 const outputMarker = 'TEST_NATIVE_SPI_REPLY'
+const credentialWitness = { scopeDigest: 'a'.repeat(64), credentialId: 'cred_TESTprivateWitness' }
 const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8DwHwQBEPgD/U6VwW8AAAAASUVORK5CYII='
 const pngBytes = Buffer.from(pngBase64, 'base64'), pngURI = 'data:image/png;base64,' + pngBase64
 const pngReference = { artifactId: 'TEST-native-PNG', mimeType: 'image/png', byteLength: pngBytes.length,
@@ -128,6 +129,9 @@ try {
       check(allowInference && request.method === 'POST' && request.url === '/v1/chat/completions', 'model_route_or_early_request')
       const value = await readJSON(request); modelCalls++
       check(value.model === 'TEST-model' && value.stream === true, 'model_binding')
+      check(!JSON.stringify(value).includes(credentialWitness.scopeDigest) &&
+        !JSON.stringify(value).includes(credentialWitness.credentialId) &&
+        !JSON.stringify(value).includes('agentTeamsCredential'), 'private_session_metadata_leak')
       const messages = Array.isArray(value.messages) ? value.messages : []
       const lastUser = messages.filter(row => row.role === 'user').at(-1)
       const targeted = JSON.stringify(lastUser ?? {}).includes('TEST native SPI')
@@ -201,7 +205,8 @@ try {
     return 'http://127.0.0.1:' + native.address.port
   }
   const firstEndpoint = await startNative()
-  const selection = { agent: 'build', model: { providerID: 'test-native', id: 'TEST-model', variant: 'default' }, permissions: [
+  const selection = { agent: 'build', model: { providerID: 'test-native', id: 'TEST-model', variant: 'default' },
+    credential: credentialWitness, permissions: [
     { action: '*', resource: '*', effect: 'deny' }, { action: toolName, resource: '*', effect: 'ask' },
     { action: 'edit', resource: '*', effect: 'allow' },
     { action: 'external_directory', resource: '*', effect: 'deny' },
@@ -223,6 +228,7 @@ try {
   phase = 'owner_create'
   const created = await owner.createSession(selection)
   check(created.id === 'ses_TESTnativeSPI', 'created_identity')
+  check(JSON.stringify(created.credential) === JSON.stringify(credentialWitness), 'created_credential_witness')
   phase = 'owner_instructions'
   await owner.putInstruction('test-native-spi', marker)
   check((await owner.instructions()).some(row => row.key === 'test-native-spi' && row.value === marker), 'instruction_readback')
@@ -241,6 +247,13 @@ try {
   check(catalog.defaultModel?.providerId === 'test-native' && catalog.defaultModel.modelId === 'TEST-model', 'catalog_default')
   check(catalog.models.some(row => row.id === 'TEST-model' && row.enabled && row.inputModalities.includes('text')
     && row.inputModalities.includes('image')), 'catalog_model')
+  const directory = await owner.readDirectory()
+  check(directory.providers.some(row => row.id === 'test-native') &&
+    directory.models.some(row => row.providerId === 'test-native' && row.id === 'TEST-model') &&
+    directory.integrations.some(row => row.plainKey), 'native_provider_directory')
+  check(!JSON.stringify(directory).includes('TEST-non-secret') &&
+    !JSON.stringify(directory).includes(credentialWitness.credentialId), 'native_directory_private_field_leak')
+  receipt.steps.push('native_all_provider_directory_without_account_or_configuration_fields')
   phase = 'owner_mcp'
   let mcpReady = false
   for (let attempt = 0; attempt < 100 && !mcpReady; attempt++) {
@@ -365,7 +378,9 @@ try {
   const restoredEndpoint = await startNative()
   check(restoredEndpoint !== firstEndpoint, 'cold_endpoint_not_rebound')
   owner = createOpenCodeV2OwnedSessionClient(transportConfig(restoredEndpoint))
-  check((await owner.readSession()).id === created.id, 'cold_session_missing')
+  const restoredSession = await owner.readSession()
+  check(restoredSession.id === created.id, 'cold_session_missing')
+  check(JSON.stringify(restoredSession.credential) === JSON.stringify(credentialWitness), 'cold_credential_witness_missing')
   check(await owner.savedPermissionsEmpty(), 'saved_grants_after_once')
   check(await owner.builtinPluginsOnly(), 'non_builtin_plugins_after_restore')
   check((await owner.instructions()).some(row => row.key === 'test-native-spi' && row.value === marker), 'cold_instructions_missing')
@@ -382,6 +397,7 @@ try {
   receipt.nativePNG = { mimeType: 'image/png', sha256: pngReference.digest, byteLength: pngBytes.length,
     resolutions: pngResolutions, actualInference: pngInference, coldHistory: pngColdHistory, resubmitted: false }
   receipt.steps.push('cold_same_session_new_endpoint_checkpoint_no_replay_and_fresh_input')
+  receipt.steps.push('private_credential_witness_retained_on_cold_readback_and_absent_from_model_requests')
   receipt.modelRequests = modelCalls; receipt.mcpEffects = mcpCalls
   receipt.instructionsEffective = instructionsSeen; receipt.nativeCatalogEffective = catalogSeen
   receipt.platform = `${process.platform}-${process.arch}`

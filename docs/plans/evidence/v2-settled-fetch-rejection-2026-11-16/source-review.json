@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "kind": "independent-prospective-source-r2",
+  "disposition": "GO_SOURCE_ONLY_FOR_EXACT_TWO_PATH_CANDIDATE",
+  "executed": false,
+  "selected": false,
+  "producer": {
+    "repository": "agent-teams-ai/old-provider-implementations",
+    "proposedBase": "c79b81bf002eaac95436da71c7049d7f309906a9",
+    "consumedSource": "9423f600dfb04d04448326dbced89919924b0b5f",
+    "existingDraftPullRequest": 8,
+    "existingRef": "refs/heads/feat/frontend-parity-20261112",
+    "currentRefLivePolledHere": false
+  },
+  "packet": {
+    "patch": {
+      "file": "candidate.patch",
+      "bytes": 4683,
+      "lines": 84,
+      "sha256": "5b8e20ce0b8d5df1d21f39469c1bf285102c7f3ce27be550f33152620f89f7f7",
+      "gitBlob": "8cdcccb37c6bf62cd4826c61af3a8896b04062dc",
+      "counts": [
+        {
+          "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+          "additions": 6,
+          "deletions": 1
+        },
+        {
+          "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-native-cut.test.ts",
+          "additions": 41,
+          "deletions": 0
+        }
+      ]
+    },
+    "proposal": {
+      "file": "proposal.md",
+      "bytes": 8768,
+      "lines": 73,
+      "sha256": "d1bb76146528a5f50b6982b83d2dbbf5683ea75c85596953f020dd0a8bc3efc8",
+      "gitBlob": "74ff8e59801307473428a384d7d6f332a5d433e4"
+    },
+    "manifest": {
+      "bytes": 11819,
+      "lines": 238,
+      "sha256": "7dcdd55a7cf7cb3bedcb0ae2d18831b5275363366ddf7576684c75c582621704",
+      "gitBlob": "bf913302bea91afa6f930e85a34a76e976a62cd6"
+    }
+  },
+  "paths": [
+    {
+      "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+      "preimage": {
+        "bytes": 16526,
+        "lines": 293,
+        "sha256": "af8da7adf7b8bf091d79dfe72f3cacf1d31af5435a10a9f22cb6446ae7d49084",
+        "gitBlob": "177f850298c86902a33198d22e2c2020b56827a1"
+      },
+      "postimage": {
+        "bytes": 16708,
+        "lines": 298,
+        "sha256": "4fc5b7050b224c55070d81cc3f5eb0d355226bd5b20f4a8aabbf395c9a4f1a9e",
+        "gitBlob": "c074fa2c2219eab448e1d1276dbab75f2d9ade2e"
+      },
+      "beforeFile": "v2-native-cut.before.ts.txt",
+      "afterFile": "v2-native-cut.after.ts.txt"
+    },
+    {
+      "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-native-cut.test.ts",
+      "preimage": {
+        "bytes": 36411,
+        "lines": 745,
+        "sha256": "273141da38d39e5e7c292c2ddce6a06c17faa84d1cda28a89cd2e47abf8a575c",
+        "gitBlob": "be55411efcb329191c3db8abf8a564dca54332fa"
+      },
+      "postimage": {
+        "bytes": 38378,
+        "lines": 786,
+        "sha256": "2ffb04cab741e0b936e56a930768f37b74cd35b119e8b1f62ec8763199956616",
+        "gitBlob": "3dc7e46b70b9786ad4f26220611f0865c2ebf4fb"
+      },
+      "beforeFile": "v2-native-cut.test.before.ts.txt",
+      "afterFile": "v2-native-cut.test.after.ts.txt"
+    }
+  ],
+  "replay": [
+    {
+      "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+      "exactPreimageReplayMatched": true,
+      "additions": 6,
+      "deletions": 1,
+      "hunks": 3
+    },
+    {
+      "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-native-cut.test.ts",
+      "exactPreimageReplayMatched": true,
+      "additions": 41,
+      "deletions": 0,
+      "hunks": 1
+    }
+  ],
+  "preimageAuthority": "Both complete immutable c79 owner and test bodies independently fetched through GitHub and SHA/Git-hashed; their exact blob IDs also match the previously retrieved consumed9423 tree. Existing contributor changes elsewhere remain outside this candidate.",
+  "oldSuitePreservation": {
+    "beforeLines": 745,
+    "afterLines": 786,
+    "singleInsertionLines": 41,
+    "oldBytePrefixAndSuffixExact": true,
+    "oldTestBodiesDeletedOrChanged": 0,
+    "newCases": 2,
+    "newSuiteOrFixture": false
+  },
+  "sourceReasoning": {
+    "owner": "Only the original transport.fetch promise rejection handler marks that promise settled. The bounded wrapper catch/finally cannot clear fetchPending, because wrapper completion alone does not settle original IO.",
+    "ordinaryRejection": "The original final session Error invalid_native_read_response is preserved by reference. The paired final-log promise rejects normally on its actual cut-abort signal; it has no unresolved original fetch promise at catch. Removing the false pending classification leaves the original first session Error selected by the unchanged final-pair priority.",
+    "explicitUnknown": "unknownCleanup(error) is the unchanged closed descriptor-based classifier. The added flag records explicit cleanup debt from this one original fetch rejection before rethrowing the same object. If the wrapper abort wins the race, the original debt still participates in the same abort/deadline guard.",
+    "monotonicity": "For one proper Promise, its rejection handler runs at most once. fetchCleanupUnknown starts false and is assigned only from that rejection; no cleanup success, wrapper catch or finally clears it.",
+    "race": "The test registers the original fetch abort listener before boundV2Request registers its abort listener. Aborting the pair queues the original rejection reaction, then the wrapper deadline reaction. The rejection handler updates both local facts before catch, while its derived work rejection can lose the wrapper Promise.race. This is why a second fact is required rather than clearing pending alone.",
+    "redaction": "Arbitrary private rejection text remains translated by the unchanged allowlist. Classifier bookkeeping uses safe own descriptors and emits no new payload or diagnostics.",
+    "unchanged": "Success/late-response handling, unclaimed-body cancellation, reader cancellation/lock release, bounds, binding checks, full final allSettled join, first-failure selection, outer unknown owners and every request/abort/deadline remain unchanged."
+  },
+  "testPurposes": [
+    {
+      "mode": "settled-rejection",
+      "assertion": "Exact first session Error object, not merely equal message; exactly6 fetch attempts/2 session/2 log/1 abort rejection, and the original4 finite HTTP requests.",
+      "counterfactual": "Original owner keeps fetchPending true on rejection and would select synthetic native_read_cleanup_unknown. This is source reasoning, not measured RED."
+    },
+    {
+      "mode": "unknown-cleanup",
+      "assertion": "Explicit native_read_cleanup_unknown must still dominate the ordinary first failure when the original sibling aborts. Same finite request/rejection counts.",
+      "counterfactual": "A naive pending-only clear can select the first session Error after the wrapper deadline wins, losing the original unknown debt. This is source reasoning, not measured RED."
+    }
+  ],
+  "preservedNegativeControls": [
+    "Truly never-settling fetch after revocation",
+    "Late fulfilled response body reclaimed without rewriting failed cut",
+    "Genuinely pending final sibling still dominates ordinary failure",
+    "Never-settling body read with owned cancellation/release",
+    "Failed or pending body cancellation",
+    "Failed reader lock release",
+    "Locked or absent reader",
+    "Rejected response with failed cancellation",
+    "Malformed or private payload redaction",
+    "Response/binding identity, physical byte and chunk bounds"
+  ],
+  "qualificationBoundaries": {
+    "compiler": "Not run; no type-check success asserted. New signal narrowing follows existing Node assert patterns and adds no cast/import/API.",
+    "testExecution": "No new or original tests run. Full original producer check and resulting-head native matrix remain required.",
+    "workflow": "All seven retained guidance/workflow/package bodies independently SHA/Git checked. Existing test:source glob includes this suite; Node24.21.0/26.11.1 and pnpm11.18.0 remain. Owner/test already match original V2 matrix selectors. Claude/Codex real native jobs remain behind unchanged Draft guards; no dispatch/Ready/workflow mutation.",
+    "nativeCause": "Current B852 Linux credential-close cause is NOT established by this source defect. Do not transfer old72 or B observations into a causal repair claim.",
+    "adoption": "No app pin/archive/local dist change; future exact-head checked archives require separate root adoption review.",
+    "delivery": "Future source selection needs fresh producer head/whole-tree/PR guard, published R1/R2 and ordinary root-owned CAS preserving contributors. This source GO is not execution, publication or release approval."
+  },
+  "closure": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 4457,
+      "lines": 90,
+      "sha256": "e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022",
+      "gitBlob": "7e2bb17761d783b7d0ed298c62c56680a6636279"
+    },
+    {
+      "path": ".github/workflows/native-v2-readonly.yml",
+      "bytes": 17330,
+      "lines": 287,
+      "sha256": "971cad0c24cb60cdcfb4dd344d91b70d9527ebe01bc88f1495dc09bded25517a",
+      "gitBlob": "b4b88ce1c41c89559a584cce830de59fb5ec0fc0"
+    },
+    {
+      "path": ".github/workflows/native-prompt-suggestions-claude.yml",
+      "bytes": 2062,
+      "lines": 54,
+      "sha256": "f179ea60437706aa689f7ae39f2e46593e56be6b64befa046b6ceff58fbe6a03",
+      "gitBlob": "ebf288d5b6e6143de244fcf813cfb00d30fd4e21"
+    },
+    {
+      "path": ".github/workflows/native-prompt-suggestions.yml",
+      "bytes": 2898,
+      "lines": 65,
+      "sha256": "ff2c1cb9a094d08dfb9800bfac13a30cd0e7206e8e2539921d71cdef89e7a806",
+      "gitBlob": "4276d8995ee6118283af3c83f33f79d51d67edb2"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 571,
+      "lines": 10,
+      "sha256": "efd2f119f62e2ee532545d71b7cd10dff3cdb749fa130801001c2a5e43472170",
+      "gitBlob": "e57b42d71de52315f36fe071f6f1b82fbe041123"
+    },
+    {
+      "path": "package.json",
+      "bytes": 559,
+      "lines": 18,
+      "sha256": "6b5902a50bb68780eef1af030f63852bb0df7c7136bcd1b18dc11c2f906dadc3",
+      "gitBlob": "615ee7b9ca8a8c70ee3d129772aa89cc1cd2ae60"
+    },
+    {
+      "path": "packages/provider-implementations/package.json",
+      "bytes": 2457,
+      "lines": 65,
+      "sha256": "6de207907fe0a49376b7533c166b579214ea3b173772bbd477e4d4882ec923f4",
+      "gitBlob": "4628124ce991ab036fbb2923297b179bdb107d25"
+    }
+  ],
+  "reviewScope": {
+    "fullOwnerAfterRead": true,
+    "fullTestAfterRead": true,
+    "fullBoundedAwaitAndFailureClassRead": true,
+    "dataOnlyPatchReplay": true,
+    "projectImportOrExecution": false,
+    "serverOrProviderExecution": false,
+    "sourceOrGitMutation": false,
+    "ciPolls": false
+  }
+}

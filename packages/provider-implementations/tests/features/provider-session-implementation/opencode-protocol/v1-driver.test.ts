@@ -110,6 +110,26 @@ test('V1 native ToolStateError preserves its error text without an output field'
     assert.ok(result?.kind === 'tool-result')
     assert.equal(result.inputId, 'TEST-error'); assert.equal(result.isError, true); assert.equal(result.content, 'TEST failed')
   } finally { await driver.close(); await done }
+  for (const statusCode of [400, 422] as const) {
+    const rejectedHost = await v1Peer(); rejectedHost.hold(); t.after(rejectedHost.close)
+    const rejectedConfig = configuration(rejectedHost); rejectedConfig.version = '1.19.4'
+    const rejected = (await factory(rejectedConfig).open(request)).driver
+    const observed = observe(rejected)
+    try {
+      assert.equal((await rejected.submit({ inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op', content: 'TEST rejected request' })).ok, true)
+      rejectedHost.complete()
+      const latest = rejectedHost.messages.at(-1)!
+      latest.info.error = { name: 'APIError', data: { statusCode, message: 'TEST private provider error', isRetryable: false } }
+      delete latest.info.finish
+      await until(() => observed.events.some(event => event.kind === 'result'))
+      assert.deepEqual(observed.events.find(event => event.kind === 'result'), {
+        kind: 'result', outcome: 'failed', code: 'unsupported', sessionRef: request.sessionId,
+        inputId: 'TEST-rejected', operationRef: 'TEST-rejected-op',
+      })
+      assert.equal(JSON.stringify(observed.events).includes('TEST private provider error'), false)
+      assert.equal(rejectedHost.submittedIds.length, 1); assert.equal(rejectedHost.aborted.length, 0)
+    } finally { await rejected.close(); await observed.done }
+  }
 })
 
 test('V1 unknown prompt response is not replayed and queued neighbor remains known not sent', async t => {
@@ -283,4 +303,33 @@ test('V1 private checkpoint identity selection rejects foreign/credential-bearin
     { ...cp, compatibility: 'not-a-digest' }, { ...cp, apiKey: 'TEST-secret' }]) {
     assert.throws(() => readOpenCodeV1CheckpointSessionId(value), /checkpoint-incompatible/u)
   }
+})
+
+test('V1 HTTP reasoning retains native part identity through snapshots and complete without another prompt', async t => {
+  const host = await v1Peer(); host.hold(); t.after(host.close)
+  const { driver } = await factory(configuration(host)).open(request), { events, done } = observe(driver)
+  try {
+    assert.equal((await driver.submit({ inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', content: 'TEST reasoning' })).ok, true)
+    const assistant = host.messages.at(-1)!
+    const messageRef = assistant.info.id; assert.ok(typeof messageRef === 'string')
+    const reasoning = { id: 'prt_TESTthinking', type: 'reasoning', sessionID: host.nativeSessionId, messageID: messageRef, text: 'TEST partial reasoning' }
+    assistant.parts.splice(1, 0, reasoning)
+    await until(() => events.some(event => event.kind === 'thinking' && event.text === 'TEST partial reasoning'))
+    const reads = host.reads(); await until(() => host.reads() >= reads + 4)
+    assert.equal(events.filter(event => event.kind === 'thinking').length, 1, 'same native snapshot is not replayed')
+    reasoning.text = 'TEST complete reasoning'
+    await until(() => events.some(event => event.kind === 'thinking' && event.text === 'TEST complete reasoning'))
+    host.complete()
+    await until(() => events.some(event => event.kind === 'result'))
+    const owner = { sessionRef: request.sessionId, inputId: 'TEST-thinking', operationRef: 'TEST-thinking-op', messageRef, block: 1, kind: 'thinking' }
+    assert.deepEqual(events.filter(event => event.kind === 'thinking'), [
+      { ...owner, text: 'TEST partial reasoning', phase: 'snapshot' },
+      { ...owner, text: 'TEST complete reasoning', phase: 'snapshot' },
+      { ...owner, text: 'TEST complete reasoning', phase: 'complete' },
+    ])
+    assert.ok(events.some(event => event.kind === 'text' && event.messageRef === messageRef && event.block === 0 && event.phase === 'complete' && event.text === 'TEST V1 reply'))
+    assert.ok(events.some(event => event.kind === 'tool-result' && event.inputId === 'TEST-thinking'))
+    assert.equal(events.filter(event => event.kind === 'result' && event.outcome === 'succeeded').length, 1)
+    assert.equal(host.submittedIds.length, 1)
+  } finally { assert.equal((await driver.close()).cleanup, 'confirmed'); await done }
 })

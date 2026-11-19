@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { decodeClaudePromptSuggestion } from '../../../native-prompt-suggestions/adapters/claude-sdk.ts';
+import { eligibleNativeInput, offerNativeSuggestion } from '../../../native-prompt-suggestions/core/policy.ts';
 import type { CanUseTool, Options, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { CloseReceipt, Event, EventPayload, FailureCode, Handoff, Input, InteractionReply, Reply, Session } from '@agent-teams/provider-session-contracts';
 import { compatibility, options, SDK_REVISION } from './config.ts';
@@ -9,13 +11,15 @@ import { ClaudeSubagents } from './subagents.ts';
 import { ClaudeCapture } from './capture.ts';
 import { Interactions } from './interactions.ts';
 import { Normalizer, OutputLimitError, record } from './normalize.ts';
+import { captureClaudeCommands, claudeCommandName, claudeLegacyReviewContent, claudeLocalCommandText, projectClaudeCommands, resolveClaudeCommand } from './commands.ts';
+import type { ClaudeCommandDescription } from './commands.ts';
 import { bounded, deferred, EventFeed } from '../provider-session-io/io.ts';
 import { fail } from './primitives.ts';
 import { AttachmentFailure, assertSerializedAttachments, prepareAttachments, snapshotInput, validateAttachments } from '../provider-session-io/attachments.ts';
 import type { PreparedAttachment } from '../provider-session-io/attachments.ts';
-export type QueryHandle = Pick<Query, 'interrupt' | 'close' | 'mcpServerStatus'> & Partial<Pick<Query, 'stopTask'>> & AsyncIterable<unknown>;
+export type QueryHandle = Pick<Query, 'interrupt' | 'close' | 'mcpServerStatus'> & Partial<Pick<Query, 'stopTask' | 'supportedCommands'>> & AsyncIterable<unknown>;
 export type QueryFactory = (args: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => QueryHandle;
-type PendingInput = { input: Input; handed: boolean; nativeRef: ReturnType<typeof randomUUID>; receipt: ReturnType<typeof deferred<Reply<Handoff>>>; interactionsCancelled: boolean; toolRevocation: AbortController };
+type PendingInput = { input: Input; handed: boolean; nativeRef: ReturnType<typeof randomUUID>; receipt: ReturnType<typeof deferred<Reply<Handoff>>>; interactionsCancelled: boolean; toolRevocation: AbortController; command?: ClaudeCommandDescription };
 /** A complete successful main-thread result without foreground or restore provenance. */
 function idleNativeSuccess(m: Record<string, unknown>, nativeSession: string): boolean {
   const numbers = [m.duration_ms, m.duration_api_ms, m.total_cost_usd];
@@ -51,6 +55,11 @@ export class ClaudeSession implements Session {
   private turnBytes = 0;
   private turnEvents = 0;
   private knownTerminal: Extract<Event, { kind: 'result' }> | undefined;
+  /** The SDK emits prompt_suggestion after result, when active has already retired. */
+  private lastSuccessfulInput: Input | undefined;
+  private suggestionOwner: Input | undefined;
+  // The SDK has no input ID on suggestions; ambiguous ownership cannot recover in this Query.
+  private suggestionsUncertain = false;
   private wakeup = deferred<void>();
   private readonly inputClosed = deferred<void>();
   private control: Promise<Reply<{ requested: true; terminal: 'unconfirmed' }>> | undefined;
@@ -61,6 +70,7 @@ export class ClaudeSession implements Session {
   private readonly nativeSession: string;
   private readonly subagents: ClaudeSubagents | undefined;
   private readonly capture: ClaudeCapture | undefined;
+  private commands: readonly ClaudeCommandDescription[] = [];
   constructor(config: ClaudeConfig, nativeSession: string, restore: boolean, factory: QueryFactory) {
     this.config = config; this.nativeSession = nativeSession;
     this.sessionRef = config.sessionRef;
@@ -99,6 +109,9 @@ export class ClaudeSession implements Session {
     if ((this.active?.input.operationRef === input.operationRef || this.active?.input.inputId === input.inputId) || this.queued.some((v) => v.input.operationRef === input.operationRef || v.input.inputId === input.inputId)) {return Promise.resolve(fail('stale'));}
     if (this.queued.length >= this.config.limits.queuedInputs) {return Promise.resolve(fail('backpressure'));}
     const pending: PendingInput = { input, handed: false, nativeRef: randomUUID(), receipt: deferred<Reply<Handoff>>(), interactionsCancelled: false, toolRevocation: new AbortController() };
+    // A newly accepted input makes any delayed previous suggestion obsolete.
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
+    this.lastSuccessfulInput = undefined;
     this.queued.push(pending); this.wake(); return pending.receipt.promise;
   }
   observe(): AsyncIterable<Event> { return this.feed; }
@@ -142,7 +155,12 @@ export class ClaudeSession implements Session {
             if (!status || status.status === 'pending') { pending = true; continue; }
             if (status.status !== 'connected' || !required.every((tool) => status.tools?.some((item) => item.name === tool) === true)) { return false; }
           }
-          if (!pending) { return this.config.probe(abort.signal); }
+          if (!pending) {
+            if (this.config.observeCommands) {
+              this.observeCommands(this.query.supportedCommands ? await this.query.supportedCommands() : []);
+            }
+            return this.config.probe(abort.signal);
+          }
           await new Promise<void>((resolve) => { setTimeout(resolve, 20); });
         }
         return false;
@@ -163,6 +181,8 @@ export class ClaudeSession implements Session {
     if (this.control) {return this.control;}
     // Install the fence synchronously. A result cannot release the next handoff until this settles.
     const done = deferred<Reply<{ requested: true; terminal: 'unconfirmed' }>>(); this.control = done.promise;
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
+    this.lastSuccessfulInput = undefined;
     this.active.interactionsCancelled = true; this.active.toolRevocation.abort();
     this.interactions.cancel();
     void this.sendInterrupt(done);
@@ -176,6 +196,7 @@ export class ClaudeSession implements Session {
     } catch { this.unavailable('unknown'); done.resolve(fail('unknown')); }
   }
   checkpoint(): Reply<unknown> {
+    if (this.config.sessionPersistence === 'ephemeral') {return fail('unsupported');}
     if (this.active || this.queued.length || this.control || this.failure) {return fail('unavailable');}
     return { ok: true, value: { version: 1, engine: SDK_REVISION, nativeSession: this.nativeSession, compatibility: compatibility(this.config) } };
   }
@@ -229,8 +250,21 @@ export class ClaudeSession implements Session {
       if (!this.handoffAvailable()) {continue;}
       const pending = this.queued.shift();
       if (!pending) {continue;}
-      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
+      this.lastSuccessfulInput = undefined;
+      const command = claudeCommandName(pending.input.content);
+      if (this.config.observeCommands && command) {
+        const captured = resolveClaudeCommand(this.commands, command);
+        if (!captured) { pending.receipt.resolve({ ok: false, code: 'unsupported', delivery: 'known-not-sent' }); continue; }
+        pending.command = captured;
+      }
       let content: SDKUserMessage['message']['content'] = pending.input.content;
+      if ((pending.input.attachments?.length ?? 0) === 0) {
+        content = claudeLegacyReviewContent(pending.input.content, pending.command) ?? content;
+        if (Buffer.byteLength(content) > this.config.limits.inputBytes) {
+          pending.receipt.resolve({ ok: false, code: 'backpressure', delivery: 'known-not-sent' }); continue;
+        }
+      }
+      this.active = pending; this.foregroundBound = false; this.messageOwners.clear(); this.toolOwners.clear(); this.streamRef = undefined; this.turnBytes = 0; this.turnEvents = 0; this.normalizer.reset(); this.backgroundNormalizer.reset();
       if ((pending.input.attachments?.length ?? 0) > 0) {
         try {
           const attachments = await prepareAttachments(pending.input, { trustedBinding: this.config.trustedBinding, sessionRef: this.sessionRef, port: this.config.attachments, signal: pending.toolRevocation.signal, timeoutMs: this.config.limits.timeoutMs });
@@ -240,6 +274,10 @@ export class ClaudeSession implements Session {
           pending.toolRevocation.abort(); pending.receipt.resolve({ ok: false, code: error instanceof AttachmentFailure ? error.code : 'unavailable', delivery: 'known-not-sent' });
           if (this.active === pending) { this.active = undefined; } this.wake(); continue;
         }
+      }
+      if (this.config.promptSuggestions) {
+        if (this.suggestionOwner !== undefined || this.queued.length > 0) { this.suggestionsUncertain = true; }
+        this.suggestionOwner = pending.input;
       }
       pending.handed = true;
       pending.receipt.resolve({ ok: true, value: { inputId: pending.input.inputId, operationRef: pending.input.operationRef, delivery: 'client-consumed', providerAcceptance: 'unknown' } });
@@ -273,9 +311,30 @@ export class ClaudeSession implements Session {
   }
   private async accept(message: unknown): Promise<void> {
     const m = record(message);
+    if (m.type === 'prompt_suggestion') {
+      // Auxiliary output is untrusted. A foreign/malformed suggestion must never
+      // seal or fail the original native conversation.
+      if (m.session_id !== this.nativeSession || m.parent_tool_use_id != null ||
+          m.agent_id !== undefined || m.resume_reason !== undefined) return;
+      if (this.active !== undefined) { return; }
+      const input = this.lastSuccessfulInput, owner = this.suggestionOwner;
+      this.lastSuccessfulInput = undefined; // Single-use, even for invalid frames or observer failure.
+      this.suggestionOwner = undefined;
+      if (this.state === 'open' && !this.suggestionsUncertain && input && owner === input) {
+        offerNativeSuggestion(this.config.promptSuggestions, decodeClaudePromptSuggestion(m, this.nativeSession, {
+          sessionRef: this.sessionRef, inputId: input.inputId, operationRef: input.operationRef,
+          nativeSessionRef: this.nativeSession,
+        }));
+      }
+      return; // Auxiliary provider output: not an SPI message or background event.
+    }
     if (Boolean(m.session_id) && m.session_id !== this.nativeSession) { this.unavailable('unknown'); return; }
     if (await this.capture?.acceptTask(m) === true) {return;}
     if (await this.acceptNested(m)) {return;}
+    if (m.type === 'system' && m.subtype === 'commands_changed') {
+      if (this.mainCompaction(m)) { this.observeCommands(m.commands); }
+      return;
+    }
     const input = this.correlate(m);
     if (m.type === 'system' && m.subtype === 'compact_boundary') {
       if (!this.mainCompaction(m)) { return; }
@@ -284,13 +343,25 @@ export class ClaudeSession implements Session {
       return;
     }
     if (input && !this.ownPartialTool(m, input)) { return; }
-    const { facts, terminal, failure } = (input ? this.normalizer : this.backgroundNormalizer).normalize(message);
+    const { facts: observed, terminal, failure } = (input ? this.normalizer : this.backgroundNormalizer).normalize(message);
+    // This namespace belongs only to the correlated native local-command result below.
+    const facts = observed.filter(fact => fact.kind !== 'text' || !fact.messageRef.startsWith('local-command:'));
+    const active = this.active;
+    if (input && active?.input === input && (m.user_message_uuid === active.nativeRef ||
+      (Array.isArray(m.user_message_uuids) && m.user_message_uuids.includes(active.nativeRef)))) {
+      const local = claudeLocalCommandText(m, input.content, active.command);
+      if (local) { facts.push(local); }
+    }
     this.knownTerminal = terminal && input ? { sessionRef: this.sessionRef, inputId: input.inputId, operationRef: input.operationRef, kind: 'result', outcome: terminal, ...(failure ? { code: failure } : {}) } : undefined;
     for (const fact of facts) {
       if (input && fact.kind === 'tool') { if (!this.ownTool(fact.toolRef, fact.name, input)) { return; } }
       this.emit(fact, input);
     }
     return this.finishAcceptance(m, terminal, failure, input);
+  }
+  private observeCommands(value: unknown): void {
+    this.commands = captureClaudeCommands(value);
+    this.config.observeCommands?.(projectClaudeCommands(this.commands));
   }
   private mainCompaction(message: Record<string, unknown>): boolean {
     return message.session_id === this.nativeSession && !present(message.parent_tool_use_id) && !present(message.agent_id) && !present(message.resume_reason);
@@ -332,6 +403,11 @@ export class ClaudeSession implements Session {
     const active = this.active;
     if (input && active !== undefined && (active.input.operationRef === input.operationRef || active.input.inputId === input.inputId)) {
       this.emit({ kind: 'result', outcome: terminal, ...(failure ? { code: failure } : {}) }, input);
+      const eligible = terminal === 'succeeded' && this.state === 'open' &&
+        eligibleNativeInput(this.config.promptSuggestions, active.input);
+      // Eligibility may synchronously accept a successor or close this Session.
+      this.lastSuccessfulInput = eligible && this.state === 'open' && !this.suggestionsUncertain &&
+        this.suggestionOwner === active.input ? active.input : undefined;
       active.toolRevocation.abort(); this.active = undefined; this.interactions.cancel(); this.wake();
       if (terminal === 'unknown') {this.unavailable(failure ?? 'unknown');}
     } else { this.emit({ kind: 'result', outcome: 'unknown', code: 'unknown' }); this.unavailable('unknown'); }
@@ -410,6 +486,8 @@ export class ClaudeSession implements Session {
   private unavailable(code: FailureCode): void {
     if (this.state === 'closed' || this.failure === 'output-limit') {return;}
     this.state = 'unavailable';
+    if (this.suggestionOwner !== undefined) { this.suggestionsUncertain = true; }
+    this.lastSuccessfulInput = undefined;
     // A disappeared dependency during an accepted turn does not prove the turn stopped.
     this.failure = this.active && code === 'dependency-unavailable' ? 'unknown' : code;
     // Idle readiness may recover; retire old leases without disabling future original pairs.

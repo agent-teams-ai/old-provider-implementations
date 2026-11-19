@@ -1,6 +1,7 @@
 import { record, string } from './v2-projection-helpers.ts'
 import { checkOpenCodeReadJson } from './v2-json-budget.ts'
 import type { OpenCodeV2NativeLogEvent, OpenCodeV2NativeMessage } from './v2-projection-types.ts'
+import { V2_MEDIA_FRAME_BYTES, V2_MEDIA_RESPONSE_BYTES } from './v2-media.ts'
 
 function requireCut(value: boolean, code: string): asserts value { if (!value) {throw new Error(code)} }
 function position(value: unknown): number {
@@ -45,16 +46,24 @@ function nativeLogEvent(raw: Record<string, unknown>, sessionID: string, directo
   return { id, type, aggregateID: sessionID, seq, data: body }
 }
 export function decodeV2Log(source: string, sessionID: string, directory: string) {
+  return decodeNativeLog(source, sessionID, directory, false)
+}
+/** Private 2.1.4 media-session decoder; public callers retain the original limits. */
+export function decodeV2MediaLog(source: string, sessionID: string, directory: string) {
+  return decodeNativeLog(source, sessionID, directory, true)
+}
+function decodeNativeLog(source: string, sessionID: string, directory: string, media: boolean) {
   // The public decoder also receives injected read transports. Enforce the
   // execution wire's body bound before splitting/parsing native SSE.
-  requireCut(Buffer.byteLength(source) <= 8 * 1024 * 1024, 'incomplete_native_log')
+  requireCut(Buffer.byteLength(source) <= (media ? V2_MEDIA_RESPONSE_BYTES : 8 * 1024 * 1024), 'incomplete_native_log')
+  const frameBytes = media ? V2_MEDIA_FRAME_BYTES : 256 * 1024
   const events: OpenCodeV2NativeLogEvent[] = [], ids = new Set<string>()
   let synced = false, watermark: number | null = null, previous = -1
   const frames = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n\n')
   requireCut(frames.at(-1) === '' && frames.length <= 4098, 'incomplete_native_log')
   for (const frame of frames) {
     // A comment-only frame consumes the same native wire budget as data.
-    requireCut(Buffer.byteLength(frame) <= 256 * 1024, 'incomplete_native_log')
+    requireCut(Buffer.byteLength(frame) <= frameBytes, 'incomplete_native_log')
     const lines = frame.split('\n')
     // Only SSE comments/blank keep-alives are non-events. An unsupported
     // directive or empty data frame cannot silently hide native log evidence.
@@ -62,7 +71,7 @@ export function decodeV2Log(source: string, sessionID: string, directory: string
     const dataLines = lines.filter(line => line.startsWith('data:'))
     if (dataLines.length === 0) {continue}
     const data = dataLines.map(line => line.slice(5).replace(/^ /, '')).join('\n')
-    requireCut(data.length > 0 && Buffer.byteLength(data) <= 256 * 1024, 'incomplete_native_log')
+    requireCut(data.length > 0 && Buffer.byteLength(data) <= frameBytes, 'incomplete_native_log')
     // JSON.parse diagnostics can quote native SSE bytes (including secrets).
     // The public decoder must only expose a fixed refusal code.
     let raw: ReturnType<typeof record>

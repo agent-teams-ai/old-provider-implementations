@@ -44,6 +44,9 @@ export class CodexThreadSession {
     this.hooks = hooks
   }
 
+  /** An out-of-band sample may observe only an idle, still-bound root session. */
+  canSample(): boolean { return !this.ended && this.active === undefined && this.queued.length === 0 }
+
   submitTurn(params: CodexTurnParams, signal?: AbortSignal): CodexTurnSubmission {
     const cancelled = (): boolean => signal?.aborted === true
     if (this.ended || cancelled()) {throw new CodexProtocolError('codex.protocol.session-closed', 'not-sent')}

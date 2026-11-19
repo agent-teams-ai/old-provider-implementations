@@ -8,6 +8,8 @@ type Command = { id: string | number } & (
   | { kind: 'raw'; text: string }
   | { kind: 'mcp-status'; mode: string }
   | { kind: 'metadata'; method: string; response: unknown }
+  | { kind: 'account-login'; response: unknown; beforeReply?: Record<string, unknown>[]; holdReply?: boolean }
+  | { kind: 'sample-mode'; mode: 'success' | 'none' | 'wrong-turn' | 'unsupported' | 'hold' }
   | { kind: 'hold-interrupts' | 'release-interrupts' | 'disconnect' | 'reject-next-resume' }
 )
 
@@ -16,8 +18,12 @@ let nextTurn = 0
 let heldInterrupts = false
 let rejectResume = false
 let mcpMode = 'healthy', mcpReads = 0
+let sampleMode: 'success' | 'none' | 'wrong-turn' | 'unsupported' | 'hold' = 'success'
+const finishedTurns = new Map<string, string>()
+const pendingSamples = new Map<string | number, NativeMessage>()
 const pendingInterrupts: NativeMessage[] = []
 const metadata = new Map<string, unknown>()
+let accountLogin: Extract<Command, { kind: 'account-login' }> | undefined
 const active = new Map<string, string>()
 const ownedThreads = new Set<string>()
 const emit = (payload: unknown) => process.stdout.write(`${JSON.stringify(payload)}\n`)
@@ -25,7 +31,7 @@ const notify = (method: string, params: Record<string, unknown>) => emit({ jsonr
 const result = (id: string | number | undefined, value: unknown): void => { emit({ jsonrpc: '2.0', id, result: value }) }
 const ipc = (message: unknown) => { if (process.connected) {process.send?.(message)} }
 function terminal(threadId: string, turnId: string, status: string, message?: string): void {
-  if (active.get(threadId) === turnId) {active.delete(threadId)}
+  if (active.get(threadId) === turnId) {active.delete(threadId); finishedTurns.set(threadId, turnId)}
   notify('turn/completed', { threadId, turn: { id: turnId, status, ...(message ? { error: { message } } : {}) } })
 }
 function mcpStatus(message: NativeMessage): void {
@@ -52,6 +58,11 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   ipc({ event: 'wire', message })
   if (typeof message.method !== 'string') {return}
   const params = message.params ?? {}
+  if (message.method === 'account/login/start' && accountLogin) {
+    for (const completion of accountLogin.beforeReply ?? []) { notify('account/login/completed', completion) }
+    if (!accountLogin.holdReply) { result(message.id, accountLogin.response) }
+    return
+  }
   if (metadata.has(message.method)) { return result(message.id, metadata.get(message.method)) }
   if (message.method === 'initialize') {return result(message.id, { userAgent: 'isolated-codex-fixture', codexHome: process.env.HOME, platformFamily: 'unix', platformOs: process.platform })}
   if (message.method === 'initialized') {return}
@@ -69,6 +80,35 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     return
   }
   if (message.method === 'mcpServerStatus/list') { mcpStatus(message); return }
+  if (message.method === 'thread/sample') {
+    if (typeof params.threadId !== 'string' || !ownedThreads.has(params.threadId) ||
+        typeof params.expectedTurnId !== 'string' || finishedTurns.get(params.threadId) !== params.expectedTurnId ||
+        active.has(params.threadId)) {
+      emit({ jsonrpc: '2.0', id: message.id, error: { code: -32000, message: 'sample source turn must be the latest finished turn' } })
+      return
+    }
+    if (sampleMode === 'unsupported') {
+      emit({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } })
+      return
+    }
+    if (sampleMode === 'hold' && message.id !== undefined) { pendingSamples.set(message.id, message); return }
+    result(message.id, {
+      sourceTurnId: sampleMode === 'wrong-turn' ? 'TEST-foreign-turn' : params.expectedTurnId,
+      responseId: 'TEST-sampled-response',
+      text: sampleMode === 'none' ? null : 'Check the completed changes and open a PR',
+      inputTokens: 42, cachedInputTokens: 25, outputTokens: 10,
+    })
+    return
+  }
+  if (message.method === 'thread/sample/cancel') {
+    const targetId = params.requestId
+    if ((typeof targetId === 'string' || typeof targetId === 'number') && pendingSamples.has(targetId)) {
+      pendingSamples.delete(targetId)
+      emit({ jsonrpc: '2.0', id: targetId, error: { code: -32000, message: 'sample canceled' } })
+    }
+    result(message.id, {})
+    return
+  }
   if (message.method === 'turn/start') {
     if (typeof params.threadId !== 'string') {throw new Error('fixture requires thread ID')}
     const id = `turn-${++nextTurn}`
@@ -105,7 +145,9 @@ process.on('message', value => {
   if (command.kind === 'approval') {emit({ jsonrpc: '2.0', id: command.requestId, method: command.method, params: command.params })}
   if (command.kind === 'raw') {process.stdout.write(command.text)}
   if (command.kind === 'metadata') {metadata.set(command.method, command.response)}
+  if (command.kind === 'account-login') {accountLogin = command}
   if (command.kind === 'mcp-status') {mcpMode = command.mode; mcpReads = 0}
+  if (command.kind === 'sample-mode') {sampleMode = command.mode}
   if (command.kind === 'hold-interrupts') {heldInterrupts = true}
   if (command.kind === 'reject-next-resume') {rejectResume = true}
   if (command.kind === 'release-interrupts') {

@@ -19,6 +19,8 @@ export type CodexRpcLimits = {
 export type CodexRequestContext = {
   readonly signal?: AbortSignal
   readonly beforeWrite?: () => boolean
+  /** Private native sampling cancellation only; observed just before a frame is written. */
+  readonly onSentId?: (id: number | string) => void
 }
 
 export type CodexServerReply = {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FailureCode, Input } from '@agent-teams/provider-session-contracts';
 import { bounded } from './io.ts';
+import { isNativeAbsolutePath } from './native-path.ts';
 
 type Reference = NonNullable<Input['attachments']>[number];
 type Binding = { readonly trustedBinding: string; readonly sessionRef: string; readonly inputId: string; readonly operationRef: string; readonly fingerprint: string; readonly reference: Reference };
@@ -71,7 +72,7 @@ function sameBinding(actual: Binding | undefined, expected: Binding): boolean {
 }
 type Provider = 'claude' | 'codex' | 'opencode-v1' | 'opencode-v2';
 function nativeKind(mime: string, provider: Provider): 'image' | 'file' | 'video' | undefined {
-  if (provider === 'opencode-v2') { return mime === 'image/png' ? 'image' : undefined; }
+  if (provider === 'opencode-v2') { return mime === 'application/pdf' ? 'file' : ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime) ? 'image' : undefined; }
   if (['image/png', 'image/jpeg', 'image/webp'].includes(mime) || (provider === 'claude' && mime === 'image/gif')) { return 'image'; }
   if (provider === 'claude' && (mime === 'application/pdf' || mime.startsWith('text/'))) { return 'file'; }
   if (provider === 'opencode-v1' && ['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) { return 'video'; }
@@ -105,7 +106,7 @@ export async function prepareAttachments(input: Input, options: { trustedBinding
     if (!sameBinding(result.binding, request) || !(result.bytes instanceof Uint8Array) || result.bytes.byteLength !== reference.byteLength) { throw new AttachmentFailure('invalid-config'); }
     const bytes = Uint8Array.from(result.bytes);
     if (bytes.byteLength !== reference.byteLength || createHash('sha256').update(bytes).digest('hex') !== reference.digest ||
-      (requirePath && (typeof result.nativePath !== 'string' || !result.nativePath.startsWith('/') || result.nativePath.includes('\0')))) { throw new AttachmentFailure('invalid-config'); }
+      (requirePath && !isNativeAbsolutePath(result.nativePath))) { throw new AttachmentFailure('invalid-config'); }
     prepared.push({ reference, bytes, ...(result.nativePath !== undefined ? { nativePath: result.nativePath } : {}) });
   }
   return prepared;

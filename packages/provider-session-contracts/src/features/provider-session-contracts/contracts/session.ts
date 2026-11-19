@@ -18,6 +18,7 @@ export type EventPayload =
   /** One observed provider context boundary; sourceRef is opaque and stable within the native session. */
   {readonly kind: "compaction"; readonly sourceRef: string; readonly reason: "manual" | "automatic" | "unknown"} |
   {readonly kind: "text"; readonly messageRef: string; readonly block: number; readonly text: string; readonly phase: "snapshot" | "complete"} |
+  {readonly kind: "thinking"; readonly messageRef: string; readonly block: number; readonly text: string; readonly phase: "snapshot" | "complete"} |
   {readonly kind: "tool"; readonly messageRef: string; readonly toolRef: string; readonly name: string; readonly input: unknown} |
   {readonly kind: "tool-result"; readonly toolRef: string; readonly content: unknown; readonly isError: boolean} |
   {readonly kind: "usage"; readonly inputTokens?: number; readonly outputTokens?: number; readonly cumulativeCostUsd?: number} |

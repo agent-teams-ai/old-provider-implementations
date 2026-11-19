@@ -54,7 +54,8 @@ test('V2 raw control wire never forwards caller headers with native credentials'
         assert(nativeRequest instanceof Request)
         const headers = new Headers(init?.headers)
         seen.push([...headers.keys()].sort())
-        assert.deepEqual([...nativeRequest.headers.keys()].sort(), [...headers.keys()].sort())
+        assert.deepEqual([...nativeRequest.headers], [...headers])
+        assert.equal(headers.get('connection'), 'close')
         assert.equal(nativeRequest.credentials, 'omit')
         assert.equal(nativeRequest.redirect, 'error')
         assert.equal(headers.get('authorization'), 'Basic ' + Buffer.from('opencode:TEST-private').toString('base64'))
@@ -68,13 +69,14 @@ test('V2 raw control wire never forwards caller headers with native credentials'
     })
     t.after(wire.dispose)
     const injected = { authorization: 'Bearer TEST_UNTRUSTED', cookie: 'TEST_COOKIE',
-      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain' }
+      'x-forwarded-host': 'TEST-foreign.invalid', 'x-test-secret': 'TEST_SENTINEL', 'content-type': 'text/plain',
+      connection: 'keep-alive' }
     await wire.request('/api/session/ses_A/permission', { headers: injected, credentials: 'include', redirect: 'follow' })
     await wire.request('/api/session/ses_A/permission/per_TEST/reply', {
       method: 'POST', headers: injected, credentials: 'include', redirect: 'follow',
       body: JSON.stringify(version === '2.0.0' ? { reply: 'reject' } : { decision: 'reject' }),
     })
-    assert.deepEqual(seen, [['authorization'], ['authorization', 'content-type']])
+    assert.deepEqual(seen, [['authorization', 'connection'], ['authorization', 'connection', 'content-type']])
   }
 })
 

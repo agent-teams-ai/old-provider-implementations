@@ -88,6 +88,37 @@ test('owned create captures native default variant before effects and requires i
   }
 })
 
+test('owned create captures only the typed credential witness in native session metadata and verifies readback', async () => {
+  const credential = { scopeDigest: 'a'.repeat(64), credentialId: 'cred_TESToriginal' }
+  for (const mode of ['exact', 'missing', 'changed', 'extra'] as const) {
+    let calls = 0
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+      calls++
+      const request = input as Request
+      if (request.method === 'POST') assert.deepEqual(JSON.parse(await request.text()), {
+        id: baseline.nativeSessionId, location: { directory: baseline.directory }, ...selected,
+        metadata: { agentTeamsCredential: credential },
+      })
+      return json({ data: { ...nativeSession().data, metadata: { unrelated: 'TEST-private',
+        ...(mode === 'missing' ? {} : { agentTeamsCredential: { ...credential,
+          ...(mode === 'changed' ? { scopeDigest: 'b'.repeat(64) } : {}),
+          ...(mode === 'extra' ? { key: 'TEST-private-key' } : {}),
+        } }),
+      } } })
+    } })
+    try {
+      const work = client.createSession({ ...selected, credential })
+      if (mode === 'exact') {
+        const expected = { id: baseline.nativeSessionId, directory: baseline.directory, ...selected, credential }
+        assert.deepEqual(await work, expected)
+        assert.deepEqual(await client.readSession(), expected)
+      } else await assert.rejects(work, /native_(selection_mismatch|credential_binding)/)
+      await assert.rejects(client.createSession({ ...selected, credential }), /native_create_already_attempted/)
+      assert.equal(calls, mode === 'exact' ? 2 : 1)
+    } finally { await client.dispose() }
+  }
+})
+
 test('owned client rejects unqualified version/identity and malformed MCP readback', async () => {
   for (const version of ['2.0.21', '2.1.5']) {
     assert.throws(() => createOpenCodeV2OwnedSessionClient({ ...baseline, version } as OpenCodeV2TransportConfig), /unqualified_version/)
@@ -112,7 +143,7 @@ test('ordinary 2.1.4 session transport retains zero-credential rejection of owne
   })
   try {
     for (const path of ['/api/info', '/api/permission/saved', '/api/mcp?location[directory]=' + encodeURIComponent(baseline.directory),
-      ...['plugin', 'provider', 'model', 'model/default'].map(route =>
+      ...['plugin', 'provider', 'model', 'model/default', 'integration'].map(route =>
         '/api/' + route + '?location[directory]=' + encodeURIComponent(baseline.directory))]) {
       await assert.rejects(wire.fetch(baseline.endpoint + path), /capabilities_pending/)
     }
@@ -127,7 +158,8 @@ test('owned native catalog preserves native selection and drops provider credent
   const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto',
     settings: { apiKey: 'TEST-secret', url: 'TEST-private-endpoint' }, headers: { Authorization: 'TEST-secret' } }
   const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
-    limit: { context: 8192, output: 512 }, capabilities: { input: ['text', 'image'] },
+    limit: { context: 8192, output: 512 }, capabilities: { tools: true, input: ['text', 'image'] },
+    variants: [{ id: 'high', settings: { private: 'TEST-secret' }, headers: { Authorization: 'TEST-secret' } }],
     headers: { Authorization: 'TEST-secret' }, settings: { private: 'TEST-secret' } }
   const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
     const request = input as Request, url = new URL(request.url)
@@ -143,7 +175,7 @@ test('owned native catalog preserves native selection and drops provider credent
       provider: { id: 'TEST-provider', name: 'TEST Provider', activation: 'auto' },
       defaultModel: { providerId: 'TEST-provider', modelId: 'TEST-model' },
       models: [{ id: 'TEST-model', name: 'TEST Model', enabled: true, contextTokens: 8192,
-        outputTokens: 512, inputModalities: ['text', 'image'] }],
+        outputTokens: 512, supportsTools: true, inputModalities: ['text', 'image'], variants: ['high'] }],
     })
     assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default'])
     assert.equal(JSON.stringify(catalog).includes('TEST-secret'), false)
@@ -153,8 +185,8 @@ test('owned native catalog preserves native selection and drops provider credent
 test('owned catalog rejects foreign locations, duplicates and malformed model metadata', async () => {
   const provider = { id: 'TEST-provider', name: 'TEST Provider', activation: 'enabled' }
   const model = { id: 'TEST-model', providerID: 'TEST-provider', name: 'TEST Model', enabled: true,
-    limit: { context: 8192, output: 512 }, capabilities: { input: ['text'] } }
-  for (const mode of ['location', 'duplicate-provider', 'duplicate-model', 'activation', 'modalities', 'default'] as const) {
+    limit: { context: 8192, output: 512 }, capabilities: { tools: false, input: ['text'] }, variants: [] }
+  for (const mode of ['location', 'duplicate-provider', 'duplicate-model', 'activation', 'modalities', 'tools', 'variants', 'duplicate-variant', 'default'] as const) {
     const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
       const route = new URL((input as Request).url).pathname
       let data: unknown = route === '/api/provider' ? [provider] : route === '/api/model' ? [model] : model
@@ -162,11 +194,51 @@ test('owned catalog rejects foreign locations, duplicates and malformed model me
       if (mode === 'duplicate-model' && route === '/api/model') data = [model, model]
       if (mode === 'activation' && route === '/api/provider') data = [{ ...provider, activation: 'unknown' }]
       if (mode === 'modalities' && route === '/api/model') data = [{ ...model, capabilities: { input: [null] } }]
+      if (mode === 'tools' && route === '/api/model') data = [{ ...model, capabilities: { input: ['text'] } }]
+      if (mode === 'variants' && route === '/api/model') data = [{ ...model, variants: [{ id: '' }] }]
+      if (mode === 'duplicate-variant' && route === '/api/model') data = [{ ...model, variants: [{ id: 'high' }, { id: 'high' }] }]
       if (mode === 'default' && route === '/api/model/default') data = { id: 'TEST-model' }
       return json({ location: { directory: mode === 'location' ? 'TEST-foreign' : baseline.directory }, data })
     } })
     try { await assert.rejects(client.readCatalog('TEST-provider'), /native_catalog/) }
     finally { await client.dispose() }
+  }
+})
+
+test('owned directory reads one native inventory for all providers and exports no credential or config fields', async () => {
+  const providers = ['TEST-one', 'TEST-two'].map(id => ({ id, name: id, activation: 'auto', integrationID: id,
+    settings: { apiKey: 'TEST-secret' }, headers: { Authorization: 'TEST-secret' } }))
+  const models = providers.map(row => ({ id: 'TEST-model', providerID: row.id, name: row.id, enabled: true,
+    limit: { context: 8192, output: 512 }, capabilities: { tools: true, input: ['text'] },
+    variants: [{ id: 'high', settings: { secret: 'TEST-secret' } }] }))
+  const integrations = providers.map(row => ({ id: row.id, name: row.name, methods: [{ type: 'key' }],
+    connections: [{ id: 'cred_TESTprivate', label: 'TEST-secret' }] }))
+  for (const mode of ['exact', 'foreign', 'duplicate', 'method'] as const) {
+    const requests: string[] = []
+    const client = createOpenCodeV2OwnedSessionClient({ ...baseline, fetchImpl: async input => {
+      const request = input as Request, url = new URL(request.url)
+      assert.equal(request.method, 'GET')
+      assert.equal(url.searchParams.get('location[directory]'), baseline.directory)
+      requests.push(url.pathname)
+      const data = url.pathname === '/api/provider' ? providers : url.pathname === '/api/model' ? models
+        : url.pathname === '/api/model/default' ? models[0]
+          : mode === 'duplicate' ? [integrations[0], integrations[0]]
+            : mode === 'method' ? [{ ...integrations[0], methods: [{ type: 'unknown' }] }] : integrations
+      return json({ location: { directory: mode === 'foreign' ? 'TEST-foreign' : baseline.directory }, data })
+    } })
+    try {
+      if (mode !== 'exact') await assert.rejects(client.readDirectory(), /native_catalog/)
+      else {
+        const directory = await client.readDirectory()
+        assert.deepEqual(directory.providers.map(row => row.id), ['TEST-one', 'TEST-two'])
+        assert.deepEqual(directory.models.map(row => row.providerId), ['TEST-one', 'TEST-two'])
+        assert.deepEqual(directory.models.map(row => row.variants), [['high'], ['high']])
+        assert.deepEqual(directory.integrations, providers.map(row => ({ id: row.id, name: row.name, plainKey: true })))
+        assert.equal(JSON.stringify(directory).includes('TEST-secret'), false)
+        assert.equal(JSON.stringify(directory).includes('cred_TESTprivate'), false)
+        assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default', '/api/integration'])
+      }
+    } finally { await client.dispose() }
   }
 })
 

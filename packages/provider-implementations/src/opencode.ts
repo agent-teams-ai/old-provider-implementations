@@ -36,6 +36,8 @@ export type { OpenCodeV2DriverHost } from './features/provider-session-implement
 export type { OpenCodeV2DriverConfig } from './features/provider-session-implementation/internal.ts'
 export { createOpenCodeV2OwnedSessionClient, readOpenCodeV2CheckpointSessionId } from './features/provider-session-implementation/internal.ts'
 export type { OpenCodeV2OwnedSessionSelection, OpenCodeV2SessionPermissionRule } from './features/provider-session-implementation/internal.ts'
+export { createOpenCodeV2CredentialClient } from './features/provider-session-implementation/internal.ts'
+export type { OpenCodeV2KeyIntegration, OpenCodeV2CredentialClientConfig } from './features/provider-session-implementation/internal.ts'
 
 export { createOpenCodeV1DriverFactory, readOpenCodeV1CheckpointSessionId } from './features/provider-session-implementation/internal.ts'
 export type { OpenCodeV1DriverHost } from './features/provider-session-implementation/internal.ts'
