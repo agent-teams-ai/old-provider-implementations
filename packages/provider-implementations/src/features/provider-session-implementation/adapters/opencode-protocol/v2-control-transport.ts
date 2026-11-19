@@ -145,7 +145,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // Stream admission may outlive the original deadline or revoke the Host lease.
       // Revalidate before projecting credentials, not only before native fetch.
       check(); signal.throwIfAborted()
-      admission = createV2RequestAdmission(config.beforeRequest, signal, requestStarted + requestTimeout, track)
+      admission = createV2RequestAdmission(config.beforeRequest, signal, requestStarted + requestTimeout, track, config.signal)
       await admission.acquire()
       check(); signal.throwIfAborted()
       if (native.method !== 'GET') config.beforeMutation?.()

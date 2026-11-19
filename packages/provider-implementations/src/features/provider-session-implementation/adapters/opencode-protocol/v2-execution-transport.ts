@@ -238,7 +238,7 @@ class OpenCodeV2ExecutionFetch {
       const requestStarted = Date.now(), requestTimeout = Math.min(30_000, this.context.deadline - requestStarted)
       timer = setTimeout(() =>{  controller.abort(); }, requestTimeout)
       admission = createV2RequestAdmission(this.beforeRequest, signal, requestStarted + requestTimeout,
-        work => this.track(work))
+        work => this.track(work), this.context.signal)
       await admission.acquire()
       this.check(); signal.throwIfAborted()
       const headers = this.requestHeaders(request, signal)

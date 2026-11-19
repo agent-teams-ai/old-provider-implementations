@@ -1,0 +1,288 @@
+{
+  "schemaVersion": 1,
+  "kind": "preserve-original-transport-lifecycle-during-admission-settlement",
+  "recordedAt": "2026-11-19T22:06:34.162806+00:00",
+  "sourceBase": "e458b7f5513a55122905205bd22bcb25977643b0",
+  "status": "PASS_LOCAL_SOURCE_AND_PACKED_CONSUMERS_CI_AND_APP_PENDING",
+  "problem": "e458 ignored original transport lifecycle abort while joining a cancelled scoped request. Original app consumer kept custody held until close returned; close still awaited submit, producing23PASS/1original15000ms timeout.",
+  "correction": "Existing second bounded join now observes the already-captured lifecycle signal. Separate request/cut abort can join the same callback while context is live; lifecycle shutdown interrupts it and retains UNKNOWN.",
+  "publicApiUnchanged": true,
+  "newControllersTimersOwnersOrDeadlines": false,
+  "finalRootReview": {
+    "recordedAt": "2026-11-19T22:06:34.134276+00:00",
+    "status": "PASS_LOCAL_SOURCE_R2_AND_ORIGINAL_PACKED_GATES",
+    "candidateSha256": "c3ccc1deac8a1669a899f8d1b6a6bf95c4b8ca0b7f45cb2590493685811c1140",
+    "sourceR2Sha256": "d2c5142c006d9dbda7112b2f8b8dbe0336a92ddfd18dc8025cf6de0e412550ad",
+    "finalChecksSha256": "2855f9459a7d78ba2c5333ad7b3b8a14f47c1e0e67b22ec2d4189c5dab25d3d5",
+    "verifiedProductionAndTests": 4,
+    "verifiedProtectedInputs": 8,
+    "tests": 601,
+    "packedConsumerTests": 2,
+    "appOracleUnchanged": true,
+    "limits": "Original new-source CI and unchanged24-case app consumer gate remain required. Earlier e458 consumer failure retained."
+  },
+  "finalChecks": {
+    "kind": "provider-original-lifecycle-final-local-checks",
+    "recordedAt": "2026-11-19T22:04:41.298055+00:00",
+    "status": "PASS_LOCAL_SOURCE_AND_PACKED_CONSUMERS_ONLY",
+    "sourceBase": "e458b7f5513a55122905205bd22bcb25977643b0",
+    "candidateManifestSha256": "c3ccc1deac8a1669a899f8d1b6a6bf95c4b8ca0b7f45cb2590493685811c1140",
+    "sourceFiles": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.ts",
+        "preSha256": "5a39aae17aa5fa757bbf6197fbcaa1c65e08f4372231da0af30995e90a74f4dc",
+        "sha256": "2c2a26ee42ddc6d4f164c38a7d044f51bd6ca986f741de7aa1ac93d9d2028ded",
+        "gitBlobSha": "63412da57a5736ca7c147066b8b4d713377d5b45",
+        "bytes": 2868,
+        "lines": 63
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts",
+        "preSha256": "7e010626c5e2126f8030c661dcf49a925ba75f411f39af7750638178968a5ff6",
+        "sha256": "017a6dd3d95e9feb24d8ecc7ca14579cf48640e08e382d683e914342af422d26",
+        "gitBlobSha": "07e9b1749153a2ecb925cb9110cddc912f5862e7",
+        "bytes": 20233,
+        "lines": 354
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts",
+        "preSha256": "1403b92c75a9f1b5b309291fffda3bdd78d44e3718e4403127141a26e344806b",
+        "sha256": "f2a3cbcc9c340c4c91e4f05432c46fdcb3dfb35dd83a7e8fc0ee59a01fd2005c",
+        "gitBlobSha": "83e7d34606961e522b8b5d7a8426d86cf6c5f8de",
+        "bytes": 14333,
+        "lines": 234
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-request-admission.test.ts",
+        "preSha256": "8d27da2d9eb29fee474947636985ce944f821e7114de7a0d3d87fb3fd95619ea",
+        "sha256": "8f155e117946cea30506784dea9284e8f00d04ecc15b671d4b7cef637cce4fa0",
+        "gitBlobSha": "5ed511eb17dfcd05b223d293dd174e0290c6d1fd",
+        "bytes": 13302,
+        "lines": 252
+      }
+    ],
+    "protectedSourceFiles": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+        "sha256": "b04077cf6b523f147b0f4d036499d52107bffecd241e15de3097fdbd1443f224"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-native.ts",
+        "sha256": "51a6e3d2cb1bdf0d3589dda453e3b0a7b4e7fc0139ea8f50488a87f951da37ee"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/driver-session.ts",
+        "sha256": "1d205dde7b441faab7bddf9747d216231ae92a019bde2e182ccc5b7cc2fd690e"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-bounded-await.ts",
+        "sha256": "8b036594d2d2baa98beaf744253ab3f26ef15bdc5ccd3d12c36f681501d3ffbe"
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-read-cut-settlement.test.ts",
+        "sha256": "46980660505f06d750fdf62c76b0914b1301548428c06bebc0ace490065c1804"
+      },
+      {
+        "path": "package.json",
+        "sha256": "6b5902a50bb68780eef1af030f63852bb0df7c7136bcd1b18dc11c2f906dadc3"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "sha256": "7c55878bdd66149bb0ab095b0acae6c8e4018faa0bd588eea6dd507afbf9416c"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022"
+      }
+    ],
+    "appOracleSha256": "789c73dcec0a1621088614b34bd1a3ef7fa1c3cd8bf24aeeec94d98e1b89931d",
+    "sourceProtectedAndAppBytesUnchangedAcrossRun": true,
+    "reviewAndFocusedChecks": [
+      {
+        "path": "provider-admission-lifecycle-root-r1.json",
+        "sha256": "b6d9a0cfcdc8618fb5329d2c9db610d2426c67da3d7742457e6e7456f96324d0"
+      },
+      {
+        "path": "provider-admission-lifecycle-root-r2.json",
+        "sha256": "d2c5142c006d9dbda7112b2f8b8dbe0336a92ddfd18dc8025cf6de0e412550ad"
+      },
+      {
+        "path": "provider-admission-lifecycle-red-green.json",
+        "sha256": "4396d2c049a855294c8a6f524dbaf59e8127d4ca27058273d26f94b7041c51f9"
+      }
+    ],
+    "originalCheck": {
+      "kind": "original-provider-lifecycle-pnpm-check",
+      "cwd": "/workspace/scratch/f45fed8e9067/old-provider-implementations",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "environment": {
+        "PATH_prefix": "/workspace/scratch/f45fed8e9067/audit1192/provider-toolchain/bin:/workspace/scratch/f45fed8e9067/audit1192/TEST-node-inputs/node/v24.21.0/linux-x64",
+        "GOMEMLIMIT": "1536MiB",
+        "GOMAXPROCS": "2",
+        "AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-lifecycle-final-check-5jitg3_8"
+      },
+      "status": "PASS",
+      "startedAt": "2026-11-19T22:01:53.804539+00:00",
+      "candidateManifestSha256": "c3ccc1deac8a1669a899f8d1b6a6bf95c4b8ca0b7f45cb2590493685811c1140",
+      "log": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-lifecycle-check.log",
+      "exitCode": 0,
+      "endedAt": "2026-11-19T22:03:51.647080+00:00"
+    },
+    "log": {
+      "path": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-lifecycle-check.log",
+      "bytes": 66869,
+      "sha256": "db4927aee8a269e820203486554f3427fb2a6b70eb067c97d6fff830c191d7a1"
+    },
+    "summaries": [
+      "\u2139 tests 601",
+      "\u2139 pass 601",
+      "\u2139 fail 0",
+      "\u2139 cancelled 0",
+      "\u2139 duration_ms 82792.653077",
+      "packages/provider-session-contracts test:package: \u2139 tests 1",
+      "packages/provider-session-contracts test:package: \u2139 pass 1",
+      "packages/provider-session-contracts test:package: \u2139 fail 0",
+      "packages/provider-session-contracts test:package: \u2139 cancelled 0",
+      "packages/provider-session-contracts test:package: \u2139 duration_ms 2398.40024",
+      "packages/provider-implementations test:package: \u2139 tests 1",
+      "packages/provider-implementations test:package: \u2139 pass 1",
+      "packages/provider-implementations test:package: \u2139 fail 0",
+      "packages/provider-implementations test:package: \u2139 cancelled 0",
+      "packages/provider-implementations test:package: \u2139 duration_ms 17600.402026"
+    ],
+    "diffCheckExitCode": 0,
+    "retainedCheckedArchives": [
+      {
+        "path": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-lifecycle-final-check-5jitg3_8/agent-teams-provider-implementations-0.0.0.tgz",
+        "bytes": 191469,
+        "sha256": "ee1ed16c939dbdab4ee6b31941b4bff5d7e1e423224f8ca32e65f3a6ec25aed4"
+      },
+      {
+        "path": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-lifecycle-final-check-5jitg3_8/agent-teams-provider-session-contracts-0.0.0.tgz",
+        "bytes": 6230,
+        "sha256": "0ea08bacd3f19a54c065cfaebbe8ae0fb3a8e6770886402f435a96e97867d2bc"
+      }
+    ],
+    "archiveComparison": {
+      "oldArchive": "/workspace/scratch/f45fed8e9067/agent-teams-ai/vendor/provider-migration/v2-admission-e458b7f5/agent-teams-provider-implementations-0.0.0.tgz",
+      "oldSha256": "ccc36bfab30ecb73185ede9ecb335bb1c0808ca646b9c5fb600527a085d5d700",
+      "oldSource": "e458b7f5513a55122905205bd22bcb25977643b0",
+      "oldFiles": 259,
+      "newFiles": 259,
+      "added": [],
+      "removed": [],
+      "changed": [
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.js",
+          "beforeSha256": "8066efd07f399ffab6c1929d19725bc80f7603a216ed93426f826ea64c9e85c9",
+          "afterSha256": "48748ad0f5ad0f4b3a9f0e981809db4c4515dd5d0254d2c3ef6759736cffcf32",
+          "bytes": 15476,
+          "classification": "existing private implementation"
+        },
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.js",
+          "beforeSha256": "4724481e5023fa3d2a373c39431b5c292aefcb9aa77f54494a316d2c0c0ae0c3",
+          "afterSha256": "8c0fbd3fa415424ec95c4ee62dae3fbce0c7ac06128d4244b7d4e7563c8bf61a",
+          "bytes": 20354,
+          "classification": "existing private implementation"
+        },
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.d.ts",
+          "beforeSha256": "1ec58a224a97d7633e62a0f12d3c5fe587a11c1accbc33a41d919efcbfba1bf9",
+          "afterSha256": "f9856d005e0557fbd944e6352f3136b47cc4b88189fc2f4d205a230de0afb398",
+          "bytes": 445,
+          "classification": "private helper declaration"
+        },
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.js",
+          "beforeSha256": "d79ef277b42d762b00edc850798c603409ccbe4505c872dd0c5a49fc30b6997b",
+          "afterSha256": "21a605364eeed78a7bb07501e7429c432bc87c266c2447f94f8ea9766213cb55",
+          "bytes": 3172,
+          "classification": "existing private implementation"
+        }
+      ],
+      "internalDeclarationChanged": true,
+      "publicFacadesDeclarationsPackageMetadataAndAllOtherMembersByteIdentical": true
+    },
+    "limits": [
+      "Only the original pinned Node24.21 local source/package gate has run on this working candidate. Original published-source CI and native qualification remain separate.",
+      "The implementation archive was produced and installed by the original packed-consumer test; no repack, app pin selection or installed-dist substitution by author.",
+      "The original e458 app23PASS/1FAIL remains preserved. The unchanged app789c24-case acceptance, including its original pending custody15s deadline, must pass after root selects the corrected exact archive.",
+      "No source/CI refs, workflow, original deadlines, native-cut/body/dispose, Host/driver lifecycle owner, public config or Session SPI changed by author."
+    ]
+  },
+  "redGreen": {
+    "kind": "original-context-lifecycle-controlled-RED-GREEN",
+    "recordedAt": "2026-11-19T22:01:53.803439+00:00",
+    "sourceBase": "e458b7f5513a55122905205bd22bcb25977643b0",
+    "candidateManifestSha256": "c3ccc1deac8a1669a899f8d1b6a6bf95c4b8ca0b7f45cb2590493685811c1140",
+    "testsSha256": "8f155e117946cea30506784dea9284e8f00d04ecc15b671d4b7cef637cce4fa0",
+    "sameTestBytesAcrossRedGreen": true,
+    "redProduction": "exact e458 three owner preimages",
+    "greenProduction": "candidate three owner postimages",
+    "phases": [
+      {
+        "phase": "red",
+        "exitCode": 1,
+        "selected": 4,
+        "pass": 0,
+        "fail": 4,
+        "log": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-lifecycle-red.log",
+        "sha256": "6bed991c44f4b2032ee5fce9f4edcfe9affe384de7df6504fb6c20f079897b5e",
+        "bytes": 4128
+      },
+      {
+        "phase": "green",
+        "exitCode": 0,
+        "selected": 4,
+        "pass": 4,
+        "fail": 0,
+        "log": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-lifecycle-green.log",
+        "sha256": "dad16ea363b83c78136f632b6727ffd6609149251e7442687232f31e6dbbe4c4",
+        "bytes": 471
+      }
+    ],
+    "allFourPostimageHashesVerified": true,
+    "limits": [
+      "Focused original lifecycle regression only; complete producer and unchanged app lifecycle acceptance remain pending.",
+      "No numeric timer was shortened or advanced in these new tests; one real event-loop turn distinguishes pending from settled after actual lifecycle abort."
+    ]
+  },
+  "consumerRegression": {
+    "record": "app-admission-e458-consumer-regression.json",
+    "sha256": "eb44d04eebdd246f5cd87b86ae781dbed65c126c6eba50e7c904b2ed231c1725",
+    "r2Finding": "R2-E458-01",
+    "r2Sha256": "8da78fca3421ca41bad9463c85401f0ebd74d4aab6da4d3e4ae0b52b93bba958",
+    "originalAppOracleSha256": "789c73dcec0a1621088614b34bd1a3ef7fa1c3cd8bf24aeeec94d98e1b89931d",
+    "requiredGate": "Same24case file, including unchanged pending custody and its15000ms cutoff, after exact archive adoption."
+  },
+  "reviewRecords": [
+    {
+      "path": "provider-admission-lifecycle-r1.md",
+      "sha256": "4df98f4c22f37ab6f97f5c5b31eee290d67db4a1544ef2bd8f3f363a78a3c9e2"
+    },
+    {
+      "path": "provider-admission-lifecycle-root-r1.json",
+      "sha256": "b6d9a0cfcdc8618fb5329d2c9db610d2426c67da3d7742457e6e7456f96324d0"
+    },
+    {
+      "path": "provider-admission-lifecycle-root-r2.json",
+      "sha256": "d2c5142c006d9dbda7112b2f8b8dbe0336a92ddfd18dc8025cf6de0e412550ad"
+    }
+  ],
+  "rawEvidence": {
+    "path": "v2-admission-lifecycle-checks-20261119.tar.gz",
+    "bytes": 62896,
+    "sha256": "65faad2aa3d8438727f5a1692d899d7473be8f355c50218f2ef92225f1990a50",
+    "entries": 22
+  },
+  "limits": [
+    "Only the original pinned Node24.21 local source/package gate has run on this working candidate. Original published-source CI and native qualification remain separate.",
+    "The implementation archive was produced and installed by the original packed-consumer test; no repack, app pin selection or installed-dist substitution by author.",
+    "The original e458 app23PASS/1FAIL remains preserved. The unchanged app789c24-case acceptance, including its original pending custody15s deadline, must pass after root selects the corrected exact archive.",
+    "No source/CI refs, workflow, original deadlines, native-cut/body/dispose, Host/driver lifecycle owner, public config or Session SPI changed by author."
+  ]
+}

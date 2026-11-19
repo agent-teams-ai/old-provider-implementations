@@ -1,6 +1,48 @@
 # Cancelled OpenCode V2 request admission
 
-## Problem and selected boundary
+## Current correction: preserve transport lifecycle cancellation
+
+The first correction, published at `e458b7f5513a55122905205bd22bcb25977643b0`,
+passed 597 source tests, both packed consumers and all 53 original native jobs.
+Its app integration nevertheless exposed an existing negative case that timed
+out: 23 cases passed and the original held-custody close exceeded its unchanged
+15000ms test limit. Those results are retained separately.
+
+After the original five-second Host drain, DriverSession close cancels its
+lifecycle signal and awaits the submit loop. The first admission correction
+kept that loop waiting for custody until the original request cutoff. Its wire
+disposal was still beyond the blocked request, so the existing disposal bound
+could not yet help.
+
+The three existing implementation owners now pass the already-captured
+transport lifecycle signal to the second existing bounded join. A separate
+request/cut cancellation may still join the same callback while the original
+context is live. Lifecycle cancellation interrupts that join, leaving pending
+custody UNKNOWN and tracked for its single late release. No controller, timer,
+deadline, public configuration field, driver or Host owner is introduced or
+changed. Native-cut, body/dispose bounds and the original Host drain stay intact.
+
+The cooperative and cutoff test tables now explicitly use separate request and
+context signals; the previous broader expectation is preserved as history.
+Four new lifecycle cases failed on exact e458 bytes and passed on the correction
+with identical test bytes. Independent R1/R2 passed. The final original pinned
+Node24.21/pnpm11.18 check passed **601 source cases and both packed consumers**,
+including the unchanged real HTTP read-cut tests, TS7 build and typechecks.
+
+The exact retained checked implementation archive is 191469 bytes, SHA256
+`ee1ed16c939dbdab4ee6b31941b4bff5d7e1e423224f8ca32e65f3a6ec25aed4`.
+Its 259 members differ from e458 in three private JS files and the private
+admission helper declaration. Public exports/declarations, package metadata and
+all other members are byte-identical. The Session SPI archive remains unchanged.
+[Exact correction, retained failure and final checks](evidence/v2-admission-lifecycle-20261119.json)
+and [raw reviews/checks](evidence/v2-admission-lifecycle-checks-20261119.tar.gz)
+record this slice. New-source CI and the unchanged full24-case app consumer gate
+remain required after publication and exact archive adoption. Neither the
+original app failure nor earlier native results qualify this later source.
+
+## Initial e458 correction — historical record
+
+### Problem and selected boundary
 
 The original request admission promise can still be pending when its abort
 listener rejects the bounded await. The previous catch immediately reported
@@ -36,7 +78,7 @@ original request interval after an early abort; it gains no later deadline or
 additional grace interval. Public package exports and the Session SPI do not
 change.
 
-## Review and execution record
+### Review and execution record
 
 Independent prospective review accepted this scope against source
 `b19494fd2de47538a1c9315e338199ff41bbe497`; final exact-source review is complete.

@@ -8,7 +8,8 @@ export function createV2RequestAdmission(
   beforeRequest: V2RequestAdmission | undefined,
   signal: AbortSignal,
   deadline: number,
-  track: <T>(work: Promise<T>) => Promise<T>
+  track: <T>(work: Promise<T>) => Promise<T>,
+  lifecycleSignal?: AbortSignal
 ) {
   let release: (() => void) | undefined, closed = false, pending = false, cleanupUnknown = false
   const close = (): void => {
@@ -39,9 +40,10 @@ export function createV2RequestAdmission(
       try { await boundV2Request(work, deadline - Date.now(), signal) }
       catch (error) {
         // Abort can win before the original Host callback finishes releasing its
-        // reservation. Join only that work within this request's original cutoff.
+        // reservation. Join only that work within this request's original cutoff;
+        // the original context shutdown must still interrupt the settlement.
         if (pending && signal.aborted && Date.now() < deadline) {
-          try { await boundV2Request(work, deadline - Date.now()) }
+          try { await boundV2Request(work, deadline - Date.now(), lifecycleSignal) }
           catch (settlementError) {
             if (pending || Date.now() >= deadline) throw new ExecutionTransportFailure('cleanup_unknown', 'unknown')
             if (error instanceof ExecutionTransportFailure &&
