@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { channel } from 'node:diagnostics_channel'
 import { createServer, type ServerResponse } from 'node:http'
 import type { Socket } from 'node:net'
 import { resolve } from 'node:path'
@@ -11,19 +12,34 @@ const sessionID = 'ses_TESToriginal', inputID = 'msg_TESToriginal'
 const directory = resolve('TEST/v2-read-cut-settlement')
 const original = { nativeInputID: inputID, beforeCursor: null, text: 'TEST original read' }
 
-test('a failed final HTTP sibling drains its original aborted fetch before native driver disposal', { timeout: 15_000 }, async t => {
+for (const mode of ['http-sibling', 'cooperative-admission', 'late-admission'] as const) test(
+  mode === 'http-sibling' ? 'a failed final HTTP sibling drains its original aborted fetch before native driver disposal'
+    : `a failed final HTTP sibling retains ${mode} custody through native driver disposal`, { timeout: 15_000 }, async t => {
   const sockets = new Set<Socket>(), exits: Promise<void>[] = [], failures: unknown[] = []
   const requests: string[] = []
-  let sessionReads = 0, logReads = 0, closedRequests = 0
+  const events: string[] = [], reports: unknown[] = []
+  const pendingAdmission = Promise.withResolvers<() => void>()
+  const failedCut = channel('agent-teams:opencode-v2:read-cut-failed')
+  const expectedRequests = mode === 'http-sibling' ? 5 : 4
+  let sessionReads = 0, logReads = 0, closedRequests = 0, credentials = 0
+  let admissions = 0, releases = 0, aborted = 0, admissionWaiting = false
+  let finalRelease: (() => void) | undefined, readWork: Promise<unknown> | undefined
   let finalSession: ServerResponse | undefined, finalLog: ServerResponse | undefined
   let closeFinal!: () => void
   const finalClosed = new Promise<void>(resolveClose => { closeFinal = resolveClose })
-  const failPair = () => { if (finalSession && finalLog) finalLog.destroy() }
+  const failPair = () => { if (finalLog && (finalSession || admissionWaiting)) finalLog.destroy() }
+  const observeFailure = (message: unknown) => {
+    reports.push(message)
+    events.push('cut-failed')
+    // Only the late negative releases after the original cut has already failed.
+    if (mode === 'late-admission' && finalRelease) pendingAdmission.resolve(finalRelease)
+  }
+  if (mode !== 'http-sibling') failedCut.subscribe(observeFailure)
   const server = createServer((request, response) => {
     try {
       assert.equal(request.method, 'GET')
       assert.equal(request.headers.authorization, 'Basic ' + Buffer.from('opencode:TEST-password').toString('base64'))
-      assert.ok(request.url && requests.length < 5)
+      assert.ok(request.url && requests.length < expectedRequests)
       requests.push(request.url)
       request.once('close', () => { closedRequests++ })
       if (request.url === '/api/session/' + sessionID) {
@@ -37,7 +53,12 @@ test('a failed final HTTP sibling drains its original aborted fetch before nativ
         response.end(JSON.stringify({ data: { id: sessionID, location: { directory }, agent: 'build',
           model: { providerID: 'TEST-local', id: 'TEST-model' }, time: { created: 1 } } }))
       } else if (request.url === '/api/experimental/session/' + sessionID + '/log?follow=false') {
-        if (++logReads === 2) { finalLog = response; failPair(); return }
+        if (++logReads === 2) {
+          finalLog = response
+          if (mode !== 'http-sibling') request.once('close', closeFinal)
+          failPair()
+          return
+        }
         response.setHeader('content-type', 'text/event-stream')
         response.end('data: ' + JSON.stringify({ type: 'log.synced', aggregateID: sessionID, seq: 0 }) + '\n\n')
       } else {
@@ -52,6 +73,9 @@ test('a failed final HTTP sibling drains its original aborted fetch before nativ
     exits.push(new Promise<void>(resolveExit => socket.once('close', () => { sockets.delete(socket); resolveExit() })))
   })
   t.after(async () => {
+    failedCut.unsubscribe(observeFailure)
+    if (finalRelease) pendingAdmission.resolve(finalRelease)
+    await readWork?.catch(() => {})
     const closed = new Promise<void>((done, reject) => server.close(error => error ? reject(error) : done()))
     server.closeAllConnections()
     await closed
@@ -68,22 +92,59 @@ test('a failed final HTTP sibling drains its original aborted fetch before nativ
     binding: { tenantId: 'TEST-tenant', projectId: 'TEST-project', sessionId: 'TEST-session', generation: 1 },
     configRevision: 'TEST-revision', trustedBinding: 'TEST-binding', accountBinding: 'TEST-account',
     endpoint: 'http://127.0.0.1:' + address.port, directory, nativeSessionId: sessionID, version: '2.1.4',
-    readPassword: () => 'TEST-password', probe: async () => true, confirmStopped: async () => false,
+    readPassword: () => { credentials++; return 'TEST-password' }, probe: async () => true, confirmStopped: async () => false,
+    ...(mode === 'http-sibling' ? {} : { beforeRequest: async (signal: AbortSignal) => {
+      const ordinal = ++admissions
+      assert.ok(ordinal <= 5)
+      const release = () => { releases++; if (ordinal === 5) events.push('released') }
+      if (ordinal !== 5) return release
+      finalRelease = release
+      signal.addEventListener('abort', () => {
+        aborted++
+        events.push('aborted')
+        if (mode === 'cooperative-admission') pendingAdmission.resolve(release)
+      }, { once: true })
+      admissionWaiting = true
+      failPair()
+      const owned = await pendingAdmission.promise
+      events.push('returned')
+      return owned
+    } }),
     limits: { queuedInputs: 1, inputBytes: 1024, outputBytes: 32768, outputEvents: 128, pendingInteractions: 1, timeoutMs: 5000 },
   }
   const native = createDriverNative(config, new AbortController().signal)
-  const failure = await native.read(original).then(() => { assert.fail('A failed cut cannot become successful') }, error => error as unknown)
+  readWork = native.read(original)
+  const failure = await readWork.then(() => { assert.fail('A failed cut cannot become successful') }, error => error as unknown)
   assert.ok(failure instanceof Error)
-  await assert.doesNotReject(native.dispose(), 'the original fetch rejection must settle before classifying cleanup')
-  assert.equal(failure.message, 'invalid_native_read_response')
+  if (mode === 'late-admission') {
+    assert.equal(failure.message, 'cleanup_unknown')
+    await assert.rejects(native.dispose(), /cleanup_unknown/)
+    await assert.rejects(native.dispose(), /cleanup_unknown/)
+  } else {
+    await assert.doesNotReject(native.dispose(), 'the original fetch rejection must settle before classifying cleanup')
+    assert.equal(failure.message, 'invalid_native_read_response')
+    await assert.doesNotReject(native.dispose())
+  }
   await finalClosed
   assert.deepEqual(failures, [])
-  assert.equal(closedRequests, 5)
+  assert.equal(closedRequests, expectedRequests)
+  assert.equal(credentials, expectedRequests)
   assert.deepEqual(requests.slice(0, 3), ['/api/session/' + sessionID,
     '/api/experimental/session/' + sessionID + '/log?follow=false',
     '/api/session/' + sessionID + '/message?limit=200&order=asc'])
-  assert.deepEqual(requests.slice(3).sort(), ['/api/session/' + sessionID,
-    '/api/experimental/session/' + sessionID + '/log?follow=false'].sort())
+  assert.deepEqual(requests.slice(3).sort(), (mode === 'http-sibling' ? ['/api/session/' + sessionID,
+    '/api/experimental/session/' + sessionID + '/log?follow=false']
+    : ['/api/experimental/session/' + sessionID + '/log?follow=false']).sort())
+  if (mode !== 'http-sibling') {
+    assert.deepEqual({ admissions, releases, aborted }, { admissions: 5, releases: 5, aborted: 1 })
+    assert.deepEqual(events, mode === 'cooperative-admission'
+      ? ['aborted', 'returned', 'released', 'cut-failed'] : ['aborted', 'cut-failed', 'returned', 'released'])
+    assert.equal(reports.length, 1)
+    const report = reports[0]
+    assert.ok(report && typeof report === 'object' && 'stage' in report && 'finalReason' in report)
+    assert.equal(report.stage, 'after-log')
+    assert.equal(report.finalReason, mode === 'cooperative-admission' ? 'invalid_native_read_response' : 'native_read_cleanup_unknown')
+  }
 })
 
 for (const mode of ['settled', 'unknown', 'at-deadline'] as const) test(

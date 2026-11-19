@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "kind": "provider-admission-settlement-exact-checks",
+  "recordedAt": "2026-11-19T21:42:05.771292+00:00",
+  "sourceBase": "b19494fd2de47538a1c9315e338199ff41bbe497",
+  "status": "LOCAL_SOURCE_REVIEW_AND_ORIGINAL_PACKED_CONSUMER_GATE_PASS",
+  "sourceReview": {
+    "kind": "root-independent-provider-admission-final-R2",
+    "recordedAt": "2026-11-19T21:37:56.002872+00:00",
+    "sourceBase": "b19494fd2de47538a1c9315e338199ff41bbe497",
+    "result": "PASS_SOURCE_R2",
+    "candidate": {
+      "path": "provider-admission-settlement-final.json",
+      "sha256": "a46a9da4e907e9d257f64120572fdb50e54ad2411691642d0242264cb21d30b8"
+    },
+    "files": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.ts",
+        "preSha256": "d936e012b2805ace0ef2b4bb3317932e9f81df539f21ca27a528fc4ca7c28630",
+        "sha256": "5a39aae17aa5fa757bbf6197fbcaa1c65e08f4372231da0af30995e90a74f4dc",
+        "gitBlobSha": "6b6c9c2260d73fff219e9038955fff073ac0f0de",
+        "bytes": 2740,
+        "lines": 61
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts",
+        "preSha256": "dc3d67341fc27263b776a8f446d84b9006b9adfc350f77126d4e320254af8463",
+        "sha256": "7e010626c5e2126f8030c661dcf49a925ba75f411f39af7750638178968a5ff6",
+        "gitBlobSha": "90b00372c99b79c22a86dcf363df890cdd57d8fa",
+        "bytes": 20212,
+        "lines": 354
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts",
+        "preSha256": "5b5624b7f2100afe75305d955017e7e887e60512c012bbff29303f1c81bea02d",
+        "sha256": "1403b92c75a9f1b5b309291fffda3bdd78d44e3718e4403127141a26e344806b",
+        "gitBlobSha": "3767b890e6f1b4c617f021055ec42a43f3ae6646",
+        "bytes": 14318,
+        "lines": 234
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-request-admission.test.ts",
+        "preSha256": "24da17aac22617932252768875371c59d3c6f28335a18ca7c51c6e6f42e3c011",
+        "sha256": "8d27da2d9eb29fee474947636985ce944f821e7114de7a0d3d87fb3fd95619ea",
+        "gitBlobSha": "a58438e4cae4ec663b2114c4a4e970058d5ff8ad",
+        "bytes": 10536,
+        "lines": 207
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-read-cut-settlement.test.ts",
+        "preSha256": "62ee7577a0a182c1529b2c1a8a010bf9e6e28613fabd8c4fe7d831e2988e8218",
+        "sha256": "46980660505f06d750fdf62c76b0914b1301548428c06bebc0ace490065c1804",
+        "gitBlobSha": "e00e02f9c70a6e446dfa72a9bbe371e6e3132440",
+        "bytes": 10164,
+        "lines": 187
+      }
+    ],
+    "protectedUnchanged": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+        "sha256": "b04077cf6b523f147b0f4d036499d52107bffecd241e15de3097fdbd1443f224"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-native.ts",
+        "sha256": "51a6e3d2cb1bdf0d3589dda453e3b0a7b4e7fc0139ea8f50488a87f951da37ee"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-bounded-await.ts",
+        "sha256": "8b036594d2d2baa98beaf744253ab3f26ef15bdc5ccd3d12c36f681501d3ffbe"
+      },
+      {
+        "path": "package.json",
+        "sha256": "6b5902a50bb68780eef1af030f63852bb0df7c7136bcd1b18dc11c2f906dadc3"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "sha256": "7c55878bdd66149bb0ab095b0acae6c8e4018faa0bd588eea6dd507afbf9416c"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022"
+      }
+    ],
+    "findings": [
+      {
+        "id": "R2-01",
+        "result": "RESOLVED",
+        "resolution": "Control uncertain predicate now includes typed cleanup_unknown code as well as unknown disposition. Same real-wire cooperative table tests both wires, using cleanup_unknown/not_submitted; author reports original candidate control RED followed by2/2 GREEN. No unsubmitted weakening remains in this newly joined path."
+      }
+    ],
+    "reviewChecks": [
+      "Exact5-file combined patch reviewed; three original production owners only, no public capability/interface/exports/dependency change.",
+      "Original timer point and numeric duration preserved via one Date.now sample. Request cutoff equals earlier of existing context deadline and the original30000ms timer. Control still starts before request-body consumption.",
+      "Admission joins only its original tracked promise after signal abort and before original cutoff. Successful settlement still rethrows original cancellation; downstream credential/fetch rechecks and finally release remain.",
+      "Ordinary joined rejection may be sanitized only after observed original callback settlement. Typed UNKNOWN, cleanup_unknown code, release failure, pending or at-cutoff outcome stays uncertain. Late original work remains tracked and releases once.",
+      "Original native-cut, bounded await, driver latch, body cleanup and dispose limits are unchanged. The late-admission HTTP scenario retains UNKNOWN after its original cut failure even after release and repeated dispose.",
+      "The existing HTTP sibling scenario keeps its original five requests and ordinary-failure oracle. New controlled cases retain exact admissions/credentials/HTTP/release counts, actual callback abort and fixed original cutoff; no failed native read is turned into success.",
+      "All final source and six protected hashes match frozen manifest. Source R2 does not substitute for the final original full check still in progress."
+    ],
+    "executionGate": "Final original pnpm check with retained exact packed-consumer archives is required before publication. Original resulting-head CI and app/native acceptance remain separate."
+  },
+  "checks": {
+    "kind": "final-provider-admission-settlement-local-checks",
+    "recordedAt": "2026-11-19T21:40:23.887737+00:00",
+    "status": "PASS_LOCAL_SOURCE_AND_PACKED_CONSUMERS_ONLY",
+    "sourceBase": "b19494fd2de47538a1c9315e338199ff41bbe497",
+    "workingCandidateManifestSha256": "a46a9da4e907e9d257f64120572fdb50e54ad2411691642d0242264cb21d30b8",
+    "sourceFiles": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.ts",
+        "preSha256": "d936e012b2805ace0ef2b4bb3317932e9f81df539f21ca27a528fc4ca7c28630",
+        "sha256": "5a39aae17aa5fa757bbf6197fbcaa1c65e08f4372231da0af30995e90a74f4dc",
+        "gitBlobSha": "6b6c9c2260d73fff219e9038955fff073ac0f0de",
+        "bytes": 2740,
+        "lines": 61
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.ts",
+        "preSha256": "dc3d67341fc27263b776a8f446d84b9006b9adfc350f77126d4e320254af8463",
+        "sha256": "7e010626c5e2126f8030c661dcf49a925ba75f411f39af7750638178968a5ff6",
+        "gitBlobSha": "90b00372c99b79c22a86dcf363df890cdd57d8fa",
+        "bytes": 20212,
+        "lines": 354
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.ts",
+        "preSha256": "5b5624b7f2100afe75305d955017e7e887e60512c012bbff29303f1c81bea02d",
+        "sha256": "1403b92c75a9f1b5b309291fffda3bdd78d44e3718e4403127141a26e344806b",
+        "gitBlobSha": "3767b890e6f1b4c617f021055ec42a43f3ae6646",
+        "bytes": 14318,
+        "lines": 234
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-request-admission.test.ts",
+        "preSha256": "24da17aac22617932252768875371c59d3c6f28335a18ca7c51c6e6f42e3c011",
+        "sha256": "8d27da2d9eb29fee474947636985ce944f821e7114de7a0d3d87fb3fd95619ea",
+        "gitBlobSha": "a58438e4cae4ec663b2114c4a4e970058d5ff8ad",
+        "bytes": 10536,
+        "lines": 207
+      },
+      {
+        "path": "packages/provider-implementations/tests/features/provider-session-implementation/opencode-protocol/v2-read-cut-settlement.test.ts",
+        "preSha256": "62ee7577a0a182c1529b2c1a8a010bf9e6e28613fabd8c4fe7d831e2988e8218",
+        "sha256": "46980660505f06d750fdf62c76b0914b1301548428c06bebc0ace490065c1804",
+        "gitBlobSha": "e00e02f9c70a6e446dfa72a9bbe371e6e3132440",
+        "bytes": 10164,
+        "lines": 187
+      }
+    ],
+    "protectedSourceBytes": [
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-native-cut.ts",
+        "sha256": "b04077cf6b523f147b0f4d036499d52107bffecd241e15de3097fdbd1443f224"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-driver-native.ts",
+        "sha256": "51a6e3d2cb1bdf0d3589dda453e3b0a7b4e7fc0139ea8f50488a87f951da37ee"
+      },
+      {
+        "path": "packages/provider-implementations/src/features/provider-session-implementation/adapters/opencode-protocol/v2-bounded-await.ts",
+        "sha256": "8b036594d2d2baa98beaf744253ab3f26ef15bdc5ccd3d12c36f681501d3ffbe"
+      },
+      {
+        "path": "package.json",
+        "sha256": "6b5902a50bb68780eef1af030f63852bb0df7c7136bcd1b18dc11c2f906dadc3"
+      },
+      {
+        "path": "pnpm-lock.yaml",
+        "sha256": "7c55878bdd66149bb0ab095b0acae6c8e4018faa0bd588eea6dd507afbf9416c"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "sha256": "e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022"
+      }
+    ],
+    "finalOriginalCheck": {
+      "kind": "original-provider-final-pnpm-check",
+      "cwd": "/workspace/scratch/f45fed8e9067/old-provider-implementations",
+      "command": [
+        "pnpm",
+        "check"
+      ],
+      "environment": {
+        "PATH_prefix": "/workspace/scratch/f45fed8e9067/audit1192/provider-toolchain/bin:/workspace/scratch/f45fed8e9067/audit1192/TEST-node-inputs/node/v24.21.0/linux-x64",
+        "GOMEMLIMIT": "1536MiB",
+        "GOMAXPROCS": "2",
+        "AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-admission-final-check-2u2qzjih"
+      },
+      "status": "PASS",
+      "startedAt": "2026-11-19T21:37:29.443032+00:00",
+      "candidateManifestSha256": "a46a9da4e907e9d257f64120572fdb50e54ad2411691642d0242264cb21d30b8",
+      "log": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-settlement-final-check.log",
+      "exitCode": 0,
+      "endedAt": "2026-11-19T21:39:53.842099+00:00"
+    },
+    "finalLog": {
+      "path": "/workspace/scratch/f45fed8e9067/audit1192/provider-admission-settlement-final-check.log",
+      "bytes": 66412,
+      "sha256": "f4048b82e02e6267d567d7ed5828911aeec2da09d8b2f6ffe62fa26084774e5f"
+    },
+    "summaries": [
+      "ℹ tests 597",
+      "ℹ pass 597",
+      "ℹ fail 0",
+      "ℹ cancelled 0",
+      "ℹ duration_ms 113266.487282",
+      "packages/provider-session-contracts test:package: ℹ tests 1",
+      "packages/provider-session-contracts test:package: ℹ pass 1",
+      "packages/provider-session-contracts test:package: ℹ fail 0",
+      "packages/provider-session-contracts test:package: ℹ cancelled 0",
+      "packages/provider-session-contracts test:package: ℹ duration_ms 2643.447346",
+      "packages/provider-implementations test:package: ℹ tests 1",
+      "packages/provider-implementations test:package: ℹ pass 1",
+      "packages/provider-implementations test:package: ℹ fail 0",
+      "packages/provider-implementations test:package: ℹ cancelled 0",
+      "packages/provider-implementations test:package: ℹ duration_ms 11694.750421"
+    ],
+    "sourceAndProtectedHashesUnchangedAcrossRun": true,
+    "diffCheckExitCode": 0,
+    "retainedCheckedArchives": [
+      {
+        "path": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-admission-final-check-2u2qzjih/agent-teams-provider-implementations-0.0.0.tgz",
+        "bytes": 191401,
+        "sha256": "ccc36bfab30ecb73185ede9ecb335bb1c0808ca646b9c5fb600527a085d5d700"
+      },
+      {
+        "path": "/workspace/scratch/f45fed8e9067/audit1192/TEST-provider-admission-final-check-2u2qzjih/agent-teams-provider-session-contracts-0.0.0.tgz",
+        "bytes": 6230,
+        "sha256": "0ea08bacd3f19a54c065cfaebbe8ae0fb3a8e6770886402f435a96e97867d2bc"
+      }
+    ],
+    "readOnlyArchiveComparison": {
+      "oldArchive": "/workspace/scratch/f45fed8e9067/agent-teams-ai/vendor/provider-migration/captured-config-b19494fd/agent-teams-provider-implementations-0.0.0.tgz",
+      "oldSha256": "ad05bd8c799c4d2c366a6eab72f937466355a5994eac6bd201ee754217cf5aa7",
+      "oldFiles": 259,
+      "newFiles": 259,
+      "added": [],
+      "removed": [],
+      "changed": [
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-control-transport.js",
+          "beforeSha256": "7d0ccaa0fe81a1438452d46fdbf349d61dedd68b95479f83207ea77edb68d9b7",
+          "afterSha256": "8066efd07f399ffab6c1929d19725bc80f7603a216ed93426f826ea64c9e85c9",
+          "bytes": 15461
+        },
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-execution-transport.js",
+          "beforeSha256": "1a4c82ddbd641c2fd3f0e004ccd2e08efbab6340e475ffa5f2dc2a66c9809c2e",
+          "afterSha256": "4724481e5023fa3d2a373c39431b5c292aefcb9aa77f54494a316d2c0c0ae0c3",
+          "bytes": 20333
+        },
+        {
+          "archivePath": "package/dist/features/provider-session-implementation/adapters/opencode-protocol/v2-request-admission.js",
+          "beforeSha256": "0032b2b343bbedbf6a6405a1d4a0700fb52cc7e9f5b694c97892277e44e1fbdb",
+          "afterSha256": "d79ef277b42d762b00edc850798c603409ccbe4505c872dd0c5a49fc30b6997b",
+          "bytes": 3052
+        }
+      ],
+      "allPublicExportsDeclarationsPackageMetadataAndOtherMembersByteIdentical": true
+    },
+    "originalRedGreen": "provider-admission-settlement-red.json and provider-admission-settlement-green.json (initial candidate, unchanged first18 regression test logic)",
+    "reviewFixRedGreen": "provider-admission-cleanup-code-checks.json",
+    "historicalFirstCheck": "provider-admission-settlement-check-historical.json",
+    "limits": [
+      "Only pinned Node24.21 local gate; original CI Node24.21 and26.11 and permitted native qualification remain to execute on resulting published source.",
+      "These archives were produced and installed by the original packed-consumer test, not repacked for adoption. Source is the recorded working candidate over b194 until root publishes.",
+      "No app archive/pin/oracle, public API, dependency, original native-cut/body/dispose budget, driver UNKNOWN latch, workflow, Git index/ref or package release changed by author.",
+      "Original native Linux3f failure cause remains unproved; controlled correction is not native qualification."
+    ]
+  },
+  "rawChecks": {
+    "path": "v2-admission-settlement-checks-20261119.tar.gz",
+    "bytes": 83237,
+    "sha256": "b3e4bfecca4477b50cc0da898a6b3e4423700fb977a9f964d335967adc06da12",
+    "entries": 27
+  },
+  "remaining": [
+    "Original published-source CI on both declared Node versions",
+    "Exact checked archive adoption and separate Host integration/native/GUI qualification"
+  ],
+  "nativeCauseProved": false,
+  "realClaudeCodexExecuted": false,
+  "releaseQualified": false
+}

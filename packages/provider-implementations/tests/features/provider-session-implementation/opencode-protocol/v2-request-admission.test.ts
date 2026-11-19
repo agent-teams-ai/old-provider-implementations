@@ -120,4 +120,88 @@ for (const kind of ['execution', 'control'] as const) {
     await wire.dispose()
     assert.equal(releases, 1)
   })
+
+  for (const mode of ['return', 'reject', 'unknown', 'cleanup-unknown', 'cleanup-code', 'release-failure', 'at-cutoff'] as const) {
+    test(`${kind}: cooperative cancelled admission preserves ${mode}`, async t => {
+      const entered = Promise.withResolvers<void>(), ready = Promise.withResolvers<void | (() => void)>()
+      const revoked = new AbortController()
+      let calls = 0, aborted = 0, releases = 0, now = Date.now()
+      if (mode === 'at-cutoff') t.mock.method(Date, 'now', () => now)
+      const release = () => {
+        releases++
+        if (mode === 'release-failure') throw Error('TEST-private-release')
+      }
+      const wire = setup(async signal => {
+        calls++
+        assert.equal(signal.aborted, false)
+        signal.addEventListener('abort', () => {
+          aborted++
+          if (mode === 'at-cutoff') now += 10_000
+          if (mode === 'reject') ready.reject(Error('TEST-private-admission'))
+          else if (mode === 'unknown') ready.reject(new ExecutionTransportFailure('native_prompt_unknown', 'unknown'))
+          else if (mode === 'cleanup-unknown') ready.reject(new ExecutionTransportFailure('cleanup_unknown', 'unknown'))
+          else if (mode === 'cleanup-code') ready.reject(new ExecutionTransportFailure('cleanup_unknown', 'not_submitted'))
+          else ready.resolve(release)
+        }, { once: true })
+        entered.resolve()
+        return ready.promise
+      }, { signal: revoked.signal })
+      const pending = wire.request().then(() => ({ ok: true as const }), error => ({ ok: false as const, error: error as unknown }))
+      t.after(async () => { revoked.abort(); ready.resolve(release); await pending; await wire.dispose() })
+      await entered.promise
+      revoked.abort()
+      const outcome = await pending
+      // Join the same tracked callback even when checking the old early-failure implementation.
+      await wire.dispose()
+      assert.equal(outcome.ok, false)
+      if (outcome.ok) assert.fail('Cancelled admission cannot dispatch a native request')
+      const unknown = !['return', 'reject'].includes(mode)
+      assert.equal(wasOpenCodeV2InputNotSubmitted(outcome.error), !unknown)
+      assert.ok(outcome.error instanceof ExecutionTransportFailure)
+      assert.equal(outcome.error.code, mode === 'unknown' ? 'native_prompt_unknown' : unknown ? 'cleanup_unknown' : 'transport_failure')
+      assert.deepEqual({ calls, aborted, releases }, { calls: 1, aborted: 1,
+        releases: ['return', 'release-failure', 'at-cutoff'].includes(mode) ? 1 : 0 })
+      assert.deepEqual(wire.counts, { credentials: 0, fetches: 0 })
+      await wire.dispose()
+      assert.equal(releases, ['return', 'release-failure', 'at-cutoff'].includes(mode) ? 1 : 0)
+    })
+  }
+
+  for (const contextMs of [20_000, 60_000]) test(
+    `${kind}: pending cancelled admission retains original request cutoff with context ${contextMs}`, async t => {
+      t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 })
+      const entered = Promise.withResolvers<void>(), ready = Promise.withResolvers<void | (() => void)>()
+      const revoked = new AbortController()
+      let calls = 0, releases = 0, finished = false
+      const release = () => { releases++ }
+      const wire = setup(async () => { calls++; entered.resolve(); return ready.promise },
+        { signal: revoked.signal, deadline: contextMs })
+      const pending = wire.request().then(() => { finished = true; return { ok: true as const } },
+        error => { finished = true; return { ok: false as const, error: error as unknown } })
+      t.after(async () => { revoked.abort(); ready.resolve(release); await pending; await wire.dispose() })
+      await entered.promise
+      revoked.abort()
+      await new Promise<void>(done => setImmediate(done))
+      assert.equal(finished, false, 'The same original callback must get its remaining request bound')
+      const requestMs = Math.min(30_000, contextMs)
+      t.mock.timers.tick(requestMs - 1)
+      await new Promise<void>(done => setImmediate(done))
+      assert.equal(finished, false)
+      t.mock.timers.tick(1)
+      await new Promise<void>(done => setImmediate(done))
+      assert.equal(Date.now(), requestMs)
+      assert.equal(finished, true, 'The original request cutoff must win over a later context deadline')
+      const outcome = await pending
+      assert.equal(outcome.ok, false)
+      if (outcome.ok) assert.fail('Unsettled admission cannot dispatch a native request')
+      assert.ok(outcome.error instanceof ExecutionTransportFailure)
+      assert.equal(outcome.error.code, 'cleanup_unknown')
+      assert.equal(wasOpenCodeV2InputNotSubmitted(outcome.error), false)
+      assert.deepEqual(wire.counts, { credentials: 0, fetches: 0 })
+      ready.resolve(release)
+      await wire.dispose()
+      await wire.dispose()
+      assert.deepEqual({ calls, releases }, { calls: 1, releases: 1 })
+    }
+  )
 }

@@ -107,7 +107,8 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       const { putInstruction, reply } = routes
       const signal = AbortSignal.any([controller.signal, native.signal, ...(config.signal ? [config.signal] : [])])
       const remaining = () => Math.min(30_000, config.deadline - Date.now())
-      timer = setTimeout(() =>{  controller.abort(); }, Math.max(0, remaining()))
+      const requestStarted = Date.now(), requestTimeout = Math.min(30_000, config.deadline - requestStarted)
+      timer = setTimeout(() =>{  controller.abort(); }, Math.max(0, requestTimeout))
       const consume = async (body: ReadableStream<Uint8Array> | null, maximum: number) => {
         if (body === null) {return ''}
         // A locked real native response throws on acquisition. An injected
@@ -144,7 +145,7 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // Stream admission may outlive the original deadline or revoke the Host lease.
       // Revalidate before projecting credentials, not only before native fetch.
       check(); signal.throwIfAborted()
-      admission = createV2RequestAdmission(config.beforeRequest, signal, config.deadline, track)
+      admission = createV2RequestAdmission(config.beforeRequest, signal, requestStarted + requestTimeout, track)
       await admission.acquire()
       check(); signal.throwIfAborted()
       if (native.method !== 'GET') config.beforeMutation?.()
@@ -194,7 +195,8 @@ export function createV2ControlWire(supplied: OpenCodeV2SessionControlConfig) {
       // An admission fence may reject before this request invokes fetch while
       // the *prior prompt* already has UNKNOWN custody. Preserve that trusted
       // uncertainty: "not submitted" would permit an unsafe retry.
-      const uncertain = error instanceof ExecutionTransportFailure && error.disposition === 'unknown'
+      const uncertain = error instanceof ExecutionTransportFailure &&
+        (error.disposition === 'unknown' || error.code === 'cleanup_unknown')
       const failure = new ExecutionTransportFailure(error instanceof ExecutionTransportFailure ? error.code : 'transport_failure',
         invoked || uncertain ? 'unknown' : 'not_submitted')
       if (!invoked && !uncertain) {unsubmitted.add(failure)}
