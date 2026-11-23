@@ -25,8 +25,9 @@ export async function readOpenCodeV2CatalogData(
     executionAssert(value !== null && record(value.location)?.directory === directory, 'native_catalog_binding_mismatch')
     return value.data
   }
-  // Serial finite reads share the original owner deadline and custody lease.
-  const providers = await read('/api/provider'), models = await read('/api/model'), selected = await read('/api/model/default')
+  // Native model reads await plugin activation; provider reads return the current snapshot.
+  // Capture providers after that barrier, sharing the original owner deadline and custody lease.
+  const models = await read('/api/model'), providers = await read('/api/provider'), selected = await read('/api/model/default')
   executionAssert(Array.isArray(providers) && providers.length <= 1024 &&
     Array.isArray(models) && models.length <= 4096, 'invalid_native_catalog')
   const nativeDefault = selected == null ? null : record(selected)

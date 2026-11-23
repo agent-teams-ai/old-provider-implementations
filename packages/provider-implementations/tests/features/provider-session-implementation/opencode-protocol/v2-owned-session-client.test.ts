@@ -177,7 +177,7 @@ test('owned native catalog preserves native selection and drops provider credent
       models: [{ id: 'TEST-model', name: 'TEST Model', enabled: true, contextTokens: 8192,
         outputTokens: 512, supportsTools: true, inputModalities: ['text', 'image'], variants: ['high'] }],
     })
-    assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default'])
+    assert.deepEqual(requests, ['/api/model', '/api/provider', '/api/model/default'])
     assert.equal(JSON.stringify(catalog).includes('TEST-secret'), false)
   } finally { await client.dispose() }
 })
@@ -236,7 +236,7 @@ test('owned directory reads one native inventory for all providers and exports n
         assert.deepEqual(directory.integrations, providers.map(row => ({ id: row.id, name: row.name, plainKey: true })))
         assert.equal(JSON.stringify(directory).includes('TEST-secret'), false)
         assert.equal(JSON.stringify(directory).includes('cred_TESTprivate'), false)
-        assert.deepEqual(requests, ['/api/provider', '/api/model', '/api/model/default', '/api/integration'])
+        assert.deepEqual(requests, ['/api/model', '/api/provider', '/api/model/default', '/api/integration'])
       }
     } finally { await client.dispose() }
   }
