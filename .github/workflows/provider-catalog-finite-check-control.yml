@@ -1,0 +1,137 @@
+name: Provider catalog finite source and packed consumers
+on:
+  push:
+    branches:
+      - review/opencode-catalog-finite-check-56afd2454368
+permissions:
+  contents: read
+concurrency:
+  group: provider-catalog-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.21.0', '26.11.1']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 56afd2454368e484b804a21e7784aceabdf2c742
+          persist-credentials: false
+      - name: Record literal source and separate control context
+        shell: bash
+        env:
+          EXPECTED_SOURCE_HEAD: 56afd2454368e484b804a21e7784aceabdf2c742
+          EXPECTED_SOURCE_TREE: 962da1adf03a99203881c632ffd5b85774cf60f9
+          CONTROL_COMMIT: ${{ github.sha }}
+          CONTROL_REF: ${{ github.ref }}
+          CONTROL_RUN_ID: ${{ github.run_id }}
+          CONTROL_RUN_ATTEMPT: ${{ github.run_attempt }}
+          SELECTED_NODE: ${{ matrix.node }}
+        run: |
+          python3 - <<'PY_CONTEXT'
+          import hashlib, json, os, re, subprocess
+          from pathlib import Path
+          source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          assert source == os.environ['EXPECTED_SOURCE_HEAD'], 'unexpected_source_head'
+          assert tree == os.environ['EXPECTED_SOURCE_TREE'], 'unexpected_source_tree'
+          assert os.environ['CONTROL_REF'] == 'refs/heads/review/opencode-catalog-finite-check-56afd2454368', 'unexpected_control_ref'
+          assert os.environ['CONTROL_RUN_ATTEMPT'] == '1', 'unexpected_control_attempt'
+          assert os.environ['GITHUB_EVENT_NAME'] == 'push', 'unexpected_control_event'
+          assert re.fullmatch(r'[0-9a-f]{40}', os.environ['CONTROL_COMMIT']), 'invalid_control_commit'
+          assert os.environ['CONTROL_COMMIT'] != source, 'control_must_differ_from_source'
+          assert os.environ['SELECTED_NODE'] in ('24.21.0', '26.11.1'), 'unexpected_selected_node'
+          evidence = Path(os.environ['RUNNER_TEMP']) / 'provider-catalog-control-context'
+          evidence.mkdir(exist_ok=False)
+          workflow = Path('.github/workflows/ci.yml').read_bytes()
+          assert hashlib.sha256(workflow).hexdigest() == 'e3ed45b8e012981adbe924d9ffdc1c2ff08ebbc5bdb057604bcad36da043d022'
+          receipt = {'schemaVersion': 1, 'sourceCommit': source, 'sourceTree': tree,
+            'originalCiSha256': hashlib.sha256(workflow).hexdigest(),
+            'controlCommit': os.environ['CONTROL_COMMIT'], 'controlRef': os.environ['CONTROL_REF'],
+            'controlRunId': os.environ['CONTROL_RUN_ID'], 'controlRunAttempt': os.environ['CONTROL_RUN_ATTEMPT'],
+            'selectedNode': os.environ['SELECTED_NODE'],
+            'scope': 'original source and packed-consumer checks; not native Host or Desktop qualification',
+            'qualification': 'checkout-context-only; original check and archive gates remain authoritative'}
+          (evidence / 'context.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps(receipt))
+          PY_CONTEXT
+      - name: Setup Node24 Corepack source
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - name: Setup selected Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Select pinned pnpm through selected Node
+        shell: bash
+        run: |
+          set -euo pipefail
+          selectedNode="$(node -p 'process.execPath')"
+          corepackJs="$RUNNER_TOOL_CACHE/node/24.21.0/$(node -p 'process.arch')/lib/node_modules/corepack/dist/corepack.js"
+          test -f "$corepackJs"
+          mkdir -p "$RUNNER_TEMP/toolchain/bin" "$RUNNER_TEMP/toolchain/corepack"
+          printf '#!/bin/sh\nexec "%s" "%s" pnpm@11.18.0 "$@"\n' "$selectedNode" "$corepackJs" > "$RUNNER_TEMP/toolchain/bin/pnpm"
+          chmod 755 "$RUNNER_TEMP/toolchain/bin/pnpm"
+          printf '%s\n' "$RUNNER_TEMP/toolchain/bin" >> "$GITHUB_PATH"
+          printf 'COREPACK_HOME=%s\n' "$RUNNER_TEMP/toolchain/corepack" >> "$GITHUB_ENV"
+          COREPACK_HOME="$RUNNER_TEMP/toolchain/corepack" "$selectedNode" "$corepackJs" pnpm@11.18.0 --version
+      - name: Install exact dependency graph
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Types, controlled tests and packed consumers
+        env:
+          # Retain the SAME exact bytes installed by the package-consumer test.
+          AGENT_TEAMS_PROVIDER_PACK_TEST_RETAIN_DIR: ${{ runner.temp }}/checked-v2-spi
+        run: pnpm check
+      - name: Record exact-head checked archives (not a Host qualification)
+        if: matrix.node == '24.21.0'
+        shell: bash
+        env:
+          EXPECTED_HEAD: 56afd2454368e484b804a21e7784aceabdf2c742
+        run: |
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto'
+          import { execFileSync } from 'node:child_process'
+          import { readFileSync, readdirSync, writeFileSync } from 'node:fs'
+          import { join } from 'node:path'
+          const root = join(process.env.RUNNER_TEMP, 'checked-v2-spi')
+          const names = readdirSync(root).filter(name => name.endsWith('.tgz')).sort()
+          if (names.length !== 2 ||
+              names.filter(name => name.startsWith('agent-teams-provider-implementations-')).length !== 1 ||
+              names.filter(name => name.startsWith('agent-teams-provider-session-contracts-')).length !== 1)
+            throw Error('expected_exact_two_consumer_checked_archives')
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          if (head !== process.env.EXPECTED_HEAD) throw Error('unexpected_checkout_head')
+          const packages = names.map(name => {
+            const data = readFileSync(join(root, name))
+            return { file: name, bytes: data.length,
+              sha256: createHash('sha256').update(data).digest('hex') }
+          })
+          const receipt = { schemaVersion: 1, sourceCommit: head, packages,
+            qualification: 'source-and-packed-consumer-only',
+            nativeHostQualified: false, packagedElectronQualified: false }
+          writeFileSync(join(root, 'receipt.json'), JSON.stringify(receipt, null, 2) + String.fromCharCode(10))
+          console.log(JSON.stringify(receipt))
+          NODE
+      - name: Upload TEST-only exact-HEAD checked provider and Session SPI archives
+        if: matrix.node == '24.21.0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-v2-spi-consumer-checked-56afd2454368e484b804a21e7784aceabdf2c742
+          path: ${{ runner.temp }}/checked-v2-spi/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve source and control context on every outcome
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: provider-catalog-control-context-56afd2454368e484b804a21e7784aceabdf2c742-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/provider-catalog-control-context/
+          if-no-files-found: warn
+          retention-days: 7
